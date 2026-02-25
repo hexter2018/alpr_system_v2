@@ -3,6 +3,7 @@ services:
   postgres:
     image: postgres:16
     environment:
+      TZ: Asia/Bangkok
       POSTGRES_USER: alpr
       POSTGRES_PASSWORD: alpr
       POSTGRES_DB: alpr
@@ -39,6 +40,7 @@ services:
       context: ./backend
     user: "1000:1000"
     environment:
+      TZ: Asia/Bangkok
       DATABASE_URL: postgresql+psycopg2://alpr:alpr@postgres:5432/alpr
       REDIS_URL: redis://redis:6379/0
       STORAGE_DIR: /storage
@@ -53,9 +55,15 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
     networks:
       - alpr-network
-
+    restart: unless-stopped
   # ==================== Celery Workers ====================
   # GPU Worker - สามารถ scale ได้ด้วย --scale worker-gpu-1=3
   worker-gpu-1:
@@ -69,6 +77,7 @@ services:
               device_ids: ['0']
               capabilities: [gpu]
     environment:
+      TZ: Asia/Bangkok
       # TensorRT settings
       TRT_WORKSPACE: "4096"
       TRT_FP16: "1"
@@ -209,6 +218,7 @@ services:
     ports:
       - "5555:5555"
     environment:
+      TZ: Asia/Bangkok
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
     depends_on:
@@ -219,6 +229,7 @@ services:
   redis-commander:
     image: rediscommander/redis-commander:latest
     environment:
+      TZ: Asia/Bangkok
       REDIS_HOSTS: local:redis:6379
     ports:
       - "8081:8081"
@@ -262,6 +273,7 @@ services:
         condition: service_healthy
     networks:
       - alpr-network
+    restart: unless-stopped
 
 volumes:
   pgdata:
