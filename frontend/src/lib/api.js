@@ -1,4 +1,5 @@
-const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
+const rawApiBase = (import.meta.env.VITE_API_BASE || "").replace(/\/+$/, "");
+export const API_BASE = rawApiBase.replace(/\/api$/i, "");
 
 export async function getKPI() {
   const res = await fetch(`${API_BASE}/api/dashboard/kpi`);

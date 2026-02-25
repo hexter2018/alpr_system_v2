@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { getKPI } from '../lib/api.js'
+import { getKPI, API_BASE  } from '../lib/api.js'
 import { Card, CardBody, CardHeader, StatCard, Spinner, Badge } from '../components/UIComponents.jsx'
 
 /* ===== ACCURACY GAUGE ===== */

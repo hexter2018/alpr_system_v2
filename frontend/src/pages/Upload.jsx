@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { uploadBatch, uploadSingle } from '../lib/api.js'
+import { uploadBatch, uploadSingle, API_BASE  } from '../lib/api.js'
 
 function UploadCard({ title, hint, children }) {
   return (

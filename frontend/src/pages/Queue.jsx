@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react'
-import { absImageUrl, deleteRead, listPending, verifyRead } from '../lib/api.js'
+import { absImageUrl, deleteRead, listPending, verifyRead, API_BASE } from '../lib/api.js'
 import { 
   Button, 
   Card, 

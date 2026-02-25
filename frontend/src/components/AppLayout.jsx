@@ -6,7 +6,6 @@ const navItems = [
   { to: '/upload', label: 'Upload', icon: 'upload' },
   { to: '/queue', label: 'Verification', icon: 'queue' },
   { to: '/master', label: 'Master', icon: 'db' },
-  { to: '/rtsp', label: 'RTSP', icon: 'cam' },
   { to: '/reports', label: 'Reports', icon: 'report' },
 ]
 
