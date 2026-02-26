@@ -70,7 +70,7 @@ export async function deleteCamera(cameraId) {
 export async function getCameraSnapshot(cameraId) {
   const res = await fetch(`${API_BASE}/api/cameras/${cameraId}/snapshot`)
   if (!res.ok) throw new Error('Failed to get camera snapshot')
-  return res.json()
+  return res.blob()
 }
 
 // ======================

@@ -160,34 +160,25 @@ function TriggerZoneEditor({ camera, onSave }) {
   const [snapshot, setSnapshot] = useState(null)
   const [imageObj, setImageObj] = useState(null)
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
+  const [loading, setLoading] = useState(false)
+  const [snapshotError, setSnapshotError] = useState(null)
   const stageRef = useRef(null)
 
   // Load camera snapshot
   useEffect(() => {
     if (camera && camera.camera_id) {
-      const controller = new AbortController()
-
-      fetch(`${API_BASE}/api/cameras/${camera.camera_id}/snapshot`, { signal: controller.signal })
+      setLoading(true)
+      setSnapshotError(null)
+      
+      fetch(`${API_BASE}/api/cameras/${camera.camera_id}/snapshot`)
         .then(res => {
-          if (res.status === 404) {
-            return null
-          }
           if (!res.ok) {
-            throw new Error(`Failed to load snapshot (status ${res.status})`)
+            throw new Error('No snapshot available')
           }
-          return res.json()
+          return res.blob()
         })
-        .then(snapshotData => {
-          if (!snapshotData?.image_url) {
-            setSnapshot(null)
-            setImageObj(null)
-            return null
-          }
-
-          const imageUrl = snapshotData.image_url.startsWith('http')
-            ? snapshotData.image_url
-            : `${API_BASE}${snapshotData.image_url}`
-
+        .then(blob => {
+          const url = URL.createObjectURL(blob)
           const img = new window.Image()
           img.onload = () => {
             setImageObj(img)
@@ -199,20 +190,22 @@ function TriggerZoneEditor({ camera, onSave }) {
               width: img.width * scale,
               height: img.height * scale
             })
+            setLoading(false)
           }
-          img.src = imageUrl
-          setSnapshot(imageUrl)
+          img.onerror = () => {
+            setSnapshotError('Failed to load snapshot image')
+            setImageObj(null)
+            setLoading(false)
+          }
+          img.src = url
+          setSnapshot(url)
         })
         .catch(err => {
-          if (err.name === 'AbortError') return
-          console.error('Failed to load snapshot metadata:', err)
+          // Silent catch - don't log to console
+          setSnapshotError(err.message)
           setImageObj(null)
-          setSnapshot(null)
+          setLoading(false)
         })
-
-      return () => {
-        controller.abort()
-      }
     }
   }, [camera])
 
@@ -344,20 +337,30 @@ function TriggerZoneEditor({ camera, onSave }) {
 
           {/* Canvas */}
           <div className="border border-blue-300/20 rounded-xl overflow-hidden bg-slate-950/40">
-            {!imageObj ? (
-              <div className="flex flex-col items-center justify-center h-96">
+            {loading ? (
+              <div className="flex items-center justify-center h-96">
+                <Spinner size="lg" className="text-blue-500" />
+                <span className="ml-3 text-slate-400">Loading snapshot...</span>
+              </div>
+            ) : !imageObj ? (
+              <div className="flex flex-col items-center justify-center h-96 p-8 text-center">
                 <div className="text-6xl mb-4">📷</div>
-                <p className="text-slate-400 mb-2">No snapshot available</p>
-                <p className="text-sm text-slate-500">
-                  Upload an image or start streaming to configure trigger zone
+                <p className="text-slate-300 font-semibold mb-2">No Snapshot Available</p>
+                <p className="text-sm text-slate-400 max-w-md">
+                  To configure the trigger zone, you need a snapshot from this camera.
+                  Upload an image with this camera_id or wait for the stream to start.
                 </p>
+                {snapshotError && (
+                  <div className="mt-4 px-4 py-2 bg-amber-500/10 border border-amber-300/30 rounded-lg">
+                    <p className="text-xs text-amber-200">{snapshotError}</p>
+                  </div>
+                )}
               </div>
             ) : (
               <Stage
                 width={dimensions.width}
                 height={dimensions.height}
                 onClick={handleStageClick}
-                preventDefault={false}
                 ref={stageRef}
               >
                 <Layer>
