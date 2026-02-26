@@ -35,5 +35,5 @@ class HealthMetricsOut(BaseModel):
     metric_type: str
     metric_name: str
     value: float
-    metadata: Optional[Dict[str, Any]] = None
+    metric_metadata: Optional[Dict[str, Any]] = None
     timestamp: datetime

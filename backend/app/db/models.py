@@ -147,5 +147,5 @@ class SystemMetric(Base):
     metric_type: Mapped[str] = mapped_column(String(50), index=True)  # camera_fps, queue_depth, worker_latency
     metric_name: Mapped[str] = mapped_column(String(100))  # camera_id or worker_name
     value: Mapped[float] = mapped_column(Float)
-    metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    metric_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

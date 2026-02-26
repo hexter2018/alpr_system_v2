@@ -56,7 +56,7 @@ def upgrade():
         sa.Column("metric_type", sa.String(length=50), nullable=False),
         sa.Column("metric_name", sa.String(length=100), nullable=False),
         sa.Column("value", sa.Float(), nullable=False),
-        sa.Column("metadata", postgresql.JSONB(), nullable=True),
+        sa.Column("metric_metadata", postgresql.JSONB(), nullable=True),
         sa.Column("timestamp", sa.DateTime(), nullable=False, index=True),
     )
     op.create_index("ix_system_metrics_type_time", "system_metrics", ["metric_type", "timestamp"])
