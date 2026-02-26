@@ -87,6 +87,7 @@ services:
       DATABASE_URL: postgresql+psycopg2://alpr:alpr@postgres:5432/alpr
       REDIS_URL: redis://redis:6379/0
       STORAGE_DIR: /storage
+      STORAGE_PATH_ALIASES: /tmp/alpr_storage:/storage
       
       # Model settings
       MODEL_PATH: /models/best.pt
