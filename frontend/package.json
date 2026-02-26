@@ -12,6 +12,7 @@
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.20.0",
     "axios": "^1.6.2",
+    "cobe": "^0.6.3",
     "lucide-react": "^0.294.0",
     "react-konva": "^18.2.10",
     "konva": "^9.2.3",

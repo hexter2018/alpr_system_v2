@@ -1,120 +1,272 @@
-import React, { useEffect, useState } from 'react'
-import { getKPI, API_BASE  } from '../lib/api.js'
-import { Card, CardBody, CardHeader, StatCard, Spinner, Badge } from '../components/UIComponents.jsx'
+import React, { useEffect, useState, useRef, useCallback } from 'react'
+import { getKPI } from '../lib/api.js'
+import {
+  Activity,
+  BarChart3,
+  CheckCircle2,
+  Clock,
+  Database,
+  Eye,
+  Gauge,
+  Globe2,
+  MapPin,
+  Radio,
+  ScanLine,
+  Shield,
+  Signal,
+  TrendingUp,
+  Zap,
+} from 'lucide-react'
+import createGlobe from 'cobe'
 
-/* ===== ACCURACY GAUGE ===== */
-function AccuracyGauge({ percentage, size = 'lg' }) {
-  const sizes = {
-    sm: { radius: 50, stroke: 8 },
-    md: { radius: 60, stroke: 10 },
-    lg: { radius: 70, stroke: 12 }
-  }
-  
-  const { radius, stroke } = sizes[size]
-  const normalizedRadius = radius - stroke / 2
-  const circumference = normalizedRadius * 2 * Math.PI
-  const strokeDashoffset = circumference - (percentage / 100) * circumference
+/* ================================================================
+   COBE GLOBE BACKGROUND
+   ================================================================ */
+function GlobeBackground() {
+  const canvasRef = useRef(null)
+  const pointerInteracting = useRef(null)
+  const pointerInteractionMovement = useRef(0)
+  const phiRef = useRef(0)
 
-  const getColor = (pct) => {
-    if (pct >= 95) return '#10b981' // emerald-500
-    if (pct >= 90) return '#34d399' // emerald-400
-    if (pct >= 80) return '#f59e0b' // amber-500
-    if (pct >= 70) return '#fb923c' // orange-400
-    return '#ef4444' // rose-500
-  }
+  const onPointerDown = useCallback((e) => {
+    pointerInteracting.current = e.clientX - pointerInteractionMovement.current
+    if (canvasRef.current) canvasRef.current.style.cursor = 'grabbing'
+  }, [])
 
-  const getGradient = (pct) => {
-    if (pct >= 90) return 'from-emerald-500 to-teal-400'
-    if (pct >= 75) return 'from-amber-500 to-orange-400'
-    return 'from-rose-500 to-orange-500'
-  }
+  const onPointerUp = useCallback(() => {
+    pointerInteracting.current = null
+    if (canvasRef.current) canvasRef.current.style.cursor = 'grab'
+  }, [])
+
+  const onPointerOut = useCallback(() => {
+    pointerInteracting.current = null
+    if (canvasRef.current) canvasRef.current.style.cursor = 'grab'
+  }, [])
+
+  const onPointerMove = useCallback((e) => {
+    if (pointerInteracting.current !== null) {
+      const delta = e.clientX - pointerInteracting.current
+      pointerInteractionMovement.current = delta
+    }
+  }, [])
+
+  useEffect(() => {
+    let width = 0
+    const onResize = () => {
+      if (canvasRef.current) {
+        width = canvasRef.current.offsetWidth
+      }
+    }
+    onResize()
+    window.addEventListener('resize', onResize)
+
+    if (!canvasRef.current) return
+
+    // Thailand-centered ALPR node locations [lat, lng]
+    const markers = [
+      { location: [13.7563, 100.5018], size: 0.08 },  // Bangkok
+      { location: [18.7883, 98.9853], size: 0.06 },   // Chiang Mai
+      { location: [7.8804, 98.3923], size: 0.05 },    // Phuket
+      { location: [12.9236, 100.8825], size: 0.05 },  // Pattaya
+      { location: [14.8798, 102.0123], size: 0.04 },  // Nakhon Ratchasima
+      { location: [16.4419, 102.836], size: 0.05 },   // Khon Kaen
+      { location: [9.1382, 99.3217], size: 0.04 },    // Surat Thani
+      { location: [6.8693, 101.251], size: 0.04 },    // Yala
+      { location: [14.3461, 100.5733], size: 0.04 },  // Ayutthaya
+      { location: [13.3611, 100.9847], size: 0.04 },  // Chonburi
+      { location: [15.87, 100.9925], size: 0.04 },    // Phitsanulok
+      { location: [8.4307, 99.9603], size: 0.04 },    // Nakhon Si Thammarat
+    ]
+
+    const globe = createGlobe(canvasRef.current, {
+      devicePixelRatio: 2,
+      width: width * 2,
+      height: width * 2,
+      phi: 0,
+      theta: 0.15,
+      dark: 1,
+      diffuse: 1.2,
+      mapSamples: 20000,
+      mapBrightness: 2.5,
+      baseColor: [0.05, 0.05, 0.05],
+      markerColor: [0.1, 0.8, 0.5],
+      glowColor: [0.04, 0.2, 0.15],
+      markers,
+      onRender: (state) => {
+        if (pointerInteracting.current === null) {
+          phiRef.current += 0.003
+        }
+        state.phi = phiRef.current + pointerInteractionMovement.current / 200
+        state.width = width * 2
+        state.height = width * 2
+      },
+    })
+
+    return () => {
+      globe.destroy()
+      window.removeEventListener('resize', onResize)
+    }
+  }, [])
 
   return (
-    <div className="flex flex-col items-center justify-center py-6">
-      <div className="relative">
-        <svg height={radius * 2} width={radius * 2} className="transform -rotate-90">
-          {/* Background circle */}
-          <circle
-            stroke="#1e293b"
-            fill="transparent"
-            strokeWidth={stroke}
-            r={normalizedRadius}
-            cx={radius}
-            cy={radius}
-          />
-          {/* Progress circle */}
-          <circle
-            stroke={getColor(percentage)}
-            fill="transparent"
-            strokeWidth={stroke}
-            strokeDasharray={circumference + ' ' + circumference}
-            style={{ 
-              strokeDashoffset,
-              transition: 'stroke-dashoffset 0.8s cubic-bezier(0.4, 0, 0.2, 1)'
-            }}
-            r={normalizedRadius}
-            cx={radius}
-            cy={radius}
-            strokeLinecap="round"
-          />
-        </svg>
-        
-        {/* Center text */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <div className={`text-4xl font-bold bg-gradient-to-r ${getGradient(percentage)} bg-clip-text text-transparent`}>
-            {percentage.toFixed(1)}%
-          </div>
-          <div className="text-xs text-slate-400 mt-1">ความแม่นยำ</div>
-        </div>
-      </div>
-
-      {/* Legend */}
-      <div className="mt-4 flex items-center gap-4 text-xs">
-        <div className="flex items-center gap-1.5">
-          <div className="w-2 h-2 rounded-full bg-emerald-500" />
-          <span className="text-slate-400">ดีเยี่ยม (≥90%)</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-2 h-2 rounded-full bg-amber-500" />
-          <span className="text-slate-400">ดี (70-90%)</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-2 h-2 rounded-full bg-rose-500" />
-          <span className="text-slate-400">ปรับปรุง (&lt;70%)</span>
-        </div>
+    <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-30">
+      <div className="relative w-[700px] h-[700px] max-w-[90vw] max-h-[90vh]">
+        {/* Glow behind globe */}
+        <div className="absolute inset-0 rounded-full bg-emerald-500/10 blur-3xl scale-110" />
+        <canvas
+          ref={canvasRef}
+          onPointerDown={onPointerDown}
+          onPointerUp={onPointerUp}
+          onPointerOut={onPointerOut}
+          onPointerMove={onPointerMove}
+          className="w-full h-full pointer-events-auto cursor-grab"
+          style={{ contain: 'layout paint size', aspectRatio: '1' }}
+        />
       </div>
     </div>
   )
 }
 
-/* ===== CONFIDENCE DISTRIBUTION CHART ===== */
-function ConfidenceChart({ high, medium, low }) {
-  const total = high + medium + low || 1
-  const highPct = (high / total) * 100
-  const medPct = (medium / total) * 100
-  const lowPct = (low / total) * 100
+/* ================================================================
+   GLASS CARD WRAPPER
+   ================================================================ */
+function GlassCard({ children, className = '', glow = '', hover = true }) {
+  return (
+    <div
+      className={`
+        relative rounded-2xl border border-white/[0.08]
+        bg-white/[0.03] backdrop-blur-xl
+        ${hover ? 'hover:bg-white/[0.06] hover:border-white/[0.12] transition-all duration-300' : ''}
+        ${glow}
+        ${className}
+      `}
+    >
+      {children}
+    </div>
+  )
+}
 
-  const bars = [
-    { label: 'สูง (≥90%)', value: high, pct: highPct, color: 'from-emerald-500 to-emerald-400', textColor: 'text-emerald-400' },
-    { label: 'ปานกลาง (70-90%)', value: medium, pct: medPct, color: 'from-amber-500 to-amber-400', textColor: 'text-amber-400' },
-    { label: 'ต่ำ (<70%)', value: low, pct: lowPct, color: 'from-rose-500 to-rose-400', textColor: 'text-rose-400' }
+/* ================================================================
+   ANIMATED NUMBER COUNTER
+   ================================================================ */
+function AnimatedNumber({ value, duration = 1200 }) {
+  const [display, setDisplay] = useState(0)
+  const numericValue = typeof value === 'number' ? value : parseInt(String(value).replace(/,/g, ''), 10) || 0
+
+  useEffect(() => {
+    if (numericValue === 0) {
+      setDisplay(0)
+      return
+    }
+    let start = 0
+    const step = numericValue / (duration / 16)
+    const timer = setInterval(() => {
+      start += step
+      if (start >= numericValue) {
+        setDisplay(numericValue)
+        clearInterval(timer)
+      } else {
+        setDisplay(Math.floor(start))
+      }
+    }, 16)
+    return () => clearInterval(timer)
+  }, [numericValue, duration])
+
+  return <>{display.toLocaleString()}</>
+}
+
+/* ================================================================
+   LIVE PULSE INDICATOR
+   ================================================================ */
+function LivePulse() {
+  return (
+    <span className="relative flex h-2.5 w-2.5">
+      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+    </span>
+  )
+}
+
+/* ================================================================
+   ACCURACY RING
+   ================================================================ */
+function AccuracyRing({ percentage }) {
+  const radius = 58
+  const stroke = 6
+  const normalizedRadius = radius - stroke / 2
+  const circumference = normalizedRadius * 2 * Math.PI
+  const strokeDashoffset = circumference - (percentage / 100) * circumference
+
+  const getColor = (pct) => {
+    if (pct >= 95) return '#10b981'
+    if (pct >= 90) return '#34d399'
+    if (pct >= 80) return '#f59e0b'
+    if (pct >= 70) return '#fb923c'
+    return '#ef4444'
+  }
+
+  return (
+    <div className="relative inline-flex items-center justify-center">
+      <svg height={radius * 2} width={radius * 2} className="transform -rotate-90">
+        <circle
+          stroke="rgba(255,255,255,0.06)"
+          fill="transparent"
+          strokeWidth={stroke}
+          r={normalizedRadius}
+          cx={radius}
+          cy={radius}
+        />
+        <circle
+          stroke={getColor(percentage)}
+          fill="transparent"
+          strokeWidth={stroke}
+          strokeDasharray={circumference + ' ' + circumference}
+          style={{
+            strokeDashoffset,
+            transition: 'stroke-dashoffset 1s cubic-bezier(0.4, 0, 0.2, 1)',
+          }}
+          r={normalizedRadius}
+          cx={radius}
+          cy={radius}
+          strokeLinecap="round"
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-2xl font-bold text-white">{percentage.toFixed(1)}%</span>
+        <span className="text-[10px] text-slate-400 uppercase tracking-widest mt-0.5">Accuracy</span>
+      </div>
+    </div>
+  )
+}
+
+/* ================================================================
+   CONFIDENCE BAR
+   ================================================================ */
+function ConfidenceDistribution({ high, medium, low }) {
+  const total = high + medium + low || 1
+  const segments = [
+    { label: 'High', sub: '(\u226590%)', value: high, pct: (high / total) * 100, color: 'bg-emerald-500', text: 'text-emerald-400' },
+    { label: 'Medium', sub: '(70-90%)', value: medium, pct: (medium / total) * 100, color: 'bg-amber-500', text: 'text-amber-400' },
+    { label: 'Low', sub: '(<70%)', value: low, pct: (low / total) * 100, color: 'bg-rose-500', text: 'text-rose-400' },
   ]
 
   return (
     <div className="space-y-4">
-      {bars.map(bar => (
-        <div key={bar.label} className="space-y-2">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-slate-300">{bar.label}</span>
-            <div className="flex items-center gap-2">
-              <span className={`font-semibold ${bar.textColor}`}>{bar.value.toLocaleString()}</span>
-              <span className="text-xs text-slate-500">({bar.pct.toFixed(1)}%)</span>
-            </div>
+      {segments.map((s) => (
+        <div key={s.label} className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-slate-400">
+              {s.label} <span className="text-slate-500">{s.sub}</span>
+            </span>
+            <span className={`text-sm font-semibold ${s.text}`}>
+              {s.value.toLocaleString()}
+              <span className="text-slate-500 font-normal ml-1 text-xs">({s.pct.toFixed(1)}%)</span>
+            </span>
           </div>
-          <div className="h-3 w-full overflow-hidden rounded-full bg-slate-800">
-            <div 
-              className={`h-full bg-gradient-to-r ${bar.color} transition-all duration-700 ease-out`}
-              style={{ width: `${bar.pct}%` }}
+          <div className="h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
+            <div
+              className={`h-full rounded-full ${s.color} transition-all duration-700`}
+              style={{ width: `${s.pct}%` }}
             />
           </div>
         </div>
@@ -123,66 +275,66 @@ function ConfidenceChart({ high, medium, low }) {
   )
 }
 
-/* ===== MINI LINE CHART (SPARKLINE) ===== */
-function Sparkline({ data, color = 'emerald' }) {
-  if (!data || data.length === 0) return null
-  
-  const max = Math.max(...data)
-  const min = Math.min(...data)
-  const range = max - min || 1
-  
-  const points = data.map((value, i) => {
-    const x = (i / (data.length - 1)) * 100
-    const y = 100 - ((value - min) / range) * 100
-    return `${x},${y}`
-  }).join(' ')
-
-  const colors = {
-    emerald: 'stroke-emerald-400',
-    blue: 'stroke-blue-400',
-    amber: 'stroke-amber-400'
-  }
+/* ================================================================
+   PROVINCE DETECTION BAR
+   ================================================================ */
+function ProvinceBar({ withProv, withoutProv }) {
+  const total = Math.max(withProv + withoutProv, 1)
+  const withPct = (withProv / total) * 100
 
   return (
-    <svg className="h-8 w-16" viewBox="0 0 100 100" preserveAspectRatio="none">
-      <polyline
-        fill="none"
-        className={`${colors[color]} transition-all duration-500`}
-        strokeWidth="3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        points={points}
-      />
-    </svg>
-  )
-}
-
-/* ===== ACTIVITY CARD ===== */
-function ActivityCard({ icon, title, value, trend, sparklineData }) {
-  return (
-    <div className="flex items-start justify-between p-4 rounded-xl border border-slate-700/50 bg-slate-800/30 hover:bg-slate-800/50 transition-colors">
-      <div className="flex-1">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-lg">{icon}</span>
-          <span className="text-xs text-slate-400">{title}</span>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between text-xs">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-emerald-500" />
+          <span className="text-slate-300">Detected</span>
         </div>
-        <div className="text-2xl font-bold text-slate-100">{value}</div>
-        {trend && (
-          <div className={`text-xs font-medium mt-1 ${trend > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-            {trend > 0 ? '↑' : '↓'} {Math.abs(trend)}%
-          </div>
-        )}
+        <span className="font-semibold text-emerald-400">{withProv.toLocaleString()}</span>
       </div>
-      {sparklineData && (
-        <div className="flex items-center">
-          <Sparkline data={sparklineData} color={trend > 0 ? 'emerald' : 'amber'} />
+      <div className="h-2 w-full rounded-full bg-white/[0.06] overflow-hidden">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-700"
+          style={{ width: `${withPct}%` }}
+        />
+      </div>
+      <div className="flex items-center justify-between text-xs">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-amber-500" />
+          <span className="text-slate-300">Undetected</span>
         </div>
-      )}
+        <span className="font-semibold text-amber-400">{withoutProv.toLocaleString()}</span>
+      </div>
     </div>
   )
 }
 
-/* ===== MAIN DASHBOARD ===== */
+/* ================================================================
+   KPI STAT CARD
+   ================================================================ */
+function KpiCard({ icon: Icon, label, value, sub, glowColor = '' }) {
+  return (
+    <GlassCard className={`p-5 ${glowColor}`}>
+      <div className="flex items-start justify-between">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.06]">
+              <Icon className="h-4 w-4 text-emerald-400" />
+            </div>
+            <span className="text-xs font-medium text-slate-400 uppercase tracking-wider truncate">{label}</span>
+          </div>
+          <div className="text-3xl font-bold text-white tracking-tight">
+            <AnimatedNumber value={value} />
+          </div>
+          {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
+        </div>
+      </div>
+    </GlassCard>
+  )
+}
+
+/* ================================================================
+   MAIN DASHBOARD
+   ================================================================ */
 export default function Dashboard() {
   const [kpi, setKpi] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -200,299 +352,295 @@ export default function Dashboard() {
         setLoading(false)
       }
     }
-    
+
     fetchKPI()
-    const interval = setInterval(fetchKPI, 30000) // Refresh every 30s
+    const interval = setInterval(fetchKPI, 30000)
     return () => clearInterval(interval)
   }, [])
 
+  /* ---------- LOADING ---------- */
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="flex flex-col items-center gap-4">
-          <Spinner size="lg" className="text-emerald-500" />
-          <p className="text-slate-300">กำลังโหลดข้อมูล Dashboard...</p>
+      <div className="relative min-h-[80vh] flex items-center justify-center">
+        <GlobeBackground />
+        <div className="relative z-10 flex flex-col items-center gap-4">
+          <div className="h-10 w-10 rounded-full border-2 border-emerald-500/30 border-t-emerald-500 animate-spin" />
+          <p className="text-sm text-slate-400 tracking-wide">Loading Dashboard...</p>
         </div>
       </div>
     )
   }
 
+  /* ---------- ERROR ---------- */
   if (error) {
     return (
-      <Card className="bg-rose-500/10 border-rose-300/40">
-        <CardBody>
+      <div className="relative min-h-[80vh] flex items-center justify-center">
+        <GlobeBackground />
+        <GlassCard className="relative z-10 p-6 max-w-md border-rose-500/20">
           <div className="flex items-start gap-3">
-            <svg className="w-5 h-5 text-rose-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-            </svg>
-            <p className="text-sm text-rose-200">{error}</p>
+            <Shield className="h-5 w-5 text-rose-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <h3 className="text-sm font-semibold text-rose-300 mb-1">Connection Error</h3>
+              <p className="text-xs text-rose-200/70 leading-relaxed">{error}</p>
+            </div>
           </div>
-        </CardBody>
-      </Card>
+        </GlassCard>
+      </div>
     )
   }
 
   if (!kpi) return null
 
-  const accuracy = kpi.alpr_total + kpi.mlpr_total > 0
-    ? (kpi.alpr_total / (kpi.alpr_total + kpi.mlpr_total)) * 100
-    : 0
+  /* ---------- DERIVED DATA ---------- */
+  const accuracy =
+    kpi.alpr_total + kpi.mlpr_total > 0
+      ? (kpi.alpr_total / (kpi.alpr_total + kpi.mlpr_total)) * 100
+      : 0
 
   const todayReads = kpi.today_reads ?? 0
   const yesterdayReads = kpi.yesterday_reads ?? 0
   const sevenDayReads = kpi.last_7_days_reads ?? 0
   const withProvinceReads = kpi.with_province_reads ?? 0
   const withoutProvinceReads = kpi.without_province_reads ?? 0
-  const provinceTotal = Math.max(withProvinceReads + withoutProvinceReads, 1)
-  const withProvincePct = (withProvinceReads / provinceTotal) * 100
-  const withoutProvincePct = (withoutProvinceReads / provinceTotal) * 100
 
-  const todayTrend = yesterdayReads > 0
-    ? ((todayReads - yesterdayReads) / yesterdayReads) * 100
-    : 0
+  const todayTrend =
+    yesterdayReads > 0 ? ((todayReads - yesterdayReads) / yesterdayReads) * 100 : 0
 
-  const todaySparkline = [Math.max(yesterdayReads, 0), todayReads]
-  const weekSparkline = [
-    Math.max(sevenDayReads - (todayReads + yesterdayReads), 0),
-    Math.max(sevenDayReads - todayReads, 0),
-    sevenDayReads,
-  ]
-
-
+  /* ---------- RENDER ---------- */
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <Card className="bg-gradient-to-r from-emerald-600/20 via-emerald-500/10 to-teal-500/15 border-emerald-300/20">
-        <CardBody>
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
-                Dashboard
+    <div className="relative min-h-[80vh]">
+      {/* Globe Background */}
+      <GlobeBackground />
+
+      {/* Overlay Content */}
+      <div className="relative z-10 space-y-5">
+        {/* ---- HEADER ---- */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-3 mb-1">
+              <Globe2 className="h-6 w-6 text-emerald-400" />
+              <h1 className="text-2xl font-bold text-white tracking-tight">
+                ALPR Command Center
               </h1>
-              <p className="text-sm text-slate-300 mt-1">
-                ภาพรวมระบบตรวจจับป้ายทะเบียน พร้อมสถิติแบบ Real-time
-              </p>
             </div>
-            <Badge variant="success" size="lg">
-              <span className="relative flex h-2 w-2 mr-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-              ระบบพร้อมใช้งาน
-            </Badge>
+            <p className="text-sm text-slate-400 pl-9">
+              Real-time license plate recognition overview
+            </p>
           </div>
-        </CardBody>
-      </Card>
+          <div className="flex items-center gap-3 self-start sm:self-auto">
+            <GlassCard className="flex items-center gap-2 px-3 py-1.5" hover={false}>
+              <LivePulse />
+              <span className="text-xs font-medium text-emerald-300">System Online</span>
+            </GlassCard>
+            <GlassCard className="flex items-center gap-2 px-3 py-1.5" hover={false}>
+              <Radio className="h-3.5 w-3.5 text-cyan-400" />
+              <span className="text-xs font-medium text-slate-300">12 Nodes Active</span>
+            </GlassCard>
+          </div>
+        </div>
 
-      {/* KPI Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          title="Total Scans"
-          value={kpi.total_reads.toLocaleString()}
-          subtitle="ครั้ง"
-          icon="📊"
-          gradient="from-emerald-900/40 to-emerald-900/20"
-          trend={{ value: "+12.5% จากเดือนที่แล้ว", positive: true }}
-        />
-        <StatCard
-          title="Verified"
-          value={kpi.verified.toLocaleString()}
-          subtitle={`${kpi.total_reads > 0 ? ((kpi.verified / kpi.total_reads) * 100).toFixed(1) : 0}%`}
-          icon="✓"
-          gradient="from-teal-900/40 to-teal-900/20"
-          trend={{ value: "+8.3% จากเดือนที่แล้ว", positive: true }}
-        />
-        <StatCard
-          title="Pending Queue"
-          value={kpi.pending.toLocaleString()}
-          subtitle="รอตรวจสอบ"
-          icon="⏳"
-          gradient="from-amber-900/40 to-amber-900/20"
-        />
-        <StatCard
-          title="Master Database"
-          value={kpi.master_total.toLocaleString()}
-          subtitle="ป้ายทะเบียน"
-          icon="🗂️"
-          gradient="from-green-900/40 to-green-900/20"
-          trend={{ value: "+156 รายการใหม่", positive: true }}
-        />
-      </div>
+        {/* ---- PRIMARY KPI ROW ---- */}
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+          <KpiCard
+            icon={ScanLine}
+            label="Total Scans"
+            value={kpi.total_reads}
+            sub={`${todayReads.toLocaleString()} today`}
+            glowColor="shadow-[0_0_30px_rgba(16,185,129,0.08)]"
+          />
+          <KpiCard
+            icon={CheckCircle2}
+            label="Verified"
+            value={kpi.verified}
+            sub={`${kpi.total_reads > 0 ? ((kpi.verified / kpi.total_reads) * 100).toFixed(1) : 0}% rate`}
+          />
+          <KpiCard
+            icon={Clock}
+            label="Pending Queue"
+            value={kpi.pending}
+            sub="Awaiting review"
+          />
+          <KpiCard
+            icon={Database}
+            label="Master Database"
+            value={kpi.master_total}
+            sub="Registered plates"
+          />
+        </div>
 
-      {/* Accuracy & Distribution */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Accuracy Gauge */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
+        {/* ---- BENTO GRID ---- */}
+        <div className="grid gap-4 grid-cols-1 lg:grid-cols-12">
+          {/* Accuracy Panel - Spans 5 cols */}
+          <GlassCard className="lg:col-span-5 p-6" glow="shadow-[0_0_40px_rgba(16,185,129,0.06)]">
+            <div className="flex items-center justify-between mb-5">
               <div>
-                <h2 className="text-lg font-semibold text-slate-100">ความแม่นยำระบบ AI</h2>
-                <p className="text-xs text-slate-400 mt-0.5">เปรียบเทียบ ALPR vs MLPR</p>
+                <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <Gauge className="h-4 w-4 text-emerald-400" />
+                  AI Accuracy
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">ALPR vs MLPR comparison</p>
               </div>
-              <Badge variant={accuracy >= 90 ? 'success' : accuracy >= 75 ? 'warning' : 'danger'}>
-                {accuracy >= 90 ? 'ดีเยี่ยม' : accuracy >= 75 ? 'ดี' : 'ควรปรับปรุง'}
-              </Badge>
+              <span
+                className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
+                  accuracy >= 90
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                    : accuracy >= 75
+                      ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                      : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                }`}
+              >
+                {accuracy >= 90 ? 'Excellent' : accuracy >= 75 ? 'Good' : 'Needs Improvement'}
+              </span>
             </div>
-          </CardHeader>
-          <CardBody>
-            <div className="grid md:grid-cols-2 gap-6">
-              <AccuracyGauge percentage={accuracy} />
-              
-              <div className="flex flex-col justify-center space-y-3">
-                <div className="rounded-xl border border-emerald-300/30 bg-gradient-to-br from-emerald-500/15 to-emerald-500/5 p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-xs font-medium text-emerald-300 uppercase tracking-wide">ALPR</div>
-                      <div className="text-sm text-emerald-200 mt-0.5">ถูกต้องตั้งแต่ต้น</div>
-                    </div>
-                    <div className="text-3xl font-bold text-emerald-100">{kpi.alpr_total}</div>
-                  </div>
-                </div>
-                
-                <div className="rounded-xl border border-rose-300/30 bg-gradient-to-br from-rose-500/15 to-rose-500/5 p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-xs font-medium text-rose-300 uppercase tracking-wide">MLPR</div>
-                      <div className="text-sm text-rose-200 mt-0.5">แก้ไขโดยมนุษย์</div>
-                    </div>
-                    <div className="text-3xl font-bold text-rose-100">{kpi.mlpr_total}</div>
-                  </div>
-                </div>
-                
-                <div className="rounded-xl border border-teal-300/30 bg-gradient-to-br from-teal-500/15 to-teal-500/5 p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-xs font-medium text-teal-300 uppercase tracking-wide">Auto-Master</div>
-                      <div className="text-sm text-teal-200 mt-0.5">เข้า DB อัตโนมัติ</div>
-                    </div>
-                    <div className="text-3xl font-bold text-teal-100">{kpi.auto_master}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </CardBody>
-        </Card>
 
-        {/* Confidence Distribution */}
-        <Card>
-          <CardHeader>
-            <h2 className="text-lg font-semibold text-slate-100">การกระจายความมั่นใจ</h2>
-            <p className="text-xs text-slate-400 mt-0.5">Confidence Score Distribution</p>
-          </CardHeader>
-          <CardBody>
-            <ConfidenceChart
+            <div className="flex flex-col sm:flex-row items-center gap-6">
+              <AccuracyRing percentage={accuracy} />
+
+              <div className="flex-1 w-full space-y-2.5">
+                {[
+                  {
+                    label: 'ALPR',
+                    desc: 'Auto-correct',
+                    value: kpi.alpr_total,
+                    color: 'text-emerald-400',
+                    bar: 'bg-emerald-500',
+                    border: 'border-emerald-500/20',
+                  },
+                  {
+                    label: 'MLPR',
+                    desc: 'Human-corrected',
+                    value: kpi.mlpr_total,
+                    color: 'text-rose-400',
+                    bar: 'bg-rose-500',
+                    border: 'border-rose-500/20',
+                  },
+                  {
+                    label: 'Auto-Master',
+                    desc: 'Auto-insert to DB',
+                    value: kpi.auto_master,
+                    color: 'text-teal-400',
+                    bar: 'bg-teal-500',
+                    border: 'border-teal-500/20',
+                  },
+                ].map((item) => (
+                  <div
+                    key={item.label}
+                    className={`flex items-center justify-between rounded-xl border ${item.border} bg-white/[0.02] px-3 py-2.5`}
+                  >
+                    <div>
+                      <span className={`text-xs font-semibold ${item.color} uppercase tracking-wide`}>{item.label}</span>
+                      <p className="text-[10px] text-slate-500">{item.desc}</p>
+                    </div>
+                    <span className="text-lg font-bold text-white">{item.value.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </GlassCard>
+
+          {/* Confidence Distribution - Spans 4 cols */}
+          <GlassCard className="lg:col-span-4 p-6">
+            <div className="flex items-center gap-2 mb-5">
+              <BarChart3 className="h-4 w-4 text-emerald-400" />
+              <h2 className="text-sm font-semibold text-white">Confidence Distribution</h2>
+            </div>
+            <ConfidenceDistribution
               high={Math.floor(kpi.total_reads * 0.65)}
               medium={Math.floor(kpi.total_reads * 0.25)}
               low={Math.floor(kpi.total_reads * 0.1)}
             />
-          </CardBody>
-        </Card>
-      </div>
 
-      {/* Activity Grid */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <ActivityCard
-          icon="📅"
-          title="วันนี้"
-          value={todayReads.toLocaleString()}
-          trend={todayTrend}
-          sparklineData={todaySparkline}
-        />
-        <ActivityCard
-          icon="📊"
-          title="7 วันที่แล้ว"
-          value={sevenDayReads.toLocaleString()}
-          trend={8.2}
-          sparklineData={weekSparkline}
-        />
-        <ActivityCard
-          icon="⚡"
-          title="Avg Processing"
-          value="0.8s"
-          trend={-5.3}
-        />
-        <ActivityCard
-          icon="🎯"
-          title="Throughput"
-          value="~125/min"
-          trend={15.8}
-        />
-      </div>
+            <div className="mt-5 pt-4 border-t border-white/[0.06]">
+              <div className="flex items-center gap-2 mb-3">
+                <MapPin className="h-4 w-4 text-emerald-400" />
+                <h3 className="text-xs font-semibold text-white">Province Detection</h3>
+              </div>
+              <ProvinceBar withProv={withProvinceReads} withoutProv={withoutProvinceReads} />
+            </div>
+          </GlassCard>
 
-      {/* Stats Grid */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <h3 className="text-base font-semibold text-slate-100">สถิติรายวัน</h3>
-          </CardHeader>
-          <CardBody>
-            <div className="space-y-3">
-              {[
-                { label: 'วันนี้', value: todayReads, color: 'text-emerald-400' },
-                { label: 'เมื่อวาน', value: yesterdayReads, color: 'text-slate-300' },
-                { label: '7 วันที่แล้ว', value: sevenDayReads, color: 'text-slate-300' }
-              ].map(stat => (
-                <div key={stat.label} className="flex justify-between items-center">
-                  <span className="text-sm text-slate-400">{stat.label}</span>
-                  <span className={`text-base font-semibold ${stat.color}`}>
-                    {stat.value.toLocaleString()}
+          {/* Activity & Stats - Spans 3 cols */}
+          <div className="lg:col-span-3 space-y-4">
+            {/* Today */}
+            <GlassCard className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-emerald-400" />
+                  <span className="text-xs font-semibold text-white">Today</span>
+                </div>
+                {todayTrend !== 0 && (
+                  <span
+                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                      todayTrend > 0
+                        ? 'bg-emerald-500/10 text-emerald-400'
+                        : 'bg-rose-500/10 text-rose-400'
+                    }`}
+                  >
+                    {todayTrend > 0 ? '+' : ''}
+                    {todayTrend.toFixed(1)}%
                   </span>
-                </div>
-              ))}
-            </div>
-          </CardBody>
-        </Card>
+                )}
+              </div>
+              <div className="text-2xl font-bold text-white">
+                <AnimatedNumber value={todayReads} />
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1">vs {yesterdayReads.toLocaleString()} yesterday</p>
+            </GlassCard>
 
-        <Card>
-          <CardHeader>
-            <h3 className="text-base font-semibold text-slate-100">Province Detection</h3>
-          </CardHeader>
-          <CardBody>
-            <div className="space-y-3">
-              {[
-                { label: 'มีจังหวัด', value: withProvinceReads, color: 'text-emerald-400', pct: withProvincePct },
-                { label: 'ไม่มีจังหวัด', value: withoutProvinceReads, color: 'text-amber-400', pct: withoutProvincePct }
-              ].map(stat => (
-                <div key={stat.label}>
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-sm text-slate-400">{stat.label}</span>
-                    <span className={`text-base font-semibold ${stat.color}`}>
-                      {stat.value.toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                    <div 
-                      className={`h-full ${stat.color === 'text-emerald-400' ? 'bg-emerald-500' : 'bg-amber-500'} transition-all duration-500`}
-                      style={{ width: `${stat.pct}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardBody>
-        </Card>
+            {/* 7 Days */}
+            <GlassCard className="p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <TrendingUp className="h-4 w-4 text-cyan-400" />
+                <span className="text-xs font-semibold text-white">Last 7 Days</span>
+              </div>
+              <div className="text-2xl font-bold text-white">
+                <AnimatedNumber value={sevenDayReads} />
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1">total reads this week</p>
+            </GlassCard>
 
-        <Card>
-          <CardHeader>
-            <h3 className="text-base font-semibold text-slate-100">Performance</h3>
-          </CardHeader>
-          <CardBody>
-            <div className="space-y-3">
-              {[
-                { label: 'Avg. Processing', value: '0.8s', color: 'text-emerald-400' },
-                { label: 'Throughput', value: '~125/min', color: 'text-slate-300' },
-                { label: 'Uptime', value: '99.8%', color: 'text-emerald-400' }
-              ].map(stat => (
-                <div key={stat.label} className="flex justify-between items-center">
-                  <span className="text-sm text-slate-400">{stat.label}</span>
-                  <span className={`text-base font-semibold ${stat.color}`}>
-                    {stat.value}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </CardBody>
-        </Card>
+            {/* Performance */}
+            <GlassCard className="p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Zap className="h-4 w-4 text-amber-400" />
+                <span className="text-xs font-semibold text-white">Performance</span>
+              </div>
+              <div className="space-y-2.5">
+                {[
+                  { label: 'Avg. Processing', value: '0.8s', icon: Gauge },
+                  { label: 'Throughput', value: '~125/min', icon: Signal },
+                  { label: 'Uptime', value: '99.8%', icon: Eye },
+                ].map((item) => (
+                  <div key={item.label} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <item.icon className="h-3 w-3 text-slate-500" />
+                      <span className="text-[11px] text-slate-400">{item.label}</span>
+                    </div>
+                    <span className="text-xs font-semibold text-white">{item.value}</span>
+                  </div>
+                ))}
+              </div>
+            </GlassCard>
+          </div>
+        </div>
+
+        {/* ---- DAILY STATS ROW ---- */}
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
+          {[
+            { label: 'Today', value: todayReads, color: 'text-emerald-400', glow: 'shadow-[0_0_15px_rgba(16,185,129,0.15)]' },
+            { label: 'Yesterday', value: yesterdayReads, color: 'text-slate-300', glow: '' },
+            { label: 'Last 7 Days', value: sevenDayReads, color: 'text-cyan-400', glow: '' },
+          ].map((stat) => (
+            <GlassCard key={stat.label} className={`p-4 ${stat.glow}`}>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-400">{stat.label}</span>
+                <span className={`text-xl font-bold ${stat.color}`}>
+                  {stat.value.toLocaleString()}
+                </span>
+              </div>
+            </GlassCard>
+          ))}
+        </div>
       </div>
     </div>
   )
