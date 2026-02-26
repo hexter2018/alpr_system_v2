@@ -55,6 +55,24 @@ def build_output_path(storage: Path, filename: str | None) -> Path:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     return out_path
 
+async def save_upload_file(upload: UploadFile, out_path: Path, chunk_size: int = 1024 * 1024) -> None:
+    try:
+        with out_path.open("wb") as f:
+            while True:
+                chunk = await upload.read(chunk_size)
+                if not chunk:
+                    break
+                f.write(chunk)
+    except OSError as exc:
+        logger.exception("Failed to write uploaded file '%s' to disk", upload.filename)
+        raise HTTPException(status_code=500, detail="Failed to store uploaded file") from exc
+    finally:
+        await upload.close()
+
+    if out_path.stat().st_size == 0:
+        out_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail=f"Uploaded file '{upload.filename or '(unknown)'}' is empty")
+    
 def persist_capture(db: Session, out_path: Path) -> models.Capture:
     digest = sha256_file(out_path)
     cap = models.Capture(source="UPLOAD", original_path=str(out_path), sha256=digest)
@@ -74,12 +92,7 @@ async def upload_one(file: UploadFile = File(...), db: Session = Depends(get_db)
     storage = resolve_storage_dir()
     out_path = build_output_path(storage, file.filename)
 
-    try:
-        content = await file.read()
-        out_path.write_bytes(content)
-    except OSError as exc:
-        logger.exception("Failed to write uploaded file to disk")
-        raise HTTPException(status_code=500, detail="Failed to store uploaded file") from exc
+    await save_upload_file(file, out_path)
 
     cap = persist_capture(db, out_path)
 
@@ -107,7 +120,7 @@ async def upload_batch(files: list[UploadFile] = File(...), db: Session = Depend
     for file in files:
         try:
             out_path = build_output_path(storage, file.filename)
-            out_path.write_bytes(await file.read())
+            await save_upload_file(file, out_path)
             cap = persist_capture(db, out_path)
 
             try:
