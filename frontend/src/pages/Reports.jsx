@@ -1,6 +1,18 @@
 import React, { useState, useEffect } from 'react'
 import { absImageUrl, API_BASE } from '../lib/api.js'
 
+function formatBangkokDateTime(value) {
+  if (!value) return '-'
+
+  const raw = String(value)
+  const hasTimezone = /([zZ]|[+-]\d{2}:\d{2})$/.test(raw)
+  const normalized = hasTimezone ? raw : `${raw}Z`
+  const parsed = new Date(normalized)
+
+  if (Number.isNaN(parsed.getTime())) return raw
+  return parsed.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })
+}
+
 export default function Reports() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
@@ -265,7 +277,9 @@ export default function Reports() {
                       </td>
                       <td className="p-2 text-slate-300">{a.status}</td>
                       <td className="p-2 text-slate-300">{a.camera_id}</td>
-                      <td className="p-2 text-slate-400">{new Date(a.created_at).toLocaleString('th-TH')}</td>
+                      <td className="p-2 text-slate-400">
+                        {formatBangkokDateTime(a.created_at)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
