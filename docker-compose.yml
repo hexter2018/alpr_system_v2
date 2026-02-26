@@ -70,6 +70,7 @@ services:
     build:
       context: ./worker
     deploy:
+      replicas: 3  # <--- เพิ่มบรรทัดนี้เพื่อกำหนดจำนวน scale
       resources:
         reservations:
           devices:

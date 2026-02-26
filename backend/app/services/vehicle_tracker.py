@@ -1,0 +1,331 @@
+from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass, field
+from enum import Enum
+import numpy as np
+from collections import deque
+import time
+
+from .trigger_zone import BBox, TriggerZone
+
+
+class VehicleState(str, Enum):
+    """State machine for vehicle tracking"""
+    IDLE = "IDLE"                          # Vehicle detected but not in zone
+    ENTERING_ZONE = "ENTERING_ZONE"        # Vehicle crossing zone boundary
+    IN_ZONE = "IN_ZONE"                    # Vehicle fully inside zone
+    PROCESSING = "PROCESSING"              # Best shot selected, waiting for OCR
+    PROCESSED = "PROCESSED"                # OCR complete, result sent
+    EXITING_ZONE = "EXITING_ZONE"         # Vehicle leaving zone
+    EXITED = "EXITED"                      # Vehicle left zone (cleanup soon)
+
+
+@dataclass
+class VehicleTrack:
+    """Represents a tracked vehicle with state machine"""
+    track_id: int
+    state: VehicleState = VehicleState.IDLE
+    
+    # Tracking data
+    bbox_history: deque = field(default_factory=lambda: deque(maxlen=30))  # Last 30 frames
+    frame_history: deque = field(default_factory=lambda: deque(maxlen=30))
+    confidence_history: deque = field(default_factory=lambda: deque(maxlen=30))
+    
+    # Zone tracking
+    frames_in_zone: int = 0
+    frames_out_of_zone: int = 0
+    zone_id: Optional[int] = None
+    
+    # Best shot selection
+    best_shot_frame: Optional[np.ndarray] = None
+    best_shot_bbox: Optional[BBox] = None
+    best_shot_score: float = 0.0
+    
+    # Timestamps
+    first_seen: float = field(default_factory=time.time)
+    last_seen: float = field(default_factory=time.time)
+    zone_entry_time: Optional[float] = None
+    zone_exit_time: Optional[float] = None
+    
+    # Processing results
+    ocr_result: Optional[dict] = None
+    processing_started: bool = False
+    
+    def update(self, bbox: BBox, frame: np.ndarray, confidence: float):
+        """Update track with new detection"""
+        self.bbox_history.append(bbox)
+        self.frame_history.append(frame.copy())
+        self.confidence_history.append(confidence)
+        self.last_seen = time.time()
+    
+    def get_best_shot(self) -> Tuple[Optional[np.ndarray], Optional[BBox]]:
+        """
+        Select best frame for OCR based on:
+        1. Largest bounding box area (closest to camera)
+        2. Highest detection confidence
+        3. Most centered in frame
+        """
+        if not self.bbox_history or not self.frame_history:
+            return None, None
+        
+        best_idx = 0
+        best_score = 0.0
+        
+        frame_height, frame_width = self.frame_history[0].shape[:2]
+        frame_center = (frame_width / 2, frame_height / 2)
+        
+        for idx, (bbox, conf) in enumerate(zip(self.bbox_history, self.confidence_history)):
+            # Score components
+            area_score = bbox.area / (frame_width * frame_height)  # Normalized area
+            conf_score = conf
+            
+            # Distance from center (lower is better)
+            center_dist = np.sqrt(
+                (bbox.center.x - frame_center[0])**2 + 
+                (bbox.center.y - frame_center[1])**2
+            )
+            max_dist = np.sqrt(frame_width**2 + frame_height**2)
+            center_score = 1.0 - (center_dist / max_dist)
+            
+            # Combined score (weighted)
+            score = (
+                0.5 * area_score +      # 50% weight on size
+                0.3 * conf_score +      # 30% weight on confidence
+                0.2 * center_score      # 20% weight on centering
+            )
+            
+            if score > best_score:
+                best_score = score
+                best_idx = idx
+        
+        self.best_shot_score = best_score
+        self.best_shot_frame = self.frame_history[best_idx]
+        self.best_shot_bbox = self.bbox_history[best_idx]
+        
+        return self.best_shot_frame, self.best_shot_bbox
+    
+    @property
+    def age(self) -> float:
+        """Track age in seconds"""
+        return time.time() - self.first_seen
+    
+    @property
+    def time_since_last_seen(self) -> float:
+        """Time since last update in seconds"""
+        return time.time() - self.last_seen
+    
+    @property
+    def current_bbox(self) -> Optional[BBox]:
+        """Most recent bounding box"""
+        return self.bbox_history[-1] if self.bbox_history else None
+
+
+class VehicleTracker:
+    """
+    Multi-object tracker with state machine for 100% capture rate.
+    Uses centroid tracking for simplicity and reliability.
+    """
+    
+    def __init__(
+        self,
+        max_disappeared: int = 30,          # Frames before removing lost track
+        max_distance: float = 100.0,        # Max centroid distance for matching
+        min_frames_in_zone: int = 5,        # Min frames in zone before triggering
+        min_frames_out_of_zone: int = 10,   # Min frames out before considering exited
+    ):
+        self.next_track_id = 0
+        self.tracks: Dict[int, VehicleTrack] = {}
+        
+        self.max_disappeared = max_disappeared
+        self.max_distance = max_distance
+        self.min_frames_in_zone = min_frames_in_zone
+        self.min_frames_out_of_zone = min_frames_out_of_zone
+    
+    def update(
+        self,
+        detections: List[Tuple[BBox, float]],  # List of (bbox, confidence)
+        frame: np.ndarray,
+        zone: Optional[TriggerZone] = None
+    ) -> Dict[int, VehicleTrack]:
+        """
+        Update tracker with new detections.
+        Returns active tracks with their current states.
+        """
+        # Handle empty detections
+        if len(detections) == 0:
+            self._handle_disappeared_tracks()
+            return self.tracks
+        
+        # Extract centroids from detections
+        detection_centroids = np.array([
+            [bbox.center.x, bbox.center.y] 
+            for bbox, _ in detections
+        ])
+        
+        # Match detections to existing tracks
+        if len(self.tracks) == 0:
+            # Initialize new tracks
+            for bbox, conf in detections:
+                self._register_new_track(bbox, frame, conf)
+        else:
+            # Get existing track centroids
+            track_ids = list(self.tracks.keys())
+            track_centroids = np.array([
+                [self.tracks[tid].current_bbox.center.x, 
+                 self.tracks[tid].current_bbox.center.y]
+                for tid in track_ids
+            ])
+            
+            # Compute distance matrix
+            distances = self._compute_distances(track_centroids, detection_centroids)
+            
+            # Match using Hungarian algorithm (greedy for simplicity)
+            matched_tracks, matched_detections = self._match_detections(
+                distances, track_ids, detections
+            )
+            
+            # Update matched tracks
+            for track_id, det_idx in zip(matched_tracks, matched_detections):
+                bbox, conf = detections[det_idx]
+                self.tracks[track_id].update(bbox, frame, conf)
+            
+            # Register unmatched detections as new tracks
+            unmatched_det_indices = set(range(len(detections))) - set(matched_detections)
+            for det_idx in unmatched_det_indices:
+                bbox, conf = detections[det_idx]
+                self._register_new_track(bbox, frame, conf)
+        
+        # Update state machine for all tracks
+        self._update_state_machine(zone)
+        
+        # Cleanup old tracks
+        self._cleanup_old_tracks()
+        
+        return self.tracks
+    
+    def _register_new_track(self, bbox: BBox, frame: np.ndarray, confidence: float):
+        """Create a new vehicle track"""
+        track = VehicleTrack(track_id=self.next_track_id)
+        track.update(bbox, frame, confidence)
+        self.tracks[self.next_track_id] = track
+        self.next_track_id += 1
+    
+    def _compute_distances(
+        self, 
+        track_centroids: np.ndarray, 
+        detection_centroids: np.ndarray
+    ) -> np.ndarray:
+        """Compute Euclidean distance matrix between tracks and detections"""
+        # Pairwise distances
+        distances = np.linalg.norm(
+            track_centroids[:, np.newaxis] - detection_centroids[np.newaxis, :],
+            axis=2
+        )
+        return distances
+    
+    def _match_detections(
+        self,
+        distances: np.ndarray,
+        track_ids: List[int],
+        detections: List[Tuple[BBox, float]]
+    ) -> Tuple[List[int], List[int]]:
+        """
+        Greedy matching of detections to tracks.
+        Returns (matched_track_ids, matched_detection_indices)
+        """
+        matched_tracks = []
+        matched_detections = []
+        
+        # Greedy assignment: match smallest distances first
+        while distances.size > 0:
+            min_idx = np.argmin(distances)
+            track_idx, det_idx = np.unravel_index(min_idx, distances.shape)
+            
+            if distances[track_idx, det_idx] > self.max_distance:
+                break  # No more valid matches
+            
+            matched_tracks.append(track_ids[track_idx])
+            matched_detections.append(det_idx)
+            
+            # Remove matched row and column
+            distances = np.delete(distances, track_idx, axis=0)
+            distances = np.delete(distances, det_idx, axis=1)
+            track_ids = [tid for i, tid in enumerate(track_ids) if i != track_idx]
+        
+        return matched_tracks, matched_detections
+    
+    def _handle_disappeared_tracks(self):
+        """Increment disappeared counter for tracks with no detections"""
+        for track in self.tracks.values():
+            track.frames_out_of_zone += 1
+    
+    def _update_state_machine(self, zone: Optional[TriggerZone]):
+        """Update state machine for all tracks based on zone interaction"""
+        if zone is None:
+            return
+        
+        for track in self.tracks.values():
+            current_bbox = track.current_bbox
+            if current_bbox is None:
+                continue
+            
+            in_zone = zone.contains_bbox(current_bbox, threshold=0.3)
+            
+            # State transitions
+            if track.state == VehicleState.IDLE:
+                if in_zone:
+                    track.state = VehicleState.ENTERING_ZONE
+                    track.frames_in_zone = 1
+                    track.zone_entry_time = time.time()
+            
+            elif track.state == VehicleState.ENTERING_ZONE:
+                if in_zone:
+                    track.frames_in_zone += 1
+                    if track.frames_in_zone >= self.min_frames_in_zone:
+                        track.state = VehicleState.IN_ZONE
+                else:
+                    # False alarm, vehicle didn't fully enter
+                    track.state = VehicleState.IDLE
+                    track.frames_in_zone = 0
+            
+            elif track.state == VehicleState.IN_ZONE:
+                if in_zone:
+                    track.frames_in_zone += 1
+                    track.frames_out_of_zone = 0
+                else:
+                    track.frames_out_of_zone += 1
+                    if track.frames_out_of_zone >= self.min_frames_out_of_zone:
+                        # Vehicle has exited - trigger best shot processing
+                        track.state = VehicleState.PROCESSING
+                        track.zone_exit_time = time.time()
+            
+            elif track.state == VehicleState.PROCESSING:
+                # Waiting for OCR result
+                if track.ocr_result is not None:
+                    track.state = VehicleState.PROCESSED
+            
+            elif track.state == VehicleState.PROCESSED:
+                # Mark for cleanup soon
+                track.state = VehicleState.EXITED
+    
+    def _cleanup_old_tracks(self):
+        """Remove tracks that are too old or have exited"""
+        to_remove = []
+        
+        for track_id, track in self.tracks.items():
+            # Remove if disappeared for too long
+            if track.time_since_last_seen > (self.max_disappeared / 30.0):  # Assume 30 FPS
+                to_remove.append(track_id)
+            
+            # Remove processed tracks after 5 seconds
+            elif track.state == VehicleState.EXITED and track.age > 5.0:
+                to_remove.append(track_id)
+        
+        for track_id in to_remove:
+            del self.tracks[track_id]
+    
+    def get_tracks_ready_for_processing(self) -> List[VehicleTrack]:
+        """Get tracks that need OCR processing"""
+        return [
+            track for track in self.tracks.values()
+            if track.state == VehicleState.PROCESSING and not track.processing_started
+        ]

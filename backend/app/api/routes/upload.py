@@ -12,6 +12,12 @@ from app.services.queue import enqueue_process_capture
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+def safe_rollback(db: Session) -> None:
+    try:
+        db.rollback()
+    except Exception:
+        logger.exception("Database rollback failed")
+
 def resolve_storage_dir() -> Path:
     preferred = Path(settings.storage_dir)
     try:
@@ -80,7 +86,7 @@ def persist_capture(db: Session, out_path: Path) -> models.Capture:
     try:
         db.commit()
     except SQLAlchemyError as exc:
-        db.rollback()
+        safe_rollback(db)
         logger.exception("Failed to persist capture record")
         raise HTTPException(status_code=500, detail="Failed to save upload metadata") from exc
     
@@ -130,7 +136,7 @@ async def upload_batch(files: list[UploadFile] = File(...), db: Session = Depend
 
             ids.append(cap.id)
         except Exception as exc:
-            db.rollback()
+            safe_rollback(db)
             failed_files.append({"filename": file.filename or "(unknown)", "error": str(exc)})
             logger.exception("Failed to process uploaded file '%s'", file.filename)
 
