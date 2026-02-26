@@ -32,6 +32,32 @@ MASTER_CONF_THRESHOLD = float(os.getenv("MASTER_CONF_THRESHOLD", "0.95"))
 FEEDBACK_EXPORT_LIMIT = int(os.getenv("FEEDBACK_EXPORT_LIMIT", "200"))
 TRAINING_DIR = Path(os.getenv("TRAINING_DIR", str(STORAGE_DIR / "training")))
 
+
+def _parse_storage_aliases() -> list[tuple[Path, Path]]:
+    """
+    Parse optional path aliases in format: "/tmp/alpr_storage:/storage,/mnt/a:/storage".
+    Left side = path prefix that may be present in queued payloads.
+    Right side = path prefix visible to this worker container.
+    """
+    aliases: list[tuple[Path, Path]] = []
+    raw = os.getenv("STORAGE_PATH_ALIASES", "").strip()
+    if not raw:
+        return aliases
+
+    for item in raw.split(","):
+        pair = item.strip()
+        if not pair:
+            continue
+        src, sep, dst = pair.partition(":")
+        if not sep or not src.strip() or not dst.strip():
+            log.warning("Ignoring invalid STORAGE_PATH_ALIASES entry: %r", pair)
+            continue
+        aliases.append((Path(src.strip()), Path(dst.strip())))
+    return aliases
+
+
+STORAGE_PATH_ALIASES = _parse_storage_aliases()
+
 # RTSP defaults
 DEFAULT_RTSP_FPS = float(os.getenv("RTSP_FPS", "2.0"))
 DEFAULT_RECONNECT_SEC = float(os.getenv("RTSP_RECONNECT_SEC", "2.0"))
@@ -91,12 +117,47 @@ def norm_plate_text(s: str) -> str:
     s = re.sub(r"[\s\-\.]", "", s)  # remove space/dash/dot
     return s
 
+
+def resolve_image_path(image_path: str) -> Optional[Path]:
+    candidate = Path(image_path)
+    if candidate.exists():
+        return candidate
+
+    # 1) optional prefix remap from producer path -> worker path
+    for src_prefix, dst_prefix in STORAGE_PATH_ALIASES:
+        try:
+            rel = candidate.relative_to(src_prefix)
+        except ValueError:
+            continue
+
+        remapped = dst_prefix / rel
+        if remapped.exists():
+            log.warning(
+                "Resolved missing image via STORAGE_PATH_ALIASES: %s -> %s",
+                candidate,
+                remapped,
+            )
+            return remapped
+
+    # 2) safety net for old queued tasks: locate by filename under shared storage
+    fallback = STORAGE_DIR / "original" / candidate.name
+    if fallback.exists():
+        log.warning(
+            "Resolved missing image by filename under STORAGE_DIR: %s -> %s",
+            candidate,
+            fallback,
+        )
+        return fallback
+
+    return None
+
+
 @celery_app.task(name="tasks.process_capture")
 def process_capture(capture_id: int, image_path: str):
     log.info("🚀 TASK STARTED: capture_id=%s, image_path=%s", capture_id, image_path)
-    img_path = Path(image_path)
+    img_path = resolve_image_path(image_path)
 
-    if not img_path.exists():
+    if img_path is None:
         return {"ok": False, "error": "image not found", "image_path": image_path}
 
     detector = get_detector()
