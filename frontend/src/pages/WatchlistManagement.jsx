@@ -1,8 +1,89 @@
 import React, { useState, useEffect } from 'react'
-import { Card, CardHeader, CardBody, Badge, Button, Input, Spinner } from '../components/UIComponents.jsx'
-import { listWatchlist, addToWatchlist, updateWatchlistEntry, deleteWatchlistEntry, listAlerts, acknowledgeAlert } from '../lib/management-api.js'
+import {
+  listWatchlist,
+  addToWatchlist,
+  updateWatchlistEntry,
+  deleteWatchlistEntry,
+  listAlerts,
+  acknowledgeAlert,
+} from '../lib/management-api.js'
+import {
+  AlertTriangle,
+  Bell,
+  BellOff,
+  CheckCircle2,
+  ChevronDown,
+  Clock,
+  Edit3,
+  Filter,
+  Loader2,
+  Plus,
+  Search,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  Trash2,
+  X,
+  XCircle,
+} from 'lucide-react'
 
-/* ===== ADD/EDIT WATCHLIST MODAL ===== */
+/* ================================================================
+   GLASS CARD  (matches Dashboard)
+   ================================================================ */
+function GlassCard({ children, className = '', glow = '', hover = true }) {
+  return (
+    <div
+      className={`
+        relative rounded-2xl border border-white/[0.08]
+        bg-white/[0.03] backdrop-blur-xl
+        ${hover ? 'hover:bg-white/[0.06] hover:border-white/[0.12] transition-all duration-300' : ''}
+        ${glow}
+        ${className}
+      `}
+    >
+      {children}
+    </div>
+  )
+}
+
+/* ================================================================
+   LIVE PULSE INDICATOR
+   ================================================================ */
+function LivePulse({ color = 'emerald' }) {
+  return (
+    <span className="relative flex h-2.5 w-2.5">
+      <span className={`animate-ping absolute inline-flex h-full w-full rounded-full bg-${color}-400 opacity-75`} />
+      <span className={`relative inline-flex rounded-full h-2.5 w-2.5 bg-${color}-500`} />
+    </span>
+  )
+}
+
+/* ================================================================
+   BADGE
+   ================================================================ */
+function GlassBadge({ children, variant = 'default', size = 'sm' }) {
+  const variants = {
+    default:  'bg-white/[0.06] text-slate-300 border-white/[0.08]',
+    danger:   'bg-rose-500/10 text-rose-400 border-rose-500/20',
+    warning:  'bg-amber-500/10 text-amber-400 border-amber-500/20',
+    success:  'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+    info:     'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+  }
+  const sizes = {
+    sm: 'text-[10px] px-2 py-0.5',
+    md: 'text-xs px-2.5 py-1',
+    lg: 'text-xs px-3 py-1.5',
+  }
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full border font-semibold uppercase tracking-wider ${variants[variant]} ${sizes[size]}`}>
+      {children}
+    </span>
+  )
+}
+
+/* ================================================================
+   ADD/EDIT WATCHLIST MODAL (glassmorphism)
+   ================================================================ */
 function WatchlistModal({ entry, onClose, onSave }) {
   const [formData, setFormData] = useState({
     plate_text_norm: '',
@@ -10,7 +91,7 @@ function WatchlistModal({ entry, onClose, onSave }) {
     list_type: 'BLACKLIST',
     alert_level: 'HIGH',
     reason: '',
-    expires_at: ''
+    expires_at: '',
   })
   const [saving, setSaving] = useState(false)
 
@@ -22,7 +103,7 @@ function WatchlistModal({ entry, onClose, onSave }) {
         list_type: entry.list_type || 'BLACKLIST',
         alert_level: entry.alert_level || 'HIGH',
         reason: entry.reason || '',
-        expires_at: entry.expires_at ? entry.expires_at.split('T')[0] : ''
+        expires_at: entry.expires_at ? entry.expires_at.split('T')[0] : '',
       })
     }
   }, [entry])
@@ -30,187 +111,165 @@ function WatchlistModal({ entry, onClose, onSave }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setSaving(true)
-
     try {
-      const payload = {
-        ...formData,
-        expires_at: formData.expires_at || null
-      }
-
-      if (entry) {
-        await updateWatchlistEntry(entry.id, payload)
-      } else {
-        await addToWatchlist(payload)
-      }
-
+      const payload = { ...formData, expires_at: formData.expires_at || null }
+      if (entry) await updateWatchlistEntry(entry.id, payload)
+      else await addToWatchlist(payload)
       onSave()
       onClose()
     } catch (err) {
-      alert('Failed to save: ' + err.message)
+      window.alert('Failed to save: ' + err.message)
     } finally {
       setSaving(false)
     }
   }
 
+  const inputClasses =
+    'w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 focus:border-emerald-500/30 transition-all duration-200'
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-slate-800 border border-slate-700 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-[#0a0a0b] border border-white/[0.08] rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
         <div className="p-6">
+          {/* Modal Header */}
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold text-slate-100">
-              {entry ? 'Edit Watchlist Entry' : 'Add to Watchlist'}
-            </h2>
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                {entry ? <Edit3 className="h-4 w-4 text-emerald-400" /> : <Plus className="h-4 w-4 text-emerald-400" />}
+              </div>
+              <h2 className="text-lg font-bold text-white">
+                {entry ? 'Edit Watchlist Entry' : 'Add to Watchlist'}
+              </h2>
+            </div>
             <button
               onClick={onClose}
-              className="text-slate-400 hover:text-slate-100 transition-colors"
+              className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.04] border border-white/[0.08]
+                         text-slate-400 hover:text-white hover:bg-white/[0.08] transition-all duration-200"
             >
-              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-              </svg>
+              <X className="h-4 w-4" />
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-5">
             {/* Plate Number */}
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
+            <div className="space-y-1.5">
+              <label className="text-xs text-slate-400 font-medium uppercase tracking-wider">
                 License Plate Number *
               </label>
-              <Input
+              <input
                 value={formData.display_text}
                 onChange={(e) => {
                   const value = e.target.value.toUpperCase()
-                  setFormData({
-                    ...formData,
-                    display_text: value,
-                    plate_text_norm: value.replace(/\s+/g, '')
-                  })
+                  setFormData({ ...formData, display_text: value, plate_text_norm: value.replace(/\s+/g, '') })
                 }}
                 placeholder="1กก 1234"
                 required
                 disabled={!!entry}
-                className="w-full"
+                className={`${inputClasses} ${entry ? 'opacity-50 cursor-not-allowed' : ''}`}
               />
-              <p className="text-xs text-slate-400 mt-1">
-                Normalized: {formData.plate_text_norm || '-'}
+              <p className="text-[10px] text-slate-500">
+                Normalized: <span className="text-slate-400 font-mono">{formData.plate_text_norm || '-'}</span>
               </p>
             </div>
 
             {/* List Type */}
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                List Type *
-              </label>
+            <div className="space-y-1.5">
+              <label className="text-xs text-slate-400 font-medium uppercase tracking-wider">List Type *</label>
               <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, list_type: 'BLACKLIST' })}
-                  className={`px-4 py-3 rounded-lg border-2 transition-all ${
-                    formData.list_type === 'BLACKLIST'
-                      ? 'border-rose-500 bg-rose-500/20 text-rose-200'
-                      : 'border-slate-600 bg-slate-700/30 text-slate-400'
-                  }`}
-                >
-                  <div className="font-semibold">Blacklist</div>
-                  <div className="text-xs mt-1">Alert on detection</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, list_type: 'WHITELIST' })}
-                  className={`px-4 py-3 rounded-lg border-2 transition-all ${
-                    formData.list_type === 'WHITELIST'
-                      ? 'border-emerald-500 bg-emerald-500/20 text-emerald-200'
-                      : 'border-slate-600 bg-slate-700/30 text-slate-400'
-                  }`}
-                >
-                  <div className="font-semibold">Whitelist</div>
-                  <div className="text-xs mt-1">Approved vehicle</div>
-                </button>
+                {[
+                  { value: 'BLACKLIST', label: 'Blacklist', sub: 'Alert on detection', Icon: ShieldAlert, color: 'rose' },
+                  { value: 'WHITELIST', label: 'Whitelist', sub: 'Approved vehicle', Icon: ShieldCheck, color: 'emerald' },
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, list_type: opt.value })}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all duration-200 text-left ${
+                      formData.list_type === opt.value
+                        ? `border-${opt.color}-500/40 bg-${opt.color}-500/10 text-${opt.color}-300`
+                        : 'border-white/[0.06] bg-white/[0.02] text-slate-400 hover:border-white/[0.12]'
+                    }`}
+                  >
+                    <opt.Icon className={`h-5 w-5 ${formData.list_type === opt.value ? `text-${opt.color}-400` : 'text-slate-500'}`} />
+                    <div>
+                      <div className="font-semibold text-sm">{opt.label}</div>
+                      <div className="text-[10px] opacity-70">{opt.sub}</div>
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>
 
             {/* Alert Level */}
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                Alert Level *
-              </label>
+            <div className="space-y-1.5">
+              <label className="text-xs text-slate-400 font-medium uppercase tracking-wider">Alert Level *</label>
               <div className="grid grid-cols-3 gap-3">
-                {['HIGH', 'MEDIUM', 'LOW'].map(level => (
+                {[
+                  { value: 'HIGH', color: 'rose' },
+                  { value: 'MEDIUM', color: 'amber' },
+                  { value: 'LOW', color: 'cyan' },
+                ].map((lvl) => (
                   <button
-                    key={level}
+                    key={lvl.value}
                     type="button"
-                    onClick={() => setFormData({ ...formData, alert_level: level })}
-                    className={`px-4 py-2 rounded-lg border-2 transition-all ${
-                      formData.alert_level === level
-                        ? level === 'HIGH'
-                          ? 'border-rose-500 bg-rose-500/20 text-rose-200'
-                          : level === 'MEDIUM'
-                          ? 'border-amber-500 bg-amber-500/20 text-amber-200'
-                          : 'border-blue-500 bg-blue-500/20 text-blue-200'
-                        : 'border-slate-600 bg-slate-700/30 text-slate-400'
+                    onClick={() => setFormData({ ...formData, alert_level: lvl.value })}
+                    className={`px-4 py-2.5 rounded-xl border-2 font-semibold text-sm transition-all duration-200 ${
+                      formData.alert_level === lvl.value
+                        ? `border-${lvl.color}-500/40 bg-${lvl.color}-500/10 text-${lvl.color}-300`
+                        : 'border-white/[0.06] bg-white/[0.02] text-slate-400 hover:border-white/[0.12]'
                     }`}
                   >
-                    {level}
+                    {lvl.value}
                   </button>
                 ))}
               </div>
             </div>
 
             {/* Reason */}
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                Reason
-              </label>
+            <div className="space-y-1.5">
+              <label className="text-xs text-slate-400 font-medium uppercase tracking-wider">Reason</label>
               <textarea
                 value={formData.reason}
                 onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
                 placeholder="Why is this vehicle on the watchlist?"
                 rows={3}
-                className="w-full px-4 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={inputClasses}
               />
             </div>
 
-            {/* Expiration Date */}
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                Expiration Date (Optional)
-              </label>
-              <Input
+            {/* Expiration */}
+            <div className="space-y-1.5">
+              <label className="text-xs text-slate-400 font-medium uppercase tracking-wider">Expiration Date</label>
+              <input
                 type="date"
                 value={formData.expires_at}
                 onChange={(e) => setFormData({ ...formData, expires_at: e.target.value })}
-                className="w-full"
+                className={inputClasses}
               />
-              <p className="text-xs text-slate-400 mt-1">
-                Leave empty for permanent entry
-              </p>
+              <p className="text-[10px] text-slate-500">Leave empty for permanent entry</p>
             </div>
 
             {/* Actions */}
-            <div className="flex gap-3 pt-4">
-              <Button
+            <div className="flex gap-3 pt-2">
+              <button
                 type="submit"
-                variant="primary"
                 disabled={saving || !formData.plate_text_norm}
-                className="flex-1"
+                className="flex-1 flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/25
+                           text-emerald-300 text-sm font-semibold hover:bg-emerald-500/25 hover:border-emerald-500/40
+                           transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {saving ? (
-                  <>
-                    <Spinner size="sm" className="mr-2" />
-                    Saving...
-                  </>
-                ) : (
-                  <>{entry ? 'Update Entry' : 'Add to Watchlist'}</>
-                )}
-              </Button>
-              <Button
+                {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                {saving ? 'Saving...' : entry ? 'Update Entry' : 'Add to Watchlist'}
+              </button>
+              <button
                 type="button"
-                variant="secondary"
                 onClick={onClose}
                 disabled={saving}
+                className="px-5 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-slate-300 text-sm font-medium
+                           hover:bg-white/[0.08] transition-all duration-200"
               >
                 Cancel
-              </Button>
+              </button>
             </div>
           </form>
         </div>
@@ -219,94 +278,106 @@ function WatchlistModal({ entry, onClose, onSave }) {
   )
 }
 
-/* ===== ALERT CARD ===== */
-function AlertCard({ alert, onAcknowledge }) {
+/* ================================================================
+   ALERT CARD (glassmorphism)
+   ================================================================ */
+function AlertCard({ alert: alertData, onAcknowledge }) {
   const [acknowledging, setAcknowledging] = useState(false)
 
   const handleAcknowledge = async () => {
     setAcknowledging(true)
     try {
-      await acknowledgeAlert(alert.id)
+      await acknowledgeAlert(alertData.id)
       onAcknowledge()
     } catch (err) {
-      alert('Failed to acknowledge: ' + err.message)
+      window.alert('Failed to acknowledge: ' + err.message)
     } finally {
       setAcknowledging(false)
     }
   }
 
-  const levelColors = {
-    HIGH: 'rose',
-    MEDIUM: 'amber',
-    LOW: 'blue'
+  const levelConfig = {
+    HIGH:   { border: 'border-rose-500/20', bg: 'shadow-[0_0_20px_rgba(244,63,94,0.06)]', badge: 'danger' },
+    MEDIUM: { border: 'border-amber-500/20', bg: '', badge: 'warning' },
+    LOW:    { border: 'border-cyan-500/20', bg: '', badge: 'info' },
   }
-  const color = levelColors[alert.alert_level] || 'default'
+  const config = levelConfig[alertData.alert_level] || levelConfig.LOW
 
   return (
-    <Card className={`border-${color}-300/40 bg-${color}-500/10`}>
-      <CardBody className="p-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-2">
-              <Badge variant="danger" size="lg">
-                {alert.alert_level} ALERT
-              </Badge>
-              {alert.acknowledged && (
-                <Badge variant="success" size="sm">
-                  ✓ Acknowledged
-                </Badge>
-              )}
-            </div>
-
-            <div className="text-lg font-bold text-slate-100 mb-2">
-              {alert.read?.plate_text || 'Unknown Plate'}
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <div className="text-slate-400 text-xs">Camera</div>
-                <div className="text-slate-100">{alert.camera_id || '-'}</div>
-              </div>
-              <div>
-                <div className="text-slate-400 text-xs">Detected</div>
-                <div className="text-slate-100">
-                  {alert.created_at ? new Date(alert.created_at).toLocaleString('th-TH') : '-'}
-                </div>
-              </div>
-            </div>
-
-            {alert.watchlist?.reason && (
-              <div className="mt-3 p-3 bg-slate-900/50 rounded-lg">
-                <div className="text-xs text-slate-400 mb-1">Reason</div>
-                <div className="text-sm text-slate-200">{alert.watchlist.reason}</div>
-              </div>
-            )}
-
-            {alert.acknowledged && alert.acknowledged_by && (
-              <div className="mt-3 text-xs text-slate-400">
-                Acknowledged by {alert.acknowledged_by} on{' '}
-                {new Date(alert.acknowledged_at).toLocaleString('th-TH')}
-              </div>
+    <GlassCard className={`p-5 ${config.border} ${config.bg}`} hover={false}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          {/* Badge row */}
+          <div className="flex items-center gap-2 mb-3">
+            <GlassBadge variant={config.badge} size="md">
+              <AlertTriangle className="h-3 w-3" />
+              {alertData.alert_level} ALERT
+            </GlassBadge>
+            {alertData.acknowledged && (
+              <GlassBadge variant="success" size="sm">
+                <CheckCircle2 className="h-3 w-3" />
+                Acknowledged
+              </GlassBadge>
             )}
           </div>
 
-          {!alert.acknowledged && (
-            <Button
-              variant="success"
-              size="sm"
-              onClick={handleAcknowledge}
-              disabled={acknowledging}
-            >
-              {acknowledging ? <Spinner size="sm" /> : 'Acknowledge'}
-            </Button>
+          {/* Plate */}
+          <div className="text-xl font-bold text-white font-mono mb-3 tracking-wide">
+            {alertData.read?.plate_text || 'Unknown Plate'}
+          </div>
+
+          {/* Details grid */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-0.5">
+              <div className="text-[10px] text-slate-500 uppercase tracking-wider">Camera</div>
+              <div className="text-sm text-slate-200">{alertData.camera_id || '-'}</div>
+            </div>
+            <div className="space-y-0.5">
+              <div className="text-[10px] text-slate-500 uppercase tracking-wider">Detected</div>
+              <div className="text-sm text-slate-200">
+                {alertData.created_at ? new Date(alertData.created_at).toLocaleString('th-TH') : '-'}
+              </div>
+            </div>
+          </div>
+
+          {/* Reason */}
+          {alertData.watchlist?.reason && (
+            <div className="mt-3 p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+              <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Reason</div>
+              <div className="text-sm text-slate-300">{alertData.watchlist.reason}</div>
+            </div>
+          )}
+
+          {/* Ack info */}
+          {alertData.acknowledged && alertData.acknowledged_by && (
+            <div className="mt-3 flex items-center gap-1.5 text-[10px] text-slate-500">
+              <CheckCircle2 className="h-3 w-3" />
+              Acknowledged by {alertData.acknowledged_by} on {new Date(alertData.acknowledged_at).toLocaleString('th-TH')}
+            </div>
           )}
         </div>
-      </CardBody>
-    </Card>
+
+        {/* Acknowledge button */}
+        {!alertData.acknowledged && (
+          <button
+            onClick={handleAcknowledge}
+            disabled={acknowledging}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20
+                       text-emerald-300 text-xs font-semibold hover:bg-emerald-500/20 hover:border-emerald-500/30
+                       transition-all duration-200 disabled:opacity-50 flex-shrink-0"
+          >
+            {acknowledging ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+            Acknowledge
+          </button>
+        )}
+      </div>
+    </GlassCard>
   )
 }
 
-/* ===== MAIN WATCHLIST MANAGEMENT PAGE ===== */
+/* ================================================================
+   MAIN WATCHLIST MANAGEMENT PAGE
+   ================================================================ */
 export default function WatchlistManagement() {
   const [watchlist, setWatchlist] = useState([])
   const [alerts, setAlerts] = useState([])
@@ -314,11 +385,11 @@ export default function WatchlistManagement() {
   const [error, setError] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [editingEntry, setEditingEntry] = useState(null)
-  const [activeTab, setActiveTab] = useState('watchlist') // 'watchlist' or 'alerts'
+  const [activeTab, setActiveTab] = useState('watchlist')
   const [filters, setFilters] = useState({
     list_type: '',
     active: true,
-    search: ''
+    search: '',
   })
 
   useEffect(() => {
@@ -328,13 +399,11 @@ export default function WatchlistManagement() {
   async function loadData() {
     setLoading(true)
     setError('')
-
     try {
       const [watchlistData, alertsData] = await Promise.all([
         listWatchlist(filters),
-        listAlerts({ acknowledged: false })
+        listAlerts({ acknowledged: false }),
       ])
-      
       setWatchlist(watchlistData)
       setAlerts(alertsData)
     } catch (err) {
@@ -346,12 +415,11 @@ export default function WatchlistManagement() {
 
   const handleDelete = async (id) => {
     if (!confirm('Are you sure you want to deactivate this entry?')) return
-
     try {
       await deleteWatchlistEntry(id)
       loadData()
     } catch (err) {
-      alert('Failed to delete: ' + err.message)
+      window.alert('Failed to delete: ' + err.message)
     }
   }
 
@@ -370,197 +438,233 @@ export default function WatchlistManagement() {
     setEditingEntry(null)
   }
 
-  const handleModalSave = () => {
-    loadData()
-  }
+  const handleModalSave = () => loadData()
 
+  const inputClasses =
+    'px-3 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 focus:border-emerald-500/30 transition-all duration-200'
+
+  /* ---------- RENDER ---------- */
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <Card className="bg-gradient-to-r from-rose-600/20 via-rose-500/10 to-orange-500/10">
-        <CardBody>
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-100">Watchlist Management</h1>
-              <p className="text-sm text-slate-300 mt-1">
-                Manage blacklist and whitelist entries with automatic alerts
-              </p>
-            </div>
-            <Button variant="primary" onClick={handleAddNew}>
-              <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-              </svg>
-              Add Entry
-            </Button>
+    <div className="space-y-5">
+      {/* HEADER */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-3 mb-1">
+            <Shield className="h-6 w-6 text-emerald-400" />
+            <h1 className="text-2xl font-bold text-white tracking-tight">Watchlist Management</h1>
           </div>
-        </CardBody>
-      </Card>
+          <p className="text-sm text-slate-400 pl-9">
+            Manage blacklist and whitelist entries with automatic alerts
+          </p>
+        </div>
+        <button
+          onClick={handleAddNew}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/25
+                     text-emerald-300 text-sm font-semibold hover:bg-emerald-500/25 hover:border-emerald-500/40
+                     transition-all duration-200 self-start sm:self-auto"
+        >
+          <Plus className="h-4 w-4" />
+          Add Entry
+        </button>
+      </div>
 
-      {/* Tabs */}
+      {/* TABS */}
       <div className="flex gap-2">
         <button
           onClick={() => setActiveTab('watchlist')}
-          className={`px-6 py-3 rounded-lg font-semibold transition-all ${
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200 border ${
             activeTab === 'watchlist'
-              ? 'bg-blue-500/20 text-blue-200 border-2 border-blue-500'
-              : 'bg-slate-800 text-slate-400 border-2 border-slate-700 hover:border-slate-600'
+              ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/25'
+              : 'bg-white/[0.03] text-slate-400 border-white/[0.08] hover:bg-white/[0.06] hover:text-slate-200'
           }`}
         >
+          <Shield className="h-4 w-4" />
           Watchlist ({watchlist.length})
         </button>
         <button
           onClick={() => setActiveTab('alerts')}
-          className={`px-6 py-3 rounded-lg font-semibold transition-all ${
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200 border ${
             activeTab === 'alerts'
-              ? 'bg-rose-500/20 text-rose-200 border-2 border-rose-500'
-              : 'bg-slate-800 text-slate-400 border-2 border-slate-700 hover:border-slate-600'
+              ? 'bg-rose-500/10 text-rose-300 border-rose-500/25'
+              : 'bg-white/[0.03] text-slate-400 border-white/[0.08] hover:bg-white/[0.06] hover:text-slate-200'
           }`}
         >
+          <Bell className="h-4 w-4" />
           Active Alerts ({alerts.length})
           {alerts.length > 0 && (
-            <span className="ml-2 inline-flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+            <span className="relative flex h-2.5 w-2.5 ml-1">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500" />
             </span>
           )}
         </button>
       </div>
 
+      {/* ERROR */}
       {error && (
-        <Card className="bg-rose-500/10 border-rose-300/40">
-          <CardBody>
-            <p className="text-rose-200">{error}</p>
-          </CardBody>
-        </Card>
+        <GlassCard className="p-4 border-rose-500/20" hover={false}>
+          <div className="flex items-start gap-3">
+            <XCircle className="h-5 w-5 text-rose-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <h3 className="text-sm font-semibold text-rose-300 mb-0.5">Error</h3>
+              <p className="text-xs text-rose-200/70 leading-relaxed">{error}</p>
+            </div>
+          </div>
+        </GlassCard>
       )}
 
-      {/* Watchlist Tab */}
+      {/* ==================== WATCHLIST TAB ==================== */}
       {activeTab === 'watchlist' && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-slate-100">
-                Watchlist Entries
-              </h2>
-              <div className="flex gap-2">
-                <select
-                  value={filters.list_type}
-                  onChange={(e) => setFilters({ ...filters, list_type: e.target.value })}
-                  className="px-3 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-slate-100 text-sm"
-                >
-                  <option value="">All Types</option>
-                  <option value="BLACKLIST">Blacklist</option>
-                  <option value="WHITELIST">Whitelist</option>
-                </select>
-                <Input
+        <GlassCard className="p-6" hover={false}>
+          {/* Filter row */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-emerald-400" />
+              <h2 className="text-sm font-semibold text-white">Watchlist Entries</h2>
+            </div>
+            <div className="flex gap-2">
+              <select
+                value={filters.list_type}
+                onChange={(e) => setFilters({ ...filters, list_type: e.target.value })}
+                className={inputClasses}
+              >
+                <option value="">All Types</option>
+                <option value="BLACKLIST">Blacklist</option>
+                <option value="WHITELIST">Whitelist</option>
+              </select>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+                <input
                   placeholder="Search plates..."
                   value={filters.search}
                   onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                  className="w-64"
+                  className={`${inputClasses} pl-9 w-64`}
                 />
               </div>
             </div>
-          </CardHeader>
-          <CardBody>
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <Spinner size="lg" className="text-blue-500" />
-                <span className="ml-3 text-slate-300">Loading...</span>
+          </div>
+
+          {/* Table content */}
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <div className="flex flex-col items-center gap-4">
+                <div className="h-10 w-10 rounded-full border-2 border-emerald-500/30 border-t-emerald-500 animate-spin" />
+                <p className="text-sm text-slate-400 tracking-wide">Loading...</p>
               </div>
-            ) : watchlist.length === 0 ? (
-              <div className="text-center py-12 text-slate-400">
-                No watchlist entries found
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-slate-700/50">
-                      <th className="text-left py-3 px-4 text-sm font-semibold text-slate-300">Plate</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold text-slate-300">Type</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold text-slate-300">Alert Level</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold text-slate-300">Reason</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold text-slate-300">Expires</th>
-                      <th className="text-right py-3 px-4 text-sm font-semibold text-slate-300">Actions</th>
+            </div>
+          ) : watchlist.length === 0 ? (
+            <div className="text-center py-16">
+              <Shield className="h-10 w-10 text-slate-600 mx-auto mb-3" />
+              <p className="text-sm text-slate-400">No watchlist entries found</p>
+              <p className="text-xs text-slate-500 mt-1">Add your first entry to start monitoring</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-white/[0.08]">
+                    <th className="py-3 px-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Plate</th>
+                    <th className="py-3 px-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Type</th>
+                    <th className="py-3 px-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Alert Level</th>
+                    <th className="py-3 px-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Reason</th>
+                    <th className="py-3 px-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Expires</th>
+                    <th className="py-3 px-4 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.04]">
+                  {watchlist.map((entry) => (
+                    <tr key={entry.id} className="hover:bg-white/[0.03] transition-colors">
+                      <td className="py-3 px-4">
+                        <div className="font-semibold text-white font-mono">{entry.display_text}</div>
+                        <div className="text-[10px] text-slate-500">{entry.plate_text_norm}</div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <GlassBadge variant={entry.list_type === 'BLACKLIST' ? 'danger' : 'success'} size="md">
+                          {entry.list_type === 'BLACKLIST' ? <ShieldAlert className="h-3 w-3" /> : <ShieldCheck className="h-3 w-3" />}
+                          {entry.list_type}
+                        </GlassBadge>
+                      </td>
+                      <td className="py-3 px-4">
+                        <GlassBadge
+                          variant={entry.alert_level === 'HIGH' ? 'danger' : entry.alert_level === 'MEDIUM' ? 'warning' : 'info'}
+                          size="sm"
+                        >
+                          {entry.alert_level}
+                        </GlassBadge>
+                      </td>
+                      <td className="py-3 px-4 text-slate-300 max-w-xs truncate text-xs">
+                        {entry.reason || <span className="text-slate-600">-</span>}
+                      </td>
+                      <td className="py-3 px-4 text-xs">
+                        {entry.expires_at ? (
+                          <span className="flex items-center gap-1.5 text-slate-300">
+                            <Clock className="h-3 w-3 text-slate-500" />
+                            {new Date(entry.expires_at).toLocaleDateString('th-TH')}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500">Permanent</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <div className="flex gap-2 justify-end">
+                          <button
+                            onClick={() => handleEdit(entry)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08]
+                                       text-slate-300 text-xs font-medium hover:bg-white/[0.08] hover:text-white
+                                       transition-all duration-200"
+                          >
+                            <Edit3 className="h-3 w-3" />
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDelete(entry.id)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/5 border border-rose-500/15
+                                       text-rose-400 text-xs font-medium hover:bg-rose-500/15 hover:border-rose-500/25
+                                       transition-all duration-200"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            Delete
+                          </button>
+                        </div>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-700/50">
-                    {watchlist.map(entry => (
-                      <tr key={entry.id} className="hover:bg-slate-800/30 transition-colors">
-                        <td className="py-3 px-4">
-                          <div className="font-semibold text-slate-100">{entry.display_text}</div>
-                          <div className="text-xs text-slate-400">{entry.plate_text_norm}</div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <Badge variant={entry.list_type === 'BLACKLIST' ? 'danger' : 'success'}>
-                            {entry.list_type}
-                          </Badge>
-                        </td>
-                        <td className="py-3 px-4">
-                          <Badge variant={
-                            entry.alert_level === 'HIGH' ? 'danger' :
-                            entry.alert_level === 'MEDIUM' ? 'warning' : 'default'
-                          }>
-                            {entry.alert_level}
-                          </Badge>
-                        </td>
-                        <td className="py-3 px-4 text-sm text-slate-300 max-w-xs truncate">
-                          {entry.reason || '-'}
-                        </td>
-                        <td className="py-3 px-4 text-sm text-slate-300">
-                          {entry.expires_at ? new Date(entry.expires_at).toLocaleDateString('th-TH') : 'Never'}
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex gap-2 justify-end">
-                            <Button variant="secondary" size="sm" onClick={() => handleEdit(entry)}>
-                              Edit
-                            </Button>
-                            <Button variant="danger" size="sm" onClick={() => handleDelete(entry.id)}>
-                              Delete
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardBody>
-        </Card>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </GlassCard>
       )}
 
-      {/* Alerts Tab */}
+      {/* ==================== ALERTS TAB ==================== */}
       {activeTab === 'alerts' && (
         <div className="space-y-4">
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Spinner size="lg" className="text-rose-500" />
-              <span className="ml-3 text-slate-300">Loading alerts...</span>
+            <div className="flex items-center justify-center py-16">
+              <div className="flex flex-col items-center gap-4">
+                <div className="h-10 w-10 rounded-full border-2 border-rose-500/30 border-t-rose-500 animate-spin" />
+                <p className="text-sm text-slate-400 tracking-wide">Loading alerts...</p>
+              </div>
             </div>
           ) : alerts.length === 0 ? (
-            <Card>
-              <CardBody>
-                <div className="text-center py-12 text-slate-400">
-                  No active alerts
-                </div>
-              </CardBody>
-            </Card>
+            <GlassCard className="p-10" hover={false}>
+              <div className="text-center">
+                <BellOff className="h-10 w-10 text-slate-600 mx-auto mb-3" />
+                <p className="text-sm text-slate-400">No active alerts</p>
+                <p className="text-xs text-slate-500 mt-1">All alerts have been acknowledged</p>
+              </div>
+            </GlassCard>
           ) : (
-            alerts.map(alert => (
-              <AlertCard key={alert.id} alert={alert} onAcknowledge={loadData} />
+            alerts.map((alertItem) => (
+              <AlertCard key={alertItem.id} alert={alertItem} onAcknowledge={loadData} />
             ))
           )}
         </div>
       )}
 
-      {/* Add/Edit Modal */}
+      {/* Modal */}
       {showModal && (
-        <WatchlistModal
-          entry={editingEntry}
-          onClose={handleModalClose}
-          onSave={handleModalSave}
-        />
+        <WatchlistModal entry={editingEntry} onClose={handleModalClose} onSave={handleModalSave} />
       )}
     </div>
   )
