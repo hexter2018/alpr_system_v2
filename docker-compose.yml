@@ -190,6 +190,30 @@ services:
       - alpr-network
     restart: unless-stopped
 
+  # ==================== Celery ====================
+  celery-beat:
+      build:
+        context: ./worker
+      command: celery -A alpr_worker.celery_app beat --loglevel=info
+      depends_on:
+        postgres:
+          condition: service_healthy
+        redis:
+          condition: service_healthy
+      environment:
+        TZ: Asia/Bangkok
+        DATABASE_URL: postgresql+psycopg2://alpr:alpr@postgres:5432/alpr
+        REDIS_URL: redis://redis:6379/0
+        STORAGE_DIR: /storage
+        RETENTION_DAYS: "90"
+        HEARTBEAT_TIMEOUT_SEC: "30"
+        METRICS_RETENTION_DAYS: "7"
+      volumes:
+        - ./storage:/storage
+      networks:
+        - alpr-network
+      restart: unless-stopped
+
 volumes:
   pgdata:
   redisdata:

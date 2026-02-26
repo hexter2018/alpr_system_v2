@@ -70,6 +70,7 @@ async def websocket_stream(
     }
     """
     await websocket.accept()
+    processor.load_trigger_zone_from_db(session_id)
     log.info("WebSocket connected: session_id=%s", session_id)
     
     try:

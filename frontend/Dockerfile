@@ -5,8 +5,9 @@ WORKDIR /app
 # Copy package files
 COPY package.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies including new packages for Management Layer
+RUN npm install && \
+    npm install react-konva konva react-toastify
 
 # Copy source files
 COPY . .

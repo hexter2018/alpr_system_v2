@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import base64
 import logging
+import requests
 from typing import Optional, List, Tuple, Dict
 from pathlib import Path
 import asyncio
@@ -26,6 +27,7 @@ class StreamProcessor:
         detector_model_path: str,
         detector_conf: float = 0.35,
         detector_iou: float = 0.45,
+        session_id: str = None,
     ):
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
@@ -50,6 +52,13 @@ class StreamProcessor:
         # Statistics
         self.frame_count = 0
         self.total_vehicles_processed = 0
+        
+        # Heartbeat configuration
+        self.session_id = session_id
+        self.heartbeat_interval = 30  # Send heartbeat every 30 frames
+        self.api_base = "http://backend:8000"  # Internal Docker network URL
+        self.current_fps = 0.0
+        self.last_heartbeat_frame = 0
         
         log.info("StreamProcessor initialized with model: %s", detector_model_path)
     
@@ -77,6 +86,27 @@ class StreamProcessor:
                 return {"error": "Failed to decode frame"}
             
             self.frame_count += 1
+            
+            # Calculate FPS (simple moving average)
+            # This assumes process_frame is called regularly
+            # For more accurate FPS, track timestamps between frames
+            if not hasattr(self, '_fps_frames'):
+                self._fps_frames = []
+                self._fps_last_time = datetime.utcnow()
+            
+            current_time = datetime.utcnow()
+            time_diff = (current_time - self._fps_last_time).total_seconds()
+            
+            if time_diff >= 1.0:  # Update FPS every second
+                self.current_fps = len(self._fps_frames) / time_diff
+                self._fps_frames = []
+                self._fps_last_time = current_time
+            
+            self._fps_frames.append(frame_number)
+            
+            # Send heartbeat every N frames
+            if self.session_id and self.frame_count % self.heartbeat_interval == 0:
+                self._send_heartbeat()
             
             # Run vehicle detection
             detections = self._detect_vehicles(frame)
@@ -293,3 +323,49 @@ class StreamProcessor:
             })
         
         return serialized
+    
+    def load_trigger_zone_from_db(self, session_id: str):
+        """Load trigger zone from database for this camera"""
+        from sqlalchemy import text
+        from ..db.session import SessionLocal
+        
+        db = SessionLocal()
+        try:
+            sql = text("SELECT trigger_zone FROM cameras WHERE camera_id = :camera_id")
+            result = db.execute(sql, {"camera_id": session_id}).scalar_one_or_none()
+            
+            if result and result.get("points"):
+                self.set_trigger_zone(
+                    points=result["points"],
+                    zone_type=result.get("type", "polygon")
+                )
+                log.info(f"Loaded trigger zone for camera {session_id}")
+        finally:
+            db.close()
+
+    def _send_heartbeat(self):
+        """Send heartbeat update to backend API"""
+        try:
+            url = f"{self.api_base}/api/health/heartbeat/{self.session_id}"
+            payload = {"fps": round(self.current_fps, 2)}
+            
+            response = requests.post(url, json=payload, timeout=1.0)
+            
+            if response.status_code == 200:
+                log.debug(
+                    "Heartbeat sent for camera %s (FPS: %.1f)",
+                    self.session_id,
+                    self.current_fps
+                )
+            else:
+                log.warning(
+                    "Heartbeat failed for camera %s: HTTP %d",
+                    self.session_id,
+                    response.status_code
+                )
+                
+        except requests.Timeout:
+            log.debug("Heartbeat timeout for camera %s (non-critical)", self.session_id)
+        except Exception as e:
+            # Don't let heartbeat errors crash the stream processor
+            log.debug("Heartbeat error for camera %s: %s", self.session_id, e)

@@ -7,6 +7,10 @@ const navItems = [
   { to: '/queue', label: 'Verification', icon: 'queue' },
   { to: '/master', label: 'Master', icon: 'db' },
   { to: '/reports', label: 'Reports', icon: 'report' },
+  { to: '/cameras', label: 'Camera Settings', icon: '📹' },
+  { to: '/health', label: 'System Health', icon: '❤️' },
+  { to: '/watchlist', label: 'Watchlist', icon: '⚠️' },
+  { to: '/search', label: 'Search', icon: '🔍' },
 ]
 
 function Icon({ type }) {

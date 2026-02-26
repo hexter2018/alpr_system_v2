@@ -20,6 +20,14 @@ from .inference.detector import PlateDetector
 from .inference.ocr import PlateOCR  # ใช้ OCR / parser ที่คุณมีอยู่แล้ว
 from .inference.master_lookup import assist_with_master
 
+from .management_tasks import (
+    cleanup_old_data,
+    check_camera_heartbeats,
+    cleanup_old_metrics,
+    expire_watchlist_entries,
+    check_watchlist_match
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -253,6 +261,14 @@ def process_capture(capture_id: int, image_path: str):
         }).scalar_one()
 
         db.commit()
+
+        # Check watchlist for matches
+        if plate_text_norm:
+            check_watchlist_match.delay(
+                read_id=read_id,
+                plate_text_norm=plate_text_norm,
+                camera_id=camera_id
+            )
 
         # 5) master logic (ใช้ plate_text_norm เป็น key จะนิ่งกว่า)
         if conf >= MASTER_CONF_THRESHOLD and plate_text_norm:
