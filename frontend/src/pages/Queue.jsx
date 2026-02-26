@@ -4,8 +4,6 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  Edit3,
-  Eraser,
   Keyboard,
   Maximize2,
   Minus,
@@ -16,14 +14,13 @@ import {
   Trash2,
   Undo2,
   X,
-  ZoomIn,
   AlertTriangle,
   CheckCircle2,
   Info,
   Image as ImageIcon,
-  Crop,
   ListChecks,
   Clock,
+  Crosshair,
 } from 'lucide-react'
 
 /* ===== PROVINCES DATA ===== */
@@ -62,13 +59,14 @@ function ToastContainer({ toasts }) {
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          className={`flex items-center gap-3 rounded-lg border px-4 py-3 shadow-xl backdrop-blur-sm animate-[slideInRight_0.3s_ease-out] ${
+          className={`flex items-center gap-3 rounded-xl border px-4 py-3 shadow-2xl animate-[slideInRight_0.3s_ease-out] ${
             toast.type === 'success'
-              ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
+              ? 'border-emerald-500/20 bg-emerald-500/[0.08] text-emerald-300'
               : toast.type === 'error'
-              ? 'border-rose-500/20 bg-rose-500/10 text-rose-300'
-              : 'border-blue-500/20 bg-blue-500/10 text-blue-300'
+              ? 'border-rose-500/20 bg-rose-500/[0.08] text-rose-300'
+              : 'border-cyan-500/20 bg-cyan-500/[0.08] text-cyan-300'
           }`}
+          style={{ backdropFilter: 'blur(16px)' }}
         >
           {toast.type === 'success' ? (
             <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
@@ -129,25 +127,26 @@ function ImageViewer({ open, src, title, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-zinc-950/95 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex flex-col bg-black/95"
+      style={{ backdropFilter: 'blur(12px)' }}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
     >
-      <div className="flex items-center justify-between border-b border-zinc-800 px-6 py-3">
+      <div className="flex items-center justify-between border-b border-white/[0.06] px-6 py-3">
         <div>
-          <h3 className="text-sm font-semibold text-zinc-100">{title}</h3>
-          <p className="text-xs text-zinc-500 mt-0.5">Zoom: {(scale * 100).toFixed(0)}%</p>
+          <h3 className="text-sm font-semibold text-white">{title}</h3>
+          <p className="text-[11px] text-zinc-500 mt-0.5">Zoom: {(scale * 100).toFixed(0)}%</p>
         </div>
         <div className="flex items-center gap-1.5">
-          <button onClick={() => setScale((s) => Math.max(0.5, s - 0.2))} className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors">
+          <button onClick={() => setScale((s) => Math.max(0.5, s - 0.2))} className="rounded-lg p-2 text-zinc-400 hover:bg-white/[0.06] hover:text-white transition-colors">
             <Minus className="h-4 w-4" />
           </button>
           <span className="min-w-[48px] text-center text-xs tabular-nums text-zinc-400">{(scale * 100).toFixed(0)}%</span>
-          <button onClick={() => setScale((s) => Math.min(4, s + 0.2))} className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors">
+          <button onClick={() => setScale((s) => Math.min(4, s + 0.2))} className="rounded-lg p-2 text-zinc-400 hover:bg-white/[0.06] hover:text-white transition-colors">
             <Plus className="h-4 w-4" />
           </button>
-          <div className="mx-2 h-4 w-px bg-zinc-800" />
-          <button onClick={onClose} className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors">
+          <div className="mx-2 h-4 w-px bg-white/[0.06]" />
+          <button onClick={onClose} className="rounded-lg p-2 text-zinc-400 hover:bg-white/[0.06] hover:text-white transition-colors">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -157,7 +156,7 @@ function ImageViewer({ open, src, title, onClose }) {
           <img
             src={src}
             alt={title}
-            className="max-h-full max-w-full select-none rounded-lg shadow-2xl"
+            className="max-h-full max-w-full select-none rounded-2xl shadow-2xl"
             style={{
               transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
               cursor: dragState.current.dragging ? 'grabbing' : 'grab',
@@ -177,35 +176,35 @@ function DeleteConfirmModal({ open, onClose, onConfirm, plate, province, confide
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-xl border border-zinc-800 bg-zinc-900 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
-          <h3 className="text-sm font-semibold text-zinc-100">Confirm Delete</h3>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80" style={{ backdropFilter: 'blur(8px)' }} onClick={onClose}>
+      <div className="w-full max-w-sm rounded-2xl border border-white/[0.08] bg-zinc-950 shadow-2xl" style={{ backdropFilter: 'blur(24px)' }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.06]">
+          <h3 className="text-sm font-semibold text-white">Confirm Delete</h3>
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 transition-colors">
             <X className="h-4 w-4" />
           </button>
         </div>
         <div className="p-5 space-y-4">
           <p className="text-sm text-zinc-400">Are you sure you want to remove this item from the queue?</p>
-          <div className="rounded-lg border border-rose-500/15 bg-rose-500/5 p-3 space-y-2">
+          <div className="rounded-xl border border-rose-500/[0.12] bg-rose-500/[0.04] p-4 space-y-2.5">
             <div className="flex justify-between text-sm">
               <span className="text-zinc-500">Plate</span>
-              <span className="font-medium text-zinc-200">{plate || '-'}</span>
+              <span className="font-mono font-semibold text-zinc-200">{plate || '-'}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-zinc-500">Province</span>
-              <span className="font-medium text-zinc-200">{province || '-'}</span>
+              <span className="text-zinc-200">{province || '-'}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-zinc-500">Confidence</span>
-              <span className="font-medium text-zinc-200">{confidence}</span>
+              <span className="tabular-nums text-zinc-200">{confidence}</span>
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-1">
-            <button onClick={onClose} className="rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-700 transition-colors">
+            <button onClick={onClose} className="rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-zinc-300 hover:bg-white/[0.06] transition-colors">
               Cancel
             </button>
-            <button onClick={onConfirm} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-500 transition-colors">
+            <button onClick={onConfirm} className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-500 shadow-lg shadow-rose-500/20 transition-colors">
               Delete
             </button>
           </div>
@@ -219,43 +218,43 @@ function DeleteConfirmModal({ open, onClose, onConfirm, plate, province, confide
 function ConfidenceIndicator({ score }) {
   const pct = score * 100
   const getConfig = () => {
-    if (pct >= 95) return { color: 'text-emerald-400', bg: 'bg-emerald-500', border: 'border-emerald-500/20', label: 'Very High' }
-    if (pct >= 85) return { color: 'text-emerald-300', bg: 'bg-emerald-400', border: 'border-emerald-500/20', label: 'High' }
-    if (pct >= 70) return { color: 'text-amber-400', bg: 'bg-amber-500', border: 'border-amber-500/20', label: 'Medium' }
-    return { color: 'text-rose-400', bg: 'bg-rose-500', border: 'border-rose-500/20', label: 'Low' }
+    if (pct >= 95) return { color: 'text-emerald-400', bg: 'bg-emerald-500', label: 'Very High' }
+    if (pct >= 85) return { color: 'text-emerald-300', bg: 'bg-emerald-400', label: 'High' }
+    if (pct >= 70) return { color: 'text-amber-400', bg: 'bg-amber-500', label: 'Medium' }
+    return { color: 'text-rose-400', bg: 'bg-rose-500', label: 'Low' }
   }
   const c = getConfig()
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <span className={`text-xs font-medium ${c.color}`}>{c.label}</span>
-        <span className="text-xs font-semibold tabular-nums text-zinc-300">{pct.toFixed(1)}%</span>
+        <span className={`text-[11px] font-semibold uppercase tracking-wider ${c.color}`}>{c.label}</span>
+        <span className="text-sm font-bold tabular-nums text-white">{pct.toFixed(1)}%</span>
       </div>
-      <div className="h-1 w-full overflow-hidden rounded-full bg-zinc-800">
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.04]">
         <div className={`h-full rounded-full ${c.bg} transition-all duration-500`} style={{ width: `${pct}%` }} />
       </div>
     </div>
   )
 }
 
-/* ===== QUEUE ITEM (SPLIT VIEW) ===== */
+/* ===== QUEUE ITEM (LEFT PANEL LIST) ===== */
 function QueueItem({ item, isActive, onSelect }) {
   const confidence = item.confidence || 0
   const pct = confidence * 100
-  const color = pct >= 85 ? 'bg-emerald-500' : pct >= 70 ? 'bg-amber-500' : 'bg-rose-500'
+  const dotColor = pct >= 85 ? 'bg-emerald-500' : pct >= 70 ? 'bg-amber-500' : 'bg-rose-500'
 
   return (
     <button
       onClick={onSelect}
-      className={`w-full text-left rounded-lg border p-3 transition-all ${
+      className={`w-full text-left rounded-xl border p-3 transition-all duration-200 ${
         isActive
-          ? 'border-blue-500/40 bg-blue-500/5'
-          : 'border-zinc-800 bg-zinc-900/30 hover:border-zinc-700 hover:bg-zinc-900/50'
+          ? 'border-white/[0.12] bg-white/[0.06]'
+          : 'border-transparent bg-transparent hover:bg-white/[0.03]'
       }`}
     >
       <div className="flex items-center gap-3">
-        <div className="h-10 w-14 rounded overflow-hidden bg-zinc-800 flex-shrink-0">
+        <div className="h-10 w-14 rounded-lg overflow-hidden bg-white/[0.03] flex-shrink-0 border border-white/[0.06]">
           <img
             src={absImageUrl(item.crop_url)}
             alt="Plate"
@@ -264,12 +263,12 @@ function QueueItem({ item, isActive, onSelect }) {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-sm font-semibold text-zinc-100 truncate font-mono">
+            <span className="text-sm font-semibold text-white truncate font-mono tracking-wide">
               {item.plate_text || 'Unknown'}
             </span>
-            <div className={`h-2 w-2 rounded-full flex-shrink-0 ${color}`} />
+            <div className={`h-2 w-2 rounded-full flex-shrink-0 ${dotColor}`} />
           </div>
-          <div className="text-xs text-zinc-500 truncate mt-0.5">
+          <div className="text-[11px] text-zinc-500 truncate mt-0.5">
             {item.province || 'No province'} &middot; {(confidence * 100).toFixed(0)}%
           </div>
         </div>
@@ -278,7 +277,7 @@ function QueueItem({ item, isActive, onSelect }) {
   )
 }
 
-/* ===== DETAIL PANEL ===== */
+/* ===== DETAIL PANEL (RIGHT SIDE) ===== */
 function DetailPanel({ item, busy, onConfirm, onCorrect, onDelete, onToast }) {
   const [plateText, setPlateText] = useState(item.plate_text || '')
   const [province, setProvince] = useState(item.province || '')
@@ -368,34 +367,47 @@ function DetailPanel({ item, busy, onConfirm, onCorrect, onDelete, onToast }) {
   return (
     <>
       <div className="flex h-full flex-col">
-        {/* Top: Images */}
-        <div className="border-b border-zinc-800 p-5">
+        {/* Top: Image Evidence */}
+        <div className="border-b border-white/[0.06] p-5">
           <div className="flex items-center gap-2 mb-3">
             <ImageIcon className="h-3.5 w-3.5 text-zinc-500" />
-            <h3 className="text-xs font-medium uppercase tracking-wider text-zinc-500">Image Evidence</h3>
+            <h3 className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">Image Evidence</h3>
           </div>
           <div className="grid grid-cols-2 gap-3">
+            {/* Original Image */}
             <div
-              className="group relative cursor-pointer rounded-lg overflow-hidden border border-zinc-800 hover:border-zinc-600 transition-colors bg-zinc-950"
+              className="group relative cursor-pointer rounded-2xl overflow-hidden border border-white/[0.06] hover:border-white/[0.12] transition-all duration-300 bg-black"
               onClick={() => openViewer(absImageUrl(item.original_url), 'Original Image')}
             >
-              <img src={absImageUrl(item.original_url)} alt="Original" className="w-full h-36 object-contain" />
-              <div className="absolute inset-0 flex items-center justify-center bg-zinc-950/60 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Maximize2 className="h-5 w-5 text-zinc-300" />
+              <img src={absImageUrl(item.original_url)} alt="Original" className="w-full h-40 object-contain" />
+              <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <Maximize2 className="h-5 w-5 text-white" />
               </div>
-              <div className="absolute bottom-0 inset-x-0 bg-zinc-950/80 px-2 py-1">
+              <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent px-3 py-2">
                 <span className="text-[10px] font-medium text-zinc-400">Original</span>
               </div>
             </div>
+            {/* Cropped Plate with targeting reticle */}
             <div
-              className="group relative cursor-pointer rounded-lg overflow-hidden border border-zinc-800 hover:border-zinc-600 transition-colors bg-zinc-950"
+              className="group relative cursor-pointer rounded-2xl overflow-hidden border border-white/[0.06] hover:border-white/[0.12] transition-all duration-300 bg-black"
               onClick={() => openViewer(absImageUrl(item.crop_url), 'Cropped Plate')}
             >
-              <img src={absImageUrl(item.crop_url)} alt="Cropped" className="w-full h-36 object-contain" />
-              <div className="absolute inset-0 flex items-center justify-center bg-zinc-950/60 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Maximize2 className="h-5 w-5 text-zinc-300" />
+              <img src={absImageUrl(item.crop_url)} alt="Cropped" className="w-full h-40 object-contain" />
+              {/* Reticle overlay */}
+              <div className="absolute inset-3 border border-cyan-400/30 rounded-lg pointer-events-none">
+                <div className="absolute -top-px -left-px w-3 h-3 border-t-2 border-l-2 border-cyan-400/60 rounded-tl" />
+                <div className="absolute -top-px -right-px w-3 h-3 border-t-2 border-r-2 border-cyan-400/60 rounded-tr" />
+                <div className="absolute -bottom-px -left-px w-3 h-3 border-b-2 border-l-2 border-cyan-400/60 rounded-bl" />
+                <div className="absolute -bottom-px -right-px w-3 h-3 border-b-2 border-r-2 border-cyan-400/60 rounded-br" />
               </div>
-              <div className="absolute bottom-0 inset-x-0 bg-zinc-950/80 px-2 py-1">
+              <div className="absolute top-2 right-2 flex items-center gap-1 rounded-md bg-black/60 px-1.5 py-0.5 pointer-events-none">
+                <Crosshair className="h-2.5 w-2.5 text-cyan-400" />
+                <span className="text-[9px] font-semibold text-cyan-400">DETECTED</span>
+              </div>
+              <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <Maximize2 className="h-5 w-5 text-white" />
+              </div>
+              <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent px-3 py-2">
                 <span className="text-[10px] font-medium text-zinc-400">Cropped Plate</span>
               </div>
             </div>
@@ -405,21 +417,21 @@ function DetailPanel({ item, busy, onConfirm, onCorrect, onDelete, onToast }) {
         {/* Middle: Form */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
           {/* Confidence */}
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3.5">
             <ConfidenceIndicator score={item.confidence || 0} />
           </div>
 
           {/* Plate Input */}
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1.5">Plate Number</label>
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Plate Number</label>
             <input
               value={plateText}
               onChange={(e) => setPlateText(e.target.value)}
               placeholder="Enter plate number"
-              className={`w-full rounded-lg border bg-zinc-950/50 px-3 py-2.5 text-base font-semibold font-mono tracking-wider text-zinc-100 placeholder:text-zinc-600 transition-all ${
+              className={`w-full rounded-xl border bg-black/40 px-4 py-3 text-lg font-bold font-mono tracking-[0.15em] text-white placeholder:text-zinc-700 transition-all duration-200 ${
                 highlightField === 'plate'
-                  ? 'border-blue-500/50 ring-2 ring-blue-500/20'
-                  : 'border-zinc-800 focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600'
+                  ? 'border-cyan-500/40 ring-2 ring-cyan-500/20 shadow-lg shadow-cyan-500/10'
+                  : 'border-white/[0.08] focus:border-white/[0.15] focus:ring-1 focus:ring-white/[0.08]'
               }`}
             />
           </div>
@@ -429,18 +441,18 @@ function DetailPanel({ item, busy, onConfirm, onCorrect, onDelete, onToast }) {
             <div>
               <div className="flex items-center gap-1.5 mb-2">
                 <div className="h-1.5 w-1.5 rounded-full bg-rose-500" />
-                <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Common confusions</span>
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Common confusions</span>
               </div>
-              <div className="flex flex-wrap gap-1">
+              <div className="flex flex-wrap gap-1.5">
                 {CONFUSION_FIXES.high.map((fix) => (
                   <button
                     key={`${fix.from}-${fix.to}`}
                     type="button"
                     title={fix.tooltip}
                     onClick={() => applyFix(fix.from, fix.to)}
-                    className="rounded-md border border-rose-500/20 bg-rose-500/5 px-2 py-1 text-xs font-medium text-rose-300 hover:bg-rose-500/10 hover:border-rose-500/30 transition-colors"
+                    className="rounded-lg border border-rose-500/[0.12] bg-rose-500/[0.04] px-2.5 py-1.5 text-xs font-medium text-rose-300 hover:bg-rose-500/[0.08] hover:border-rose-500/[0.2] transition-all duration-200"
                   >
-                    {fix.from}&rarr;{fix.to}
+                    {fix.from}{'→'}{fix.to}
                   </button>
                 ))}
               </div>
@@ -448,18 +460,18 @@ function DetailPanel({ item, busy, onConfirm, onCorrect, onDelete, onToast }) {
             <div>
               <div className="flex items-center gap-1.5 mb-2">
                 <div className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Other fixes</span>
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Other fixes</span>
               </div>
-              <div className="flex flex-wrap gap-1">
+              <div className="flex flex-wrap gap-1.5">
                 {CONFUSION_FIXES.medium.map((fix) => (
                   <button
                     key={`${fix.from}-${fix.to}`}
                     type="button"
                     title={fix.tooltip}
                     onClick={() => applyFix(fix.from, fix.to)}
-                    className="rounded-md border border-amber-500/20 bg-amber-500/5 px-2 py-1 text-xs font-medium text-amber-300 hover:bg-amber-500/10 hover:border-amber-500/30 transition-colors"
+                    className="rounded-lg border border-amber-500/[0.12] bg-amber-500/[0.04] px-2.5 py-1.5 text-xs font-medium text-amber-300 hover:bg-amber-500/[0.08] hover:border-amber-500/[0.2] transition-all duration-200"
                   >
-                    {fix.from}&rarr;{fix.to}
+                    {fix.from}{'→'}{fix.to}
                   </button>
                 ))}
               </div>
@@ -468,37 +480,37 @@ function DetailPanel({ item, busy, onConfirm, onCorrect, onDelete, onToast }) {
 
           {/* Province Input */}
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1.5">Province</label>
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Province</label>
             <input
               value={province}
               onChange={(e) => setProvince(e.target.value)}
               placeholder="Enter province"
-              className={`w-full rounded-lg border bg-zinc-950/50 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 transition-all ${
+              className={`w-full rounded-xl border bg-black/40 px-4 py-2.5 text-sm text-white placeholder:text-zinc-700 transition-all duration-200 ${
                 provinceMissing
-                  ? 'border-amber-500/30 bg-amber-500/5'
+                  ? 'border-amber-500/30 bg-amber-500/[0.03]'
                   : highlightField === 'province'
-                  ? 'border-blue-500/50 ring-2 ring-blue-500/20'
-                  : 'border-zinc-800 focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600'
+                  ? 'border-cyan-500/40 ring-2 ring-cyan-500/20'
+                  : 'border-white/[0.08] focus:border-white/[0.15] focus:ring-1 focus:ring-white/[0.08]'
               }`}
             />
             {provinceMissing && (
-              <p className="mt-1 text-xs text-amber-400/80">Province not detected - you can confirm or correct</p>
+              <p className="mt-1.5 text-[11px] text-amber-400/80">Province not detected -- confirm or correct manually</p>
             )}
           </div>
 
           {/* Province Quick Select */}
           <div>
-            <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Popular provinces</span>
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">Popular provinces</span>
+            <div className="mt-2 flex flex-wrap gap-1.5">
               {POPULAR_PROVINCES.map((prov) => (
                 <button
                   key={prov.value}
                   type="button"
                   onClick={() => { setProvince(prov.value); setHighlightField('province') }}
-                  className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                  className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${
                     province === prov.value
-                      ? 'border-blue-500/40 bg-blue-500/10 text-blue-300'
-                      : 'border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'
+                      ? 'border-cyan-500/30 bg-cyan-500/[0.08] text-cyan-300'
+                      : 'border-white/[0.06] bg-white/[0.02] text-zinc-400 hover:border-white/[0.1] hover:text-zinc-200'
                   }`}
                 >
                   {prov.label}
@@ -509,21 +521,21 @@ function DetailPanel({ item, busy, onConfirm, onCorrect, onDelete, onToast }) {
 
           {/* Note */}
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1.5">Note (optional)</label>
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Note (optional)</label>
             <input
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="Add a note"
-              className="w-full rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600 transition-all"
+              className="w-full rounded-xl border border-white/[0.08] bg-black/40 px-4 py-2.5 text-sm text-white placeholder:text-zinc-700 focus:border-white/[0.15] focus:ring-1 focus:ring-white/[0.08] transition-all duration-200"
             />
           </div>
 
           {/* Undo */}
           {lastChange && (
-            <div className="flex items-center gap-2 text-xs text-zinc-500">
+            <div className="flex items-center gap-2 text-[11px] text-zinc-500">
               <Undo2 className="h-3 w-3" />
               <span>Last change: {lastChange.from ? `${lastChange.from} to ${lastChange.to}` : 'Normalized'}</span>
-              <button onClick={handleUndo} className="text-blue-400 hover:text-blue-300 font-medium">
+              <button onClick={handleUndo} className="text-cyan-400 hover:text-cyan-300 font-semibold">
                 Undo
               </button>
             </div>
@@ -531,38 +543,42 @@ function DetailPanel({ item, busy, onConfirm, onCorrect, onDelete, onToast }) {
         </div>
 
         {/* Bottom: Actions */}
-        <div className="border-t border-zinc-800 p-4">
+        <div className="border-t border-white/[0.06] p-4">
           <div className="flex items-center gap-2 mb-3">
-            <Keyboard className="h-3 w-3 text-zinc-600" />
+            <Keyboard className="h-3 w-3 text-zinc-700" />
             <span className="text-[10px] text-zinc-600">Enter = Confirm &middot; Ctrl+Enter = Save Edit &middot; N = Normalize &middot; Del = Delete</span>
           </div>
           <div className="flex gap-2">
+            {/* Verify Button -- prominent emerald with glow */}
             <button
               disabled={busy}
               onClick={onConfirm}
-              className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-500 shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
             >
               <Check className="h-4 w-4" />
-              Confirm
+              Verify
             </button>
+            {/* Save Edit */}
             <button
               disabled={busy}
               onClick={() => onCorrect(plateText, province, note)}
-              className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2.5 text-sm font-semibold text-zinc-200 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-sm font-semibold text-zinc-200 hover:bg-white/[0.06] hover:border-white/[0.12] disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
             >
               <Save className="h-4 w-4" />
               Save Edit
             </button>
+            {/* Reject/Delete -- ghost with red hover */}
             <button
               disabled={busy}
               onClick={() => setDeleteOpen(true)}
-              className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-zinc-400 hover:bg-rose-500/10 hover:border-rose-500/20 hover:text-rose-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="rounded-xl border border-white/[0.06] bg-transparent px-3.5 py-3 text-zinc-500 hover:bg-rose-500/[0.08] hover:border-rose-500/[0.2] hover:text-rose-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
             >
               <Trash2 className="h-4 w-4" />
             </button>
+            {/* Normalize */}
             <button
               onClick={handleNormalize}
-              className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200 transition-colors"
+              className="rounded-xl border border-white/[0.06] bg-transparent px-3.5 py-3 text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200 transition-all duration-200"
             >
               <Settings2 className="h-4 w-4" />
             </button>
@@ -689,19 +705,19 @@ export default function Queue() {
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-50">Verification Queue</h1>
-          <p className="text-sm text-zinc-500 mt-0.5">Review OCR results and verify before adding to master database</p>
+          <h1 className="text-2xl font-bold tracking-tight text-white">Verification Queue</h1>
+          <p className="text-xs text-zinc-500 mt-0.5">Review OCR results and verify before adding to master database</p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-1.5">
-            <ListChecks className="h-3.5 w-3.5 text-blue-400" />
-            <span className="text-xs font-semibold tabular-nums text-zinc-300">{items.length}</span>
-            <span className="text-xs text-zinc-500">pending</span>
+          <div className="flex items-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
+            <ListChecks className="h-3.5 w-3.5 text-cyan-400" />
+            <span className="text-xs font-bold tabular-nums text-white">{items.length}</span>
+            <span className="text-[11px] text-zinc-500">pending</span>
           </div>
           {lastRefresh && (
-            <div className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-1.5">
+            <div className="flex items-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
               <Clock className="h-3 w-3 text-zinc-500" />
-              <span className="text-xs text-zinc-500">
+              <span className="text-[11px] text-zinc-500">
                 {lastRefresh.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
               </span>
             </div>
@@ -709,7 +725,7 @@ export default function Queue() {
           <button
             onClick={refresh}
             disabled={loading}
-            className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50 transition-colors"
+            className="flex items-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs font-medium text-zinc-400 hover:bg-white/[0.06] hover:text-white disabled:opacity-50 transition-all duration-200"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
@@ -719,7 +735,7 @@ export default function Queue() {
 
       {/* Error */}
       {error && (
-        <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 px-4 py-3 flex items-start gap-2">
+        <div className="rounded-xl border border-rose-500/[0.15] bg-rose-500/[0.05] px-4 py-3 flex items-start gap-2">
           <AlertTriangle className="h-4 w-4 text-rose-400 flex-shrink-0 mt-0.5" />
           <p className="text-sm text-rose-300">{error}</p>
         </div>
@@ -728,46 +744,49 @@ export default function Queue() {
       {/* Content */}
       {loading && items.length === 0 ? (
         <div className="flex items-center justify-center py-20">
-          <div className="flex flex-col items-center gap-3">
-            <RefreshCw className="h-6 w-6 animate-spin text-zinc-500" />
-            <p className="text-sm text-zinc-500">Loading queue...</p>
+          <div className="flex flex-col items-center gap-4">
+            <div className="relative">
+              <div className="h-8 w-8 rounded-full border-2 border-white/[0.06]" />
+              <div className="absolute inset-0 h-8 w-8 rounded-full border-2 border-transparent border-t-cyan-400 animate-spin" />
+            </div>
+            <p className="text-xs text-zinc-500">Loading queue...</p>
           </div>
         </div>
       ) : items.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900">
-            <CheckCircle2 className="h-6 w-6 text-emerald-500" />
+          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-white/[0.06] bg-white/[0.02]">
+            <CheckCircle2 className="h-7 w-7 text-emerald-500" />
           </div>
           <h3 className="text-sm font-semibold text-zinc-300">Queue is empty</h3>
-          <p className="mt-1 text-xs text-zinc-500">All items have been verified. Great work!</p>
+          <p className="mt-1 text-xs text-zinc-600">All items have been verified. Great work!</p>
         </div>
       ) : (
         /* Split View */
-        <div className="flex rounded-xl border border-zinc-800 bg-zinc-900/30 overflow-hidden" style={{ height: 'calc(100vh - 260px)', minHeight: '500px' }}>
-          {/* Left: List */}
-          <div className="w-80 flex-shrink-0 border-r border-zinc-800 flex flex-col">
-            <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
-              <span className="text-xs font-medium text-zinc-400">
+        <div className="flex rounded-2xl border border-white/[0.06] bg-white/[0.01] overflow-hidden" style={{ height: 'calc(100vh - 260px)', minHeight: '500px' }}>
+          {/* Left: List Panel */}
+          <div className="w-80 flex-shrink-0 border-r border-white/[0.06] flex flex-col">
+            <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
+              <span className="text-[11px] font-semibold text-zinc-500 tabular-nums">
                 {selectedIndex + 1} of {items.length}
               </span>
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => setSelectedIndex((i) => Math.max(0, i - 1))}
                   disabled={selectedIndex === 0}
-                  className="rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 disabled:opacity-30 transition-colors"
+                  className="rounded-lg p-1.5 text-zinc-500 hover:bg-white/[0.04] hover:text-white disabled:opacity-30 transition-colors"
                 >
                   <ChevronLeft className="h-3.5 w-3.5" />
                 </button>
                 <button
                   onClick={() => setSelectedIndex((i) => Math.min(items.length - 1, i + 1))}
                   disabled={selectedIndex >= items.length - 1}
-                  className="rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 disabled:opacity-30 transition-colors"
+                  className="rounded-lg p-1.5 text-zinc-500 hover:bg-white/[0.04] hover:text-white disabled:opacity-30 transition-colors"
                 >
                   <ChevronRight className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
-            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
               {items.map((item, idx) => (
                 <QueueItem
                   key={item.id}
@@ -779,7 +798,7 @@ export default function Queue() {
             </div>
           </div>
 
-          {/* Right: Detail */}
+          {/* Right: Detail Panel */}
           <div className="flex-1 min-w-0">
             {selectedItem ? (
               <DetailPanel
@@ -793,7 +812,7 @@ export default function Queue() {
               />
             ) : (
               <div className="flex h-full items-center justify-center">
-                <p className="text-sm text-zinc-500">Select an item to review</p>
+                <p className="text-sm text-zinc-600">Select an item to review</p>
               </div>
             )}
           </div>
