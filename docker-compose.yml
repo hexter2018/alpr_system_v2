@@ -152,6 +152,8 @@ services:
   # ==================== Reverse Proxy ====================
   nginx:
     image: nginx:alpine
+    environment:
+      TZ: Asia/Bangkok  
     ports:
       - "80:80"
     volumes:
