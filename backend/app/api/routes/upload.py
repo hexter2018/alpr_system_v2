@@ -13,25 +13,31 @@ logger = logging.getLogger(__name__)
 
 def resolve_storage_dir() -> Path:
     preferred = Path(settings.storage_dir)
-    try:
-        preferred.mkdir(parents=True, exist_ok=True)
-        if os.access(preferred, os.W_OK):
-            return preferred
-        else:
-            raise HTTPException(
-                status_code=500, 
-                detail=f"Storage directory is not writable: {preferred}",
-            )
-    except PermissionError:
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Storage directory permission denied: {preferred}",
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Storage directory could not be created: {preferred}, error: {str(e)}",
-        )
+    fallback = Path("/tmp/alpr-storage")
+    errors: list[str] = []
+
+    for candidate in (preferred, fallback):
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            if os.access(candidate, os.W_OK):
+                if candidate != preferred:
+                    logger.warning(
+                        "Storage directory '%s' is unavailable. Falling back to '%s'.",
+                        preferred,
+                        candidate,
+                    )
+                return candidate
+            errors.append(f"{candidate}: not writable")
+        except OSError as exc:
+            errors.append(f"{candidate}: {exc}")
+
+    raise HTTPException(
+        status_code=500,
+        detail=(
+            "No writable storage directory available. Tried: "
+            f"{preferred}, {fallback}. Errors: {'; '.join(errors)}"
+        ),
+    )
 
 def sha256_file(path: Path) -> str:
     h = hashlib.sha256()
