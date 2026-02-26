@@ -1,6 +1,7 @@
 import os, hashlib, uuid, logging
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -39,23 +40,45 @@ def sha256_file(path: Path) -> str:
             h.update(chunk)
     return h.hexdigest()
 
-@router.post("/upload")
-async def upload_one(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    storage = resolve_storage_dir()
+def build_output_path(storage: Path, filename: str | None) -> Path:
+    # UploadFile.filename can be None when clients post raw blobs.
+    safe_name = filename or ""
+    ext = Path(safe_name).suffix.lower()
+    if not ext:
+        ext = ".jpg"
 
-    ext = Path(file.filename).suffix.lower() or ".jpg"
     fname = f"{uuid.uuid4().hex}{ext}"
     out_path = storage / "original" / fname
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    return out_path
 
-    content = await file.read()
-    out_path.write_bytes(content)
+def persist_capture(db: Session, out_path: Path) -> models.Capture:
     digest = sha256_file(out_path)
-
     cap = models.Capture(source="UPLOAD", original_path=str(out_path), sha256=digest)
     db.add(cap)
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.exception("Failed to persist capture record")
+        raise HTTPException(status_code=500, detail="Failed to save upload metadata") from exc
+    
     db.refresh(cap)
+    return cap
+
+@router.post("/upload")
+async def upload_one(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    storage = resolve_storage_dir()
+    out_path = build_output_path(storage, file.filename)
+
+    try:
+        content = await file.read()
+        out_path.write_bytes(content)
+    except OSError as exc:
+        logger.exception("Failed to write uploaded file to disk")
+        raise HTTPException(status_code=500, detail="Failed to store uploaded file") from exc
+
+    cap = persist_capture(db, out_path)
 
     enqueue_error = None
     try:
@@ -80,17 +103,9 @@ async def upload_batch(files: list[UploadFile] = File(...), db: Session = Depend
 
     for file in files:
         try:
-            ext = Path(file.filename).suffix.lower() or ".jpg"
-            fname = f"{uuid.uuid4().hex}{ext}"
-            out_path = storage / "original" / fname
-            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path = build_output_path(storage, file.filename)
             out_path.write_bytes(await file.read())
-            digest = sha256_file(out_path)
-
-            cap = models.Capture(source="UPLOAD", original_path=str(out_path), sha256=digest)
-            db.add(cap)
-            db.commit()
-            db.refresh(cap)
+            cap = persist_capture(db, out_path)
 
             try:
                 enqueue_process_capture(cap.id, str(out_path))
@@ -100,7 +115,7 @@ async def upload_batch(files: list[UploadFile] = File(...), db: Session = Depend
             ids.append(cap.id)
         except Exception as exc:
             db.rollback()
-            failed_files.append({"filename": file.filename, "error": str(exc)})
+            failed_files.append({"filename": file.filename or "(unknown)", "error": str(exc)})
             logger.exception("Failed to process uploaded file '%s'", file.filename)
 
 
