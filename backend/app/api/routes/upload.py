@@ -20,7 +20,7 @@ def safe_rollback(db: Session) -> None:
 
 def parse_storage_candidates() -> list[Path]:
     configured = [Path(settings.storage_dir)]
-    fallback_raw = os.getenv("STORAGE_DIR_FALLBACKS", "/tmp/alpr_storage,./storage")
+    fallback_raw = os.getenv("STORAGE_DIR_FALLBACKS", "")
     fallback_candidates = [Path(item.strip()) for item in fallback_raw.split(",") if item.strip()]
 
     # Keep input order while de-duplicating repeated directories.
