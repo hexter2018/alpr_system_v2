@@ -13,7 +13,8 @@ from app.schemas.camera import (
 
 router = APIRouter()
 
-@router.get("/cameras", response_model=List[CameraOut])
+# ✅ แก้ไขเป็น / แทน /cameras
+@router.get("/", response_model=List[CameraOut])
 def list_cameras(
     enabled_only: bool = Query(False),
     db: Session = Depends(get_db)
@@ -34,7 +35,7 @@ def list_cameras(
     
     return [CameraOut.model_validate(c) for c in cameras]
 
-@router.get("/cameras/{camera_id}", response_model=CameraOut)
+@router.get("/{camera_id}", response_model=CameraOut)
 def get_camera(camera_id: str, db: Session = Depends(get_db)):
     """Get camera details by ID"""
     camera = db.query(models.Camera).filter(
@@ -46,7 +47,7 @@ def get_camera(camera_id: str, db: Session = Depends(get_db)):
     
     return CameraOut.model_validate(camera)
 
-@router.post("/cameras", response_model=CameraOut)
+@router.post("/", response_model=CameraOut)
 def create_camera(payload: CameraCreateIn, db: Session = Depends(get_db)):
     """Create a new camera"""
     # Check if camera_id already exists
@@ -76,7 +77,7 @@ def create_camera(payload: CameraCreateIn, db: Session = Depends(get_db)):
     
     return CameraOut.model_validate(camera)
 
-@router.put("/cameras/{camera_id}", response_model=CameraOut)
+@router.put("/{camera_id}", response_model=CameraOut)
 def update_camera(
     camera_id: str, 
     payload: CameraUpdateIn, 
@@ -107,7 +108,7 @@ def update_camera(
     
     return CameraOut.model_validate(camera)
 
-@router.patch("/cameras/{camera_id}/trigger-zone", response_model=CameraOut)
+@router.patch("/{camera_id}/trigger-zone", response_model=CameraOut)
 def update_trigger_zone(
     camera_id: str,
     payload: TriggerZoneUpdate,
@@ -127,7 +128,7 @@ def update_trigger_zone(
     
     return CameraOut.model_validate(camera)
 
-@router.patch("/cameras/{camera_id}/status", response_model=CameraOut)
+@router.patch("/{camera_id}/status", response_model=CameraOut)
 def update_camera_status(
     camera_id: str,
     payload: CameraStatusUpdate,
@@ -149,7 +150,7 @@ def update_camera_status(
     
     return CameraOut.model_validate(camera)
 
-@router.delete("/cameras/{camera_id}")
+@router.delete("/{camera_id}")
 def delete_camera(camera_id: str, db: Session = Depends(get_db)):
     """Delete a camera"""
     camera = db.query(models.Camera).filter(
@@ -164,7 +165,7 @@ def delete_camera(camera_id: str, db: Session = Depends(get_db)):
     
     return {"ok": True, "camera_id": camera_id}
 
-@router.get("/cameras/{camera_id}/snapshot")
+@router.get("/{camera_id}/snapshot")
 def get_camera_snapshot(camera_id: str, db: Session = Depends(get_db)):
     """Get the latest snapshot from a camera for trigger zone editor"""
     # Get the most recent capture for this camera

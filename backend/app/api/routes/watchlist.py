@@ -13,7 +13,7 @@ from app.schemas.watchlist import (
 
 router = APIRouter()
 
-@router.get("/watchlist", response_model=List[WatchlistOut])
+@router.get("/", response_model=List[WatchlistOut])
 def list_watchlist(
     list_type: Optional[str] = Query(None),
     active_only: bool = Query(True),
@@ -42,7 +42,7 @@ def list_watchlist(
     entries = query.order_by(desc(models.Watchlist.created_at)).limit(limit).all()
     return [WatchlistOut.model_validate(e) for e in entries]
 
-@router.get("/watchlist/{watchlist_id}", response_model=WatchlistOut)
+@router.get("/{watchlist_id}", response_model=WatchlistOut)
 def get_watchlist_entry(watchlist_id: int, db: Session = Depends(get_db)):
     """Get watchlist entry by ID"""
     entry = db.query(models.Watchlist).filter(
@@ -54,7 +54,7 @@ def get_watchlist_entry(watchlist_id: int, db: Session = Depends(get_db)):
     
     return WatchlistOut.model_validate(entry)
 
-@router.post("/watchlist", response_model=WatchlistOut)
+@router.post("/", response_model=WatchlistOut)
 def create_watchlist_entry(
     payload: WatchlistCreateIn,
     db: Session = Depends(get_db)
@@ -89,7 +89,7 @@ def create_watchlist_entry(
     
     return WatchlistOut.model_validate(entry)
 
-@router.put("/watchlist/{watchlist_id}", response_model=WatchlistOut)
+@router.put("/{watchlist_id}", response_model=WatchlistOut)
 def update_watchlist_entry(
     watchlist_id: int,
     payload: WatchlistUpdateIn,
@@ -117,7 +117,7 @@ def update_watchlist_entry(
     
     return WatchlistOut.model_validate(entry)
 
-@router.delete("/watchlist/{watchlist_id}")
+@router.delete("/{watchlist_id}")
 def delete_watchlist_entry(watchlist_id: int, db: Session = Depends(get_db)):
     """Deactivate (soft delete) a watchlist entry"""
     entry = db.query(models.Watchlist).filter(

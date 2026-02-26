@@ -22,7 +22,7 @@ REDIS_URL = os.getenv("REDIS_URL", settings.redis_url)
 def get_redis():
     return redis.from_url(REDIS_URL, decode_responses=True)
 
-@router.get("/health/system", response_model=SystemHealthOut)
+@router.get("/system", response_model=SystemHealthOut)
 def get_system_health(db: Session = Depends(get_db)):
     """Get overall system health status"""
     r = get_redis()
@@ -72,7 +72,7 @@ def get_system_health(db: Session = Depends(get_db)):
         unacknowledged_alerts=unack_alerts
     )
 
-@router.get("/health/cameras", response_model=List[CameraHealthOut])
+@router.get("/cameras", response_model=List[CameraHealthOut])
 def get_cameras_health(db: Session = Depends(get_db)):
     """Get health status for all cameras"""
     cameras = db.query(models.Camera).filter(models.Camera.enabled == True).all()
@@ -121,7 +121,7 @@ def get_cameras_health(db: Session = Depends(get_db)):
     
     return results
 
-@router.get("/health/workers", response_model=List[WorkerHealthOut])
+@router.get("/workers", response_model=List[WorkerHealthOut])
 def get_workers_health(db: Session = Depends(get_db)):
     """Get health status for Celery workers"""
     r = get_redis()
@@ -155,7 +155,7 @@ def get_workers_health(db: Session = Depends(get_db)):
     except Exception as e:
         return []
 
-@router.get("/health/metrics", response_model=List[HealthMetricsOut])
+@router.get("/metrics", response_model=List[HealthMetricsOut])
 def get_health_metrics(
     metric_type: Optional[str] = Query(None),
     metric_name: Optional[str] = Query(None),
@@ -178,7 +178,7 @@ def get_health_metrics(
     
     return [HealthMetricsOut.model_validate(m) for m in metrics]
 
-@router.post("/health/heartbeat/{camera_id}")
+@router.post("/heartbeat/{camera_id}")
 def record_camera_heartbeat(
     camera_id: str,
     fps: float = Query(...),
@@ -207,7 +207,7 @@ def record_camera_heartbeat(
     
     return {"ok": True, "camera_id": camera_id, "fps": fps}
 
-@router.post("/health/metric")
+@router.post("/metric")
 def record_metric(
     metric_type: str = Query(...),
     metric_name: str = Query(...),
