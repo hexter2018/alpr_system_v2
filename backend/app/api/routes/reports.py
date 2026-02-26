@@ -1,18 +1,40 @@
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc, and_
+from sqlalchemy import func, desc
 from typing import Optional
 import csv
 import io
 
 from app.db.session import get_db
 from app.db import models
-from app.schemas.reports import ReportStats, ActivityLog, AccuracyMetrics
+from app.schemas.reports import ReportStats
 from app.services.storage import make_image_url
 
 router = APIRouter()
+LOCAL_TZ = ZoneInfo("Asia/Bangkok")
+UTC_TZ = ZoneInfo("UTC")
+
+
+def _today_local() -> datetime.date:
+    return datetime.now(LOCAL_TZ).date()
+
+
+def _local_date_to_utc_naive(date_text: str) -> datetime:
+    local_midnight = datetime.strptime(date_text, "%Y-%m-%d").replace(tzinfo=LOCAL_TZ)
+    return local_midnight.astimezone(UTC_TZ).replace(tzinfo=None)
+
+
+def _resolve_date_range(start_date: Optional[str], end_date: Optional[str]) -> tuple[str, str, datetime, datetime]:
+    today_local = _today_local()
+    end_value = end_date or today_local.strftime("%Y-%m-%d")
+    start_value = start_date or (today_local - timedelta(days=7)).strftime("%Y-%m-%d")
+
+    start_dt = _local_date_to_utc_naive(start_value)
+    end_dt = _local_date_to_utc_naive(end_value) + timedelta(days=1)
+    return start_value, end_value, start_dt, end_dt
 
 @router.get("/reports/stats", response_model=ReportStats)
 def get_report_stats(
@@ -25,13 +47,7 @@ def get_report_stats(
     """Get statistics for reports with optional filters"""
     
     # Default to last 7 days if no dates provided
-    if not end_date:
-        end_date = datetime.utcnow().strftime("%Y-%m-%d")
-    if not start_date:
-        start_date = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%d")
-    
-    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-    end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+    start_date, end_date, start_dt, end_dt = _resolve_date_range(start_date, end_date)
     
     # Base query
     query = db.query(models.PlateRead).join(
@@ -145,13 +161,7 @@ def get_activity_log(
     db: Session = Depends(get_db)
 ):
     """Get recent activity log"""
-    if not end_date:
-        end_date = datetime.utcnow().strftime("%Y-%m-%d")
-    if not start_date:
-        start_date = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%d")
-    
-    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-    end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+    start_date, end_date, start_dt, end_dt = _resolve_date_range(start_date, end_date)
     
     activities = db.query(
         models.PlateRead.id,
@@ -199,13 +209,7 @@ def export_report(
     db: Session = Depends(get_db)
 ):
     """Export report as CSV"""
-    if not end_date:
-        end_date = datetime.utcnow().strftime("%Y-%m-%d")
-    if not start_date:
-        start_date = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%d")
-    
-    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-    end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+    start_date, end_date, start_dt, end_dt = _resolve_date_range(start_date, end_date)
     
     query = db.query(
         models.PlateRead.plate_text,
@@ -267,42 +271,44 @@ def get_accuracy_metrics(
     db: Session = Depends(get_db)
 ):
     """Get daily accuracy metrics"""
-    end_dt = datetime.utcnow()
-    start_dt = end_dt - timedelta(days=days)
-    
+    today_local = _today_local()
+    start_local = today_local - timedelta(days=days - 1)
+
     results = []
-    current = start_dt
-    
-    while current < end_dt:
-        next_day = current + timedelta(days=1)
-        
+    current_local = start_local
+
+    while current_local <= today_local:
+        next_local = current_local + timedelta(days=1)
+        current_utc = datetime.combine(current_local, datetime.min.time(), tzinfo=LOCAL_TZ).astimezone(UTC_TZ).replace(tzinfo=None)
+        next_utc = datetime.combine(next_local, datetime.min.time(), tzinfo=LOCAL_TZ).astimezone(UTC_TZ).replace(tzinfo=None)
+
         alpr = db.query(func.count(models.VerificationJob.id)).join(
             models.PlateRead
         ).filter(
             models.VerificationJob.result_type == models.VerifyResultType.ALPR,
-            models.PlateRead.created_at >= current,
-            models.PlateRead.created_at < next_day
+            models.PlateRead.created_at >= current_utc,
+            models.PlateRead.created_at < next_utc
         ).scalar() or 0
-        
+
         mlpr = db.query(func.count(models.VerificationJob.id)).join(
             models.PlateRead
         ).filter(
             models.VerificationJob.result_type == models.VerifyResultType.MLPR,
-            models.PlateRead.created_at >= current,
-            models.PlateRead.created_at < next_day
+            models.PlateRead.created_at >= current_utc,
+            models.PlateRead.created_at < next_utc
         ).scalar() or 0
-        
+
         total = alpr + mlpr
         accuracy = (alpr / max(total, 1)) * 100
-        
+
         results.append({
-            "date": current.strftime("%Y-%m-%d"),
+            "date": current_local.strftime("%Y-%m-%d"),
             "alpr": alpr,
             "mlpr": mlpr,
             "total": total,
             "accuracy": accuracy
         })
-        
-        current = next_day
+
+        current_local = next_local
     
     return results
