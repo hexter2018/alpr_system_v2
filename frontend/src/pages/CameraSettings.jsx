@@ -166,7 +166,12 @@ function TriggerZoneEditor({ camera, onSave }) {
   useEffect(() => {
     if (camera && camera.camera_id) {
       fetch(`${API_BASE}/api/cameras/${camera.camera_id}/snapshot`)
-        .then(res => res.blob())
+        .then(res => {
+          if (!res.ok) {
+            throw new Error('No snapshot available - please capture an image first')
+          }
+          return res.blob()
+        })
         .then(blob => {
           const url = URL.createObjectURL(blob)
           const img = new window.Image()
@@ -184,7 +189,11 @@ function TriggerZoneEditor({ camera, onSave }) {
           img.src = url
           setSnapshot(url)
         })
-        .catch(err => console.error('Failed to load snapshot:', err))
+        .catch(err => {
+          console.error('Failed to load snapshot:', err)
+          // Set a placeholder or show error message
+          setImageObj(null)
+        })
     }
   }, [camera])
 
@@ -317,9 +326,12 @@ function TriggerZoneEditor({ camera, onSave }) {
           {/* Canvas */}
           <div className="border border-blue-300/20 rounded-xl overflow-hidden bg-slate-950/40">
             {!imageObj ? (
-              <div className="flex items-center justify-center h-96">
-                <Spinner size="lg" className="text-blue-500" />
-                <span className="ml-3 text-slate-400">Loading camera snapshot...</span>
+              <div className="flex flex-col items-center justify-center h-96">
+                <div className="text-6xl mb-4">📷</div>
+                <p className="text-slate-400 mb-2">No snapshot available</p>
+                <p className="text-sm text-slate-500">
+                  Upload an image or start streaming to configure trigger zone
+                </p>
               </div>
             ) : (
               <Stage
@@ -437,6 +449,30 @@ export default function CameraSettings() {
     loadCameras()
   }
 
+  const handleDeleteCamera = async (camera) => {
+    if (!confirm(`Are you sure you want to delete camera "${camera.name || camera.camera_id}"?`)) {
+      return
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/cameras/${camera.camera_id}`, {
+        method: 'DELETE'
+      })
+
+      if (!res.ok) throw new Error('Failed to delete camera')
+
+      // If deleted camera was selected, clear selection
+      if (selectedCamera?.camera_id === camera.camera_id) {
+        setSelectedCamera(null)
+      }
+
+      await loadCameras()
+      alert('Camera deleted successfully')
+    } catch (err) {
+      alert('Failed to delete: ' + err.message)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -503,34 +539,56 @@ export default function CameraSettings() {
             <CardBody className="p-0">
               <div className="divide-y divide-slate-700/50">
                 {cameras.map(camera => (
-                  <button
+                  <div
                     key={camera.camera_id}
-                    onClick={() => setSelectedCamera(camera)}
-                    className={`w-full text-left px-4 py-3 transition-colors ${
+                    className={`transition-colors ${
                       selectedCamera?.camera_id === camera.camera_id
                         ? 'bg-blue-500/20 border-l-4 border-blue-400'
                         : 'hover:bg-slate-800/50'
                     }`}
                   >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="font-medium text-slate-100 text-sm">
-                          {camera.name || camera.camera_id}
+                    <button
+                      onClick={() => setSelectedCamera(camera)}
+                      className="w-full text-left px-4 py-3"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="font-medium text-slate-100 text-sm">
+                            {camera.name || camera.camera_id}
+                          </div>
+                          <div className="text-xs text-slate-400 mt-1">
+                            {camera.camera_id}
+                          </div>
                         </div>
-                        <div className="text-xs text-slate-400 mt-1">
-                          {camera.camera_id}
-                        </div>
+                        <Badge variant={camera.status === 'ONLINE' ? 'success' : 'default'} size="sm">
+                          {camera.status || 'OFFLINE'}
+                        </Badge>
                       </div>
-                      <Badge variant={camera.status === 'ONLINE' ? 'success' : 'default'} size="sm">
-                        {camera.status || 'OFFLINE'}
-                      </Badge>
+                      {camera.trigger_zone?.points && (
+                        <div className="text-xs text-emerald-400 mt-2">
+                          ✓ Zone configured ({camera.trigger_zone.points.length} points)
+                        </div>
+                      )}
+                    </button>
+                    
+                    {/* Delete Button */}
+                    <div className="px-4 pb-3">
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleDeleteCamera(camera)
+                        }}
+                        className="w-full"
+                      >
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                        Delete Camera
+                      </Button>
                     </div>
-                    {camera.trigger_zone?.points && (
-                      <div className="text-xs text-emerald-400 mt-2">
-                        ✓ Zone configured ({camera.trigger_zone.points.length} points)
-                      </div>
-                    )}
-                  </button>
+                  </div>
                 ))}
               </div>
             </CardBody>
