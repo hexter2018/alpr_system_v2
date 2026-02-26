@@ -1,4 +1,4 @@
-import os, hashlib, uuid
+import os, hashlib, uuid, logging
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 from sqlalchemy.orm import Session
@@ -9,6 +9,7 @@ from app.db import models
 from app.services.queue import enqueue_process_capture
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 def resolve_storage_dir() -> Path:
     preferred = Path(settings.storage_dir)
@@ -76,28 +77,38 @@ async def upload_batch(files: list[UploadFile] = File(...), db: Session = Depend
 
     ids = []
     failed_enqueues = []
+    failed_files = []
+
     for file in files:
-        ext = Path(file.filename).suffix.lower() or ".jpg"
-        fname = f"{uuid.uuid4().hex}{ext}"
-        out_path = storage / "original" / fname
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_bytes(await file.read())
-        digest = sha256_file(out_path)
-
-        cap = models.Capture(source="UPLOAD", original_path=str(out_path), sha256=digest)
-        db.add(cap)
-        db.commit()
-        db.refresh(cap)
-
         try:
-            enqueue_process_capture(cap.id, str(out_path))
+            ext = Path(file.filename).suffix.lower() or ".jpg"
+            fname = f"{uuid.uuid4().hex}{ext}"
+            out_path = storage / "original" / fname
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_bytes(await file.read())
+            digest = sha256_file(out_path)
+
+            cap = models.Capture(source="UPLOAD", original_path=str(out_path), sha256=digest)
+            db.add(cap)
+            db.commit()
+            db.refresh(cap)
+
+            try:
+                enqueue_process_capture(cap.id, str(out_path))
+            except Exception as exc:
+                failed_enqueues.append({"capture_id": cap.id, "error": str(exc)})
+
+            ids.append(cap.id)
         except Exception as exc:
-            failed_enqueues.append({"capture_id": cap.id, "error": str(exc)})
-        ids.append(cap.id)
+            db.rollback()
+            failed_files.append({"filename": file.filename, "error": str(exc)})
+            logger.exception("Failed to process uploaded file '%s'", file.filename)
+
 
     return {
         "capture_ids": ids,
         "count": len(ids),
         "enqueued_count": len(ids) - len(failed_enqueues),
         "failed_enqueues": failed_enqueues,
+        "failed_files": failed_files,
     }
