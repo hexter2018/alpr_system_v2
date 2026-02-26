@@ -3,6 +3,156 @@ import { Stage, Layer, Line, Circle, Image as KonvaImage } from 'react-konva'
 import { Button, Card, CardHeader, CardBody, Input, Badge, Spinner } from '../components/UIComponents.jsx'
 import { API_BASE } from '../lib/api.js'
 
+/* ===== ADD CAMERA MODAL ===== */
+function AddCameraModal({ open, onClose, onSave }) {
+  const [formData, setFormData] = useState({
+    camera_id: '',
+    name: '',
+    rtsp_url: '',
+    enabled: true,
+    fps: 2.0
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setSaving(true)
+    setError('')
+
+    try {
+      const res = await fetch(`${API_BASE}/api/cameras`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      })
+
+      if (!res.ok) {
+        const errData = await res.json()
+        throw new Error(errData.detail || 'Failed to create camera')
+      }
+
+      onSave()
+      onClose()
+      // Reset form
+      setFormData({
+        camera_id: '',
+        name: '',
+        rtsp_url: '',
+        enabled: true,
+        fps: 2.0
+      })
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl max-w-2xl w-full">
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-slate-100">Add New Camera</h2>
+            <button
+              onClick={onClose}
+              className="text-slate-400 hover:text-slate-100 transition-colors"
+            >
+              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+
+          {error && (
+            <div className="mb-4 p-3 bg-rose-500/10 border border-rose-300/40 rounded-lg text-rose-200 text-sm">
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <Input
+              label="Camera ID *"
+              value={formData.camera_id}
+              onChange={(e) => setFormData({ ...formData, camera_id: e.target.value })}
+              placeholder="cam-001"
+              required
+              hint="Unique identifier for this camera"
+            />
+
+            <Input
+              label="Camera Name *"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              placeholder="Main Entrance"
+              required
+              hint="Friendly name for this camera"
+            />
+
+            <Input
+              label="RTSP URL"
+              value={formData.rtsp_url}
+              onChange={(e) => setFormData({ ...formData, rtsp_url: e.target.value })}
+              placeholder="rtsp://username:password@192.168.1.100:554/stream"
+              hint="Optional - RTSP stream URL for live monitoring"
+            />
+
+            <Input
+              label="FPS"
+              type="number"
+              step="0.1"
+              min="0.5"
+              max="30"
+              value={formData.fps}
+              onChange={(e) => setFormData({ ...formData, fps: parseFloat(e.target.value) })}
+              hint="Frames per second for processing"
+            />
+
+            <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.enabled}
+                onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
+                className="rounded border-slate-600 bg-slate-900/50 text-blue-500 focus:ring-blue-500"
+              />
+              <span>Enable camera</span>
+            </label>
+
+            <div className="flex gap-3 pt-4">
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={saving || !formData.camera_id || !formData.name}
+                className="flex-1"
+              >
+                {saving ? (
+                  <>
+                    <Spinner size="sm" className="mr-2" />
+                    Creating...
+                  </>
+                ) : (
+                  'Add Camera'
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={onClose}
+                disabled={saving}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ===== VISUAL TRIGGER ZONE EDITOR ===== */
 function TriggerZoneEditor({ camera, onSave }) {
   const [points, setPoints] = useState([])
@@ -228,6 +378,7 @@ export default function CameraSettings() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [showAddModal, setShowAddModal] = useState(false)
 
   useEffect(() => {
     loadCameras()
@@ -259,7 +410,7 @@ export default function CameraSettings() {
       const res = await fetch(`${API_BASE}/api/cameras/${selectedCamera.camera_id}/trigger-zone`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ points, zone_type: 'polygon' })
+        body: JSON.stringify({ trigger_zone: { points, zone_type: 'polygon' } })
       })
 
       if (!res.ok) throw new Error('Failed to save trigger zone')
@@ -272,6 +423,18 @@ export default function CameraSettings() {
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleAddCamera = () => {
+    setShowAddModal(true)
+  }
+
+  const handleAddModalClose = () => {
+    setShowAddModal(false)
+  }
+
+  const handleAddModalSave = () => {
+    loadCameras()
   }
 
   if (loading) {
@@ -298,10 +461,20 @@ export default function CameraSettings() {
       {/* Header */}
       <Card className="bg-gradient-to-r from-blue-600/20 via-blue-500/10 to-cyan-500/10">
         <CardBody>
-          <h1 className="text-2xl font-bold text-slate-100">Camera Settings</h1>
-          <p className="text-sm text-slate-300 mt-1">
-            Configure trigger zones and camera parameters
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-100">Camera Settings</h1>
+              <p className="text-sm text-slate-300 mt-1">
+                Configure trigger zones and camera parameters
+              </p>
+            </div>
+            <Button variant="primary" onClick={handleAddCamera}>
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+              </svg>
+              Add Camera
+            </Button>
+          </div>
         </CardBody>
       </Card>
 
@@ -309,8 +482,14 @@ export default function CameraSettings() {
         <Card>
           <CardBody>
             <div className="text-center py-12">
-              <p className="text-slate-400">No cameras configured yet.</p>
-              <p className="text-sm text-slate-500 mt-2">Add a camera to get started.</p>
+              <div className="text-6xl mb-4">📹</div>
+              <p className="text-slate-400 mb-2">No cameras configured yet.</p>
+              <Button variant="primary" onClick={handleAddCamera}>
+                <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                </svg>
+                Add a camera to get started
+              </Button>
             </div>
           </CardBody>
         </Card>
@@ -366,6 +545,13 @@ export default function CameraSettings() {
           )}
         </div>
       )}
+
+      {/* Add Camera Modal */}
+      <AddCameraModal
+        open={showAddModal}
+        onClose={handleAddModalClose}
+        onSave={handleAddModalSave}
+      />
     </div>
   )
 }
