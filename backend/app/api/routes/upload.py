@@ -57,15 +57,25 @@ async def upload_one(file: UploadFile = File(...), db: Session = Depends(get_db)
     db.commit()
     db.refresh(cap)
 
-    enqueue_process_capture(cap.id, str(out_path))
+    enqueue_error = None
+    try:
+        enqueue_process_capture(cap.id, str(out_path))
+    except Exception as exc:
+        enqueue_error = str(exc)
 
-    return {"capture_id": cap.id, "original_path": str(out_path)}
+    return {
+        "capture_id": cap.id,
+        "original_path": str(out_path),
+        "enqueued": enqueue_error is None,
+        "enqueue_error": enqueue_error,
+    }
 
 @router.post("/upload/batch")
 async def upload_batch(files: list[UploadFile] = File(...), db: Session = Depends(get_db)):
     storage = resolve_storage_dir()
 
     ids = []
+    failed_enqueues = []
     for file in files:
         ext = Path(file.filename).suffix.lower() or ".jpg"
         fname = f"{uuid.uuid4().hex}{ext}"
@@ -79,7 +89,15 @@ async def upload_batch(files: list[UploadFile] = File(...), db: Session = Depend
         db.commit()
         db.refresh(cap)
 
-        enqueue_process_capture(cap.id, str(out_path))
+        try:
+            enqueue_process_capture(cap.id, str(out_path))
+        except Exception as exc:
+            failed_enqueues.append({"capture_id": cap.id, "error": str(exc)})
         ids.append(cap.id)
 
-    return {"capture_ids": ids, "count": len(ids)}
+    return {
+        "capture_ids": ids,
+        "count": len(ids),
+        "enqueued_count": len(ids) - len(failed_enqueues),
+        "failed_enqueues": failed_enqueues,
+    }
