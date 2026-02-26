@@ -166,23 +166,28 @@ function TriggerZoneEditor({ camera, onSave }) {
   useEffect(() => {
     if (camera && camera.camera_id) {
       const controller = new AbortController()
-      let objectUrl = null
 
       fetch(`${API_BASE}/api/cameras/${camera.camera_id}/snapshot`, { signal: controller.signal })
         .then(res => {
+          if (res.status === 404) {
+            return null
+          }
           if (!res.ok) {
             throw new Error(`Failed to load snapshot (status ${res.status})`)
           }
-          return res.blob()
+          return res.json()
         })
-        .then(blob => {
-          if (!blob) {
+        .then(snapshotData => {
+          if (!snapshotData?.image_url) {
             setSnapshot(null)
             setImageObj(null)
             return null
-          }          
-          const url = URL.createObjectURL(blob)
-          objectUrl = url
+          }
+
+          const imageUrl = snapshotData.image_url.startsWith('http')
+            ? snapshotData.image_url
+            : `${API_BASE}${snapshotData.image_url}`
+
           const img = new window.Image()
           img.onload = () => {
             setImageObj(img)
@@ -195,21 +200,18 @@ function TriggerZoneEditor({ camera, onSave }) {
               height: img.height * scale
             })
           }
-          img.src = url
-          setSnapshot(url)
+          img.src = imageUrl
+          setSnapshot(imageUrl)
         })
         .catch(err => {
           if (err.name === 'AbortError') return
-          console.error('Failed to load snapshot:', err)
-          // Set a placeholder or show error message
+          console.error('Failed to load snapshot metadata:', err)
           setImageObj(null)
+          setSnapshot(null)
         })
 
       return () => {
         controller.abort()
-        if (objectUrl) {
-          URL.revokeObjectURL(objectUrl)
-        }
       }
     }
   }, [camera])
