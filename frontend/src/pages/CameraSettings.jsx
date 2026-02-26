@@ -165,15 +165,24 @@ function TriggerZoneEditor({ camera, onSave }) {
   // Load camera snapshot
   useEffect(() => {
     if (camera && camera.camera_id) {
-      fetch(`${API_BASE}/api/cameras/${camera.camera_id}/snapshot`)
+      const controller = new AbortController()
+      let objectUrl = null
+
+      fetch(`${API_BASE}/api/cameras/${camera.camera_id}/snapshot`, { signal: controller.signal })
         .then(res => {
           if (!res.ok) {
-            throw new Error('No snapshot available - please capture an image first')
+            throw new Error(`Failed to load snapshot (status ${res.status})`)
           }
           return res.blob()
         })
         .then(blob => {
+          if (!blob) {
+            setSnapshot(null)
+            setImageObj(null)
+            return null
+          }          
           const url = URL.createObjectURL(blob)
+          objectUrl = url
           const img = new window.Image()
           img.onload = () => {
             setImageObj(img)
@@ -190,10 +199,18 @@ function TriggerZoneEditor({ camera, onSave }) {
           setSnapshot(url)
         })
         .catch(err => {
+          if (err.name === 'AbortError') return
           console.error('Failed to load snapshot:', err)
           // Set a placeholder or show error message
           setImageObj(null)
         })
+
+      return () => {
+        controller.abort()
+        if (objectUrl) {
+          URL.revokeObjectURL(objectUrl)
+        }
+      }
     }
   }, [camera])
 
@@ -338,6 +355,7 @@ function TriggerZoneEditor({ camera, onSave }) {
                 width={dimensions.width}
                 height={dimensions.height}
                 onClick={handleStageClick}
+                preventDefault={false}
                 ref={stageRef}
               >
                 <Layer>
