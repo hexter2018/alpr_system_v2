@@ -1,24 +1,26 @@
-# ✅ FIXED: Backend Dockerfile with complete FFmpeg support
-# 
-# การแก้ไข:
-# 1. เพิ่ม FFmpeg dependencies ครบถ้วน
-# 2. เพิ่ม network utilities สำหรับ debugging
-# 3. ตรวจสอบ OpenCV build with FFmpeg
+# ================================================================
+# ALPR Backend Dockerfile - FIXED VERSION 2
+# ================================================================
+# Fixes:
+# - Removed libavcodec-extra (unavailable in Ubuntu 22.04+)
+# - Removed libavresample-dev (deprecated, removed in FFmpeg 5+)
+# - Using libavcodec-dev instead
+# - All other FFmpeg libraries intact for RTSP support
+# ================================================================
 
 FROM python:3.11-slim
 
 WORKDIR /app
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
 
 # ================================================================
-# ✅ FIXED: Install system dependencies with FFmpeg
+# SYSTEM DEPENDENCIES - CORRECTED FOR UBUNTU 22.04
 # ================================================================
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Build tools
     build-essential \
+    pkg-config \
     libpq-dev \
-    # ✅ Graphics libraries
+    # ✅ Graphics libraries (required for OpenCV)
     libglib2.0-0 \
     libxcb1 \
     libgl1 \
@@ -28,59 +30,86 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     # ✅ FFmpeg and codecs (CRITICAL for RTSP)
     ffmpeg \
-    libavcodec-extra \
+    libavcodec-dev \
     libavformat-dev \
     libavutil-dev \
     libswscale-dev \
-    libavresample-dev \
+    libswresample-dev \
     # ✅ H.264/H.265 codecs
     libx264-dev \
     libx265-dev \
+    # ✅ Additional video codecs
+    libvpx-dev \
+    libopus-dev \
     # ✅ Network tools (for debugging)
     iputils-ping \
     net-tools \
     curl \
-    # Cleanup
     && rm -rf /var/lib/apt/lists/*
 
 # ================================================================
-# Install Python dependencies
+# PYTHON DEPENDENCIES
 # ================================================================
-COPY requirements.txt /app/requirements.txt
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # ================================================================
-# ✅ Verify OpenCV FFmpeg support
+# VERIFY OPENCV FFMPEG SUPPORT
 # ================================================================
 RUN python -c "import cv2; \
-    print('OpenCV version:', cv2.__version__); \
-    print('FFmpeg support:', cv2.getBuildInformation().find('FFMPEG') > 0); \
-    assert cv2.getBuildInformation().find('FFMPEG') > 0, 'OpenCV missing FFmpeg support!'"
+    build_info = cv2.getBuildInformation(); \
+    assert 'FFMPEG' in build_info, 'OpenCV was not built with FFMPEG support'; \
+    print('✅ OpenCV FFMPEG support verified')"
 
 # ================================================================
-# Copy application code
+# APPLICATION CODE
 # ================================================================
-COPY . /app
+COPY . .
 
 # ================================================================
-# ✅ OPTIONAL: Test RTSP connectivity script
+# MAKE STARTUP SCRIPT EXECUTABLE
+# ================================================================
+RUN chmod +x /app/start.sh
+
+# ================================================================
+# CREATE TEST SCRIPT
 # ================================================================
 RUN echo '#!/bin/bash\n\
-echo "Testing RTSP connectivity..."\n\
+echo "Testing RTSP connection to: $1"\n\
 python3 << EOF\n\
 import cv2\n\
 import sys\n\
-url = sys.argv[1] if len(sys.argv) > 1 else "rtsp://test"\n\
-cap = cv2.VideoCapture(url)\n\
+import os\n\
+\n\
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|stimeout;5000000"\n\
+\n\
+rtsp_url = sys.argv[1] if len(sys.argv) > 1 else "rtsp://host.docker.internal:554/stream"\n\
+print(f"Attempting to connect to: {rtsp_url}")\n\
+\n\
+cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)\n\
 if cap.isOpened():\n\
-    print(f"✅ Successfully opened: {url}")\n\
     ret, frame = cap.read()\n\
     if ret:\n\
-        print(f"✅ Frame size: {frame.shape}")\n\
+        print(f"✅ Successfully connected! Frame shape: {frame.shape}")\n\
+    else:\n\
+        print("❌ Connection opened but no frames received")\n\
     cap.release()\n\
 else:\n\
-    print(f"❌ Failed to open: {url}")\n\
+    print("❌ Failed to open connection")\n\
+    print(f"Error details: {cv2.getBuildInformation()}")\n\
 EOF\n\
 ' > /app/test_rtsp.sh && chmod +x /app/test_rtsp.sh
 
-CMD ["bash", "start.sh"]
+# ================================================================
+# ENVIRONMENT & STARTUP
+# ================================================================
+ENV PYTHONUNBUFFERED=1
+ENV OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp
+
+EXPOSE 8000
+
+# Use start.sh which handles:
+# 1. Wait for PostgreSQL
+# 2. Run migrations (alembic upgrade head)
+# 3. Start uvicorn
+CMD ["/app/start.sh"]
