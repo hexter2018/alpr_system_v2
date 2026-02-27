@@ -75,6 +75,13 @@ def create_camera(payload: CameraCreateIn, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(camera)
     
+    from app.services.camera_pool import get_camera_pool
+    try:
+        pool = get_camera_pool()
+        pool.reload_trigger_zone(camera_id)
+    except:
+        pass  # Pool might not be initialized yet
+
     return CameraOut.model_validate(camera)
 
 @router.put("/{camera_id}", response_model=CameraOut)
