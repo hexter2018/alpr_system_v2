@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Stage, Layer, Line, Circle, Image as KonvaImage } from 'react-konva'
 import { Button, Card, CardHeader, CardBody, Input, Badge, Spinner } from '../components/UIComponents.jsx'
-import { API_BASE } from '../lib/api.js'
+import { API_BASE, apiFetch } from '../lib/api.js'
 
 /* ===== TOAST ===== */
 function Toast({ message, type = 'success', onClose }) {
@@ -62,7 +62,7 @@ function CameraModal({ open, onClose, onSave, editCamera = null }) {
       const body = isEdit
         ? { name: formData.name, rtsp_url: formData.rtsp_url, enabled: formData.enabled, fps: formData.fps }
         : formData
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -184,7 +184,7 @@ function TriggerZoneEditor({ camera, onSave }) {
       blobUrlRef.current = null
     }
 
-    fetch(`${API_BASE}/api/cameras/${camera.camera_id}/snapshot`)
+    apiFetch(`${API_BASE}/api/cameras/${camera.camera_id}/snapshot`)
       .then(res => {
         if (!res.ok) {
           const err = new Error(
@@ -246,7 +246,7 @@ function TriggerZoneEditor({ camera, onSave }) {
     const ctrl = new AbortController()
     const timeout = setTimeout(() => ctrl.abort(), 3000)
 
-    fetch(mjpegUrl, { method: 'HEAD', signal: ctrl.signal })
+    apiFetch(mjpegUrl, { method: 'HEAD', signal: ctrl.signal }, 3000)
       .then(res => {
         clearTimeout(timeout)
         if (res.ok || res.status === 200) {
@@ -581,7 +581,7 @@ export default function CameraSettings() {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch(`${API_BASE}/api/cameras`)
+      const res = await apiFetch(`${API_BASE}/api/cameras`)
       if (!res.ok) throw new Error('Failed to load cameras')
       const data = await res.json()
       setCameras(data)
@@ -602,7 +602,7 @@ export default function CameraSettings() {
     if (!selectedCamera) return
     setSaving(true)
     try {
-      const res = await fetch(`${API_BASE}/api/cameras/${selectedCamera.camera_id}/trigger-zone`, {
+      const res = await apiFetch(`${API_BASE}/api/cameras/${selectedCamera.camera_id}/trigger-zone`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ trigger_zone: { points: normalizedPoints, zone_type: 'polygon' } })
@@ -621,7 +621,7 @@ export default function CameraSettings() {
   async function handleDeleteCamera(camera) {
     if (!window.confirm(`Delete camera "${camera.name || camera.camera_id}"?`)) return
     try {
-      const res = await fetch(`${API_BASE}/api/cameras/${camera.camera_id}`, { method: 'DELETE' })
+      const res = await apiFetch(`${API_BASE}/api/cameras/${camera.camera_id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error('Failed to delete camera')
       if (selectedCamera?.camera_id === camera.camera_id) setSelectedCamera(null)
       await loadCameras()
