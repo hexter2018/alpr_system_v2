@@ -166,48 +166,67 @@ function TriggerZoneEditor({ camera, onSave }) {
 
   // Load camera snapshot
   useEffect(() => {
-    if (camera && camera.camera_id) {
-      setLoading(true)
-      setSnapshotError(null)
-      
-      fetch(`${API_BASE}/api/cameras/${camera.camera_id}/snapshot`)
-        .then(res => {
-          if (!res.ok) {
-            throw new Error('No snapshot available')
-          }
-          return res.blob()
-        })
-        .then(blob => {
-          const url = URL.createObjectURL(blob)
-          const img = new window.Image()
-          img.onload = () => {
-            setImageObj(img)
-            // Scale to fit editor
-            const maxWidth = 800
-            const maxHeight = 600
-            const scale = Math.min(maxWidth / img.width, maxHeight / img.height, 1)
-            setDimensions({
-              width: img.width * scale,
-              height: img.height * scale
-            })
-            setLoading(false)
-          }
-          img.onerror = () => {
-            setSnapshotError('Failed to load snapshot image')
-            setImageObj(null)
-            setLoading(false)
-          }
-          img.src = url
-          setSnapshot(url)
-        })
-        .catch(err => {
-          // Silent catch - don't log to console
-          setSnapshotError(err.message)
+    if (!camera?.camera_id) {
+      setImageObj(null)
+      setLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setLoading(true)
+    setSnapshotError(null)
+    
+    fetch(`${API_BASE}/api/cameras/${camera.camera_id}/snapshot`)
+      .then(res => {
+        if (cancelled) return null
+        if (!res.ok) {
+          throw new Error('No snapshot available')
+        }
+        return res.blob()
+      })
+      .then(blob => {
+        if (cancelled || !blob) return
+        
+        const url = URL.createObjectURL(blob)
+        const img = new window.Image()
+        
+        img.onload = () => {
+          if (cancelled) return
+          setImageObj(img)
+          // Scale to fit editor
+          const maxWidth = 800
+          const maxHeight = 600
+          const scale = Math.min(maxWidth / img.width, maxHeight / img.height, 1)
+          setDimensions({
+            width: img.width * scale,
+            height: img.height * scale
+          })
+          setLoading(false)
+        }
+        
+        img.onerror = () => {
+          if (cancelled) return
+          setSnapshotError('Failed to load snapshot image')
           setImageObj(null)
           setLoading(false)
-        })
+        }
+        
+        img.src = url
+        setSnapshot(url)
+      })
+      .catch(err => {
+        if (cancelled) return
+        // Silent catch - don't log to console
+        setSnapshotError(err.message)
+        setImageObj(null)
+        setLoading(false)
+      })
+
+    // Cleanup function
+    return () => {
+      cancelled = true
     }
-  }, [camera])
+  }, [camera?.camera_id]) // Only depend on camera_id, not entire camera object
 
   // Load existing trigger zone
   useEffect(() => {
