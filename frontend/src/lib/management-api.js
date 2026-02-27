@@ -180,16 +180,15 @@ export async function listAlerts(filters = {}) {
   if (filters.camera_id) params.append('camera_id', filters.camera_id)
   if (filters.alert_level) params.append('alert_level', filters.alert_level)
   
-  const res = await fetch(`${API_BASE}/api/watchlist/alerts?${params}`)
+  const res = await fetch(`${API_BASE}/api/alerts?${params}`)  // ✅ ถูกต้อง
   if (!res.ok) throw new Error('Failed to load alerts')
   return res.json()
 }
 
 export async function acknowledgeAlert(alertId, userId = 'user') {
-  const res = await fetch(`${API_BASE}/api/watchlist/alerts/${alertId}/acknowledge`, {
+  const res = await fetch(`${API_BASE}/api/alerts/${alertId}/acknowledge?acknowledged_by=${userId}`, {  // ✅ ถูกต้อง
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id: userId })
+    headers: { 'Content-Type': 'application/json' }
   })
   if (!res.ok) throw new Error('Failed to acknowledge alert')
   return res.json()
