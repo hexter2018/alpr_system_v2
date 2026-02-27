@@ -1,19 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, text
 from typing import List, Optional
 from datetime import datetime, timedelta
+from pathlib import Path
+import cv2
 
 from app.db.session import get_db
 from app.db import models
 from app.schemas.camera import (
-    CameraOut, CameraCreateIn, CameraUpdateIn, 
+    CameraOut, CameraCreateIn, CameraUpdateIn,
     CameraStatusUpdate, TriggerZoneUpdate
 )
 
 router = APIRouter()
 
-# ✅ แก้ไขเป็น / แทน /cameras
+
 @router.get("/", response_model=List[CameraOut])
 def list_cameras(
     enabled_only: bool = Query(False),
@@ -24,16 +27,16 @@ def list_cameras(
     if enabled_only:
         query = query.filter(models.Camera.enabled == True)
     cameras = query.order_by(desc(models.Camera.created_at)).all()
-    
-    # Check heartbeat status (mark offline if not seen in 30s)
+
     now = datetime.utcnow()
     for cam in cameras:
         if cam.last_seen and (now - cam.last_seen).total_seconds() > 30:
             if cam.status != "OFFLINE":
                 cam.status = "OFFLINE"
                 db.commit()
-    
+
     return [CameraOut.model_validate(c) for c in cameras]
+
 
 @router.get("/{camera_id}", response_model=CameraOut)
 def get_camera(camera_id: str, db: Session = Depends(get_db)):
@@ -41,26 +44,26 @@ def get_camera(camera_id: str, db: Session = Depends(get_db)):
     camera = db.query(models.Camera).filter(
         models.Camera.camera_id == camera_id
     ).first()
-    
+
     if not camera:
         raise HTTPException(status_code=404, detail="Camera not found")
-    
+
     return CameraOut.model_validate(camera)
+
 
 @router.post("/", response_model=CameraOut)
 def create_camera(payload: CameraCreateIn, db: Session = Depends(get_db)):
     """Create a new camera"""
-    # Check if camera_id already exists
     existing = db.query(models.Camera).filter(
         models.Camera.camera_id == payload.camera_id
     ).first()
-    
+
     if existing:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail=f"Camera with ID '{payload.camera_id}' already exists"
         )
-    
+
     camera = models.Camera(
         camera_id=payload.camera_id,
         name=payload.name,
@@ -70,35 +73,35 @@ def create_camera(payload: CameraCreateIn, db: Session = Depends(get_db)):
         trigger_zone=payload.trigger_zone.model_dump() if payload.trigger_zone else None,
         status="OFFLINE"
     )
-    
+
     db.add(camera)
     db.commit()
     db.refresh(camera)
-    
-    from app.services.camera_pool import get_camera_pool
+
     try:
+        from app.services.camera_pool import get_camera_pool
         pool = get_camera_pool()
-        pool.reload_trigger_zone(camera_id)
-    except:
-        pass  # Pool might not be initialized yet
+        pool.reload_trigger_zone(payload.camera_id)
+    except Exception:
+        pass
 
     return CameraOut.model_validate(camera)
 
+
 @router.put("/{camera_id}", response_model=CameraOut)
 def update_camera(
-    camera_id: str, 
-    payload: CameraUpdateIn, 
+    camera_id: str,
+    payload: CameraUpdateIn,
     db: Session = Depends(get_db)
 ):
     """Update camera configuration"""
     camera = db.query(models.Camera).filter(
         models.Camera.camera_id == camera_id
     ).first()
-    
+
     if not camera:
         raise HTTPException(status_code=404, detail="Camera not found")
-    
-    # Update fields if provided
+
     if payload.name is not None:
         camera.name = payload.name
     if payload.rtsp_url is not None:
@@ -109,11 +112,12 @@ def update_camera(
         camera.fps = payload.fps
     if payload.trigger_zone is not None:
         camera.trigger_zone = payload.trigger_zone.model_dump() if payload.trigger_zone else None
-    
+
     db.commit()
     db.refresh(camera)
-    
+
     return CameraOut.model_validate(camera)
+
 
 @router.patch("/{camera_id}/trigger-zone", response_model=CameraOut)
 def update_trigger_zone(
@@ -125,15 +129,16 @@ def update_trigger_zone(
     camera = db.query(models.Camera).filter(
         models.Camera.camera_id == camera_id
     ).first()
-    
+
     if not camera:
         raise HTTPException(status_code=404, detail="Camera not found")
-    
+
     camera.trigger_zone = payload.trigger_zone.model_dump() if payload.trigger_zone else None
     db.commit()
     db.refresh(camera)
-    
+
     return CameraOut.model_validate(camera)
+
 
 @router.patch("/{camera_id}/status", response_model=CameraOut)
 def update_camera_status(
@@ -145,17 +150,18 @@ def update_camera_status(
     camera = db.query(models.Camera).filter(
         models.Camera.camera_id == camera_id
     ).first()
-    
+
     if not camera:
         raise HTTPException(status_code=404, detail="Camera not found")
-    
+
     camera.status = payload.status
     camera.last_seen = datetime.utcnow()
-    
+
     db.commit()
     db.refresh(camera)
-    
+
     return CameraOut.model_validate(camera)
+
 
 @router.delete("/{camera_id}")
 def delete_camera(camera_id: str, db: Session = Depends(get_db)):
@@ -163,34 +169,79 @@ def delete_camera(camera_id: str, db: Session = Depends(get_db)):
     camera = db.query(models.Camera).filter(
         models.Camera.camera_id == camera_id
     ).first()
-    
+
     if not camera:
         raise HTTPException(status_code=404, detail="Camera not found")
-    
+
     db.delete(camera)
     db.commit()
-    
+
     return {"ok": True, "camera_id": camera_id}
+
 
 @router.get("/{camera_id}/snapshot")
 def get_camera_snapshot(camera_id: str, db: Session = Depends(get_db)):
-    """Get the latest snapshot from a camera for trigger zone editor"""
-    # Get the most recent capture for this camera
-    capture = db.query(models.Capture).filter(
-        models.Capture.camera_id == camera_id
-    ).order_by(desc(models.Capture.captured_at)).first()
-    
-    if not capture:
-        raise HTTPException(
-            status_code=404, 
-            detail="No snapshots available for this camera"
-        )
-    
-    from app.services.storage import make_image_url
-    
-    return {
-        "camera_id": camera_id,
-        "image_url": make_image_url(capture.original_path),
-        "captured_at": capture.captured_at.isoformat(),
-        "capture_id": capture.id
-    }
+    """
+    Get the latest snapshot from a camera for the trigger zone editor.
+
+    Priority order:
+    1. Live frame from a running CameraStreamManager  →  fastest / most current
+    2. Most-recent Capture row stored on disk          →  fallback when offline
+    3. 404 with a descriptive message
+    """
+
+    # ── 1. Try live frame from CameraPool ──────────────────────────────────
+    try:
+        from app.services.camera_pool import get_camera_pool
+        pool = get_camera_pool()
+        cam_mgr = pool.get_camera(camera_id)
+        if cam_mgr is not None:
+            frame_obj = cam_mgr.get_latest_frame()
+            if frame_obj is not None:
+                ret, buf = cv2.imencode(
+                    ".jpg", frame_obj.frame,
+                    [cv2.IMWRITE_JPEG_QUALITY, 90]
+                )
+                if ret:
+                    return Response(
+                        content=buf.tobytes(),
+                        media_type="image/jpeg",
+                        headers={"X-Snapshot-Source": "live"},
+                    )
+    except Exception:
+        # Pool not initialised yet, or camera not in pool – fall through
+        pass
+
+    # ── 2. Fall back to the most-recent DB capture ──────────────────────────
+    capture = (
+        db.query(models.Capture)
+        .filter(models.Capture.camera_id == camera_id)
+        .order_by(desc(models.Capture.captured_at))
+        .first()
+    )
+
+    if capture:
+        img_path = Path(capture.original_path)
+        if img_path.exists():
+            img = cv2.imread(str(img_path))
+            if img is not None:
+                ret, buf = cv2.imencode(
+                    ".jpg", img,
+                    [cv2.IMWRITE_JPEG_QUALITY, 90]
+                )
+                if ret:
+                    return Response(
+                        content=buf.tobytes(),
+                        media_type="image/jpeg",
+                        headers={"X-Snapshot-Source": "db"},
+                    )
+
+    # ── 3. Nothing available ────────────────────────────────────────────────
+    raise HTTPException(
+        status_code=404,
+        detail=(
+            "No snapshot available for this camera. "
+            "Start the camera stream or upload an image with "
+            f"camera_id='{camera_id}' first."
+        ),
+    )
