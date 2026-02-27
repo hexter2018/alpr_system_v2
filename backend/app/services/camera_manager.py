@@ -177,6 +177,9 @@ class CameraStreamManager:
     def _capture_frames(self):
         """Background thread: Capture frames from RTSP stream"""
         log.info(f"Starting frame capture for {self.config.camera_id}")
+
+        import os
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
         
         cap = cv2.VideoCapture(self.config.rtsp_url)
         if not cap.isOpened():
