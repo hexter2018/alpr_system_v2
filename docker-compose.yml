@@ -39,12 +39,21 @@ services:
     build:
       context: ./backend
     user: "1000:1000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
     environment:
       TZ: Asia/Bangkok
       DATABASE_URL: postgresql+psycopg2://alpr:alpr@postgres:5432/alpr
       REDIS_URL: redis://redis:6379/0
       STORAGE_DIR: /storage
       CORS_ORIGINS: http://localhost:5173,http://10.32.70.136,http://10.32.70.136:5173
+      CUDA_VISIBLE_DEVICES: "0"
+      NVIDIA_VISIBLE_DEVICES: "0"
     volumes:
       - ./storage:/storage
       - ./models:/models

@@ -82,6 +82,11 @@ class CameraStreamManager:
         
         # Initialize detector
         from ultralytics import YOLO
+        import torch
+
+        self.device = 0 if torch.cuda.is_available() else 'cpu'
+        print(f"Using device: {self.device}")
+
         self.detector = YOLO(detector_model_path, task="detect")
         self.detector_conf = detector_conf
         self.detector_iou = detector_iou
