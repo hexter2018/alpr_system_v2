@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { absImageUrl, API_BASE } from '../lib/api.js'
+import { absImageUrl, API_BASE, apiFetch } from '../lib/api.js'
 
 function formatBangkokDateTime(value) {
   if (!value) return '-'
@@ -43,18 +43,18 @@ export default function Reports() {
       if (province) params.append('province', province)
       if (cameraId) params.append('camera_id', cameraId)
 
-      const res = await fetch(`${API_BASE}/api/reports/stats?${params}`)
+      const res = await apiFetch(`${API_BASE}/api/reports/stats?${params}`)
       if (!res.ok) throw new Error('Failed to fetch stats')
       const data = await res.json()
       setStats(data)
 
-      const actRes = await fetch(`${API_BASE}/api/reports/activity?${params}&limit=50`)
+      const actRes = await apiFetch(`${API_BASE}/api/reports/activity?${params}&limit=50`)
       if (actRes.ok) {
         const actData = await actRes.json()
         setActivity(actData)
       }
 
-      const accRes = await fetch(`${API_BASE}/api/reports/accuracy?days=7`)
+      const accRes = await apiFetch(`${API_BASE}/api/reports/accuracy?days=7`)
       if (accRes.ok) {
         const accData = await accRes.json()
         setAccuracy(accData)

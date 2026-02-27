@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { deleteMaster, searchMaster, upsertMaster, absImageUrl, API_BASE } from '../lib/api.js'
+import { deleteMaster, searchMaster, upsertMaster, absImageUrl, API_BASE, apiFetch } from '../lib/api.js'
 
 export default function Master() {
   const [q, setQ] = useState("")
@@ -18,7 +18,7 @@ export default function Master() {
       const enriched = await Promise.all(
         r.map(async (row) => {
           try {
-            const res = await fetch(`${API_BASE}/api/master/${row.id}/crops?limit=5`)
+            const res = await apiFetch(`${API_BASE}/api/master/${row.id}/crops?limit=5`)
             if (res.ok) {
               const crops = await res.json()
               return { ...row, crops }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Card, CardHeader, CardBody, Badge, Spinner, StatCard } from '../components/UIComponents.jsx'
-import { API_BASE } from '../lib/api.js'
+import { API_BASE, apiFetch } from '../lib/api.js'
 
 /* ===== CAMERA HEALTH CARD ===== */
 function CameraHealthCard({ camera }) {
@@ -131,28 +131,28 @@ export default function HealthDashboard() {
   async function loadHealthData() {
     try {
       // System health
-      const systemRes = await fetch(`${API_BASE}/api/health/system`)
+      const systemRes = await apiFetch(`${API_BASE}/api/health/system`)
       if (systemRes.ok) {
         const systemData = await systemRes.json()
         setSystemHealth(systemData)
       }
 
       // Camera health
-      const cameraRes = await fetch(`${API_BASE}/api/health/cameras`)
+      const cameraRes = await apiFetch(`${API_BASE}/api/health/cameras`)
       if (cameraRes.ok) {
         const cameraData = await cameraRes.json()
         setCameraHealth(cameraData)
       }
 
       // Worker health
-      const workerRes = await fetch(`${API_BASE}/api/health/workers`)
+      const workerRes = await apiFetch(`${API_BASE}/api/health/workers`)
       if (workerRes.ok) {
         const workerData = await workerRes.json()
         setWorkerHealth(workerData)
       }
 
       // Metrics (last 1 hour)
-      const metricsRes = await fetch(`${API_BASE}/api/health/metrics?hours=1`)
+      const metricsRes = await apiFetch(`${API_BASE}/api/health/metrics?hours=1`)
       if (metricsRes.ok) {
         const metricsData = await metricsRes.json()
         
