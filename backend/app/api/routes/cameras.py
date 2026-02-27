@@ -186,7 +186,8 @@ def delete_camera(camera_id: str, db: Session = Depends(get_db)):
 # ✅ FIXED: Snapshot endpoint with better fallback logic
 # ============================================================================
 @router.get("/{camera_id}/snapshot")
-def get_camera_snapshot(camera_id: str, db: Session = Depends(get_db)):
+@router.head("/{camera_id}/snapshot")
+def get_camera_snapshot(camera_id: str, request: Request, db: Session = Depends(get_db)):
     """
     Get the latest snapshot from a camera.
 
@@ -206,6 +207,9 @@ def get_camera_snapshot(camera_id: str, db: Session = Depends(get_db)):
             status_code=404, 
             detail=f"Camera '{camera_id}' not found in database"
         )
+    
+    if request.method == "HEAD":
+        return Response(status_code=200)
     
     # ── 1. Try live frame from camera pool ──
     try:

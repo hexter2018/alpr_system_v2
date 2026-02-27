@@ -186,11 +186,15 @@ function TriggerZoneEditor({ camera, onSave }) {
 
     fetch(`${API_BASE}/api/cameras/${camera.camera_id}/snapshot`)
       .then(res => {
-        if (!res.ok) throw new Error(
-          res.status === 404
-            ? 'No snapshot available'
-            : `Server error ${res.status}`
-        )
+        if (!res.ok) {
+          const err = new Error(
+            res.status === 404
+              ? 'No snapshot available'
+              : `Server error ${res.status}`
+          )
+          err.status = res.status
+          throw err
+        }
         return res.blob()
       })
       .then(blob => {
@@ -214,6 +218,10 @@ function TriggerZoneEditor({ camera, onSave }) {
         img.src = url
       })
       .catch(err => {
+        if (err?.status === 404 && pollTimerRef.current) {
+          clearInterval(pollTimerRef.current)
+          pollTimerRef.current = null
+        }
         setSnapshotError(err.message)
         setLoading(false)
       })
