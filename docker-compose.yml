@@ -48,6 +48,11 @@ services:
               capabilities: [gpu]
     environment:
       TZ: Asia/Bangkok
+      HOME: /tmp
+      XDG_CONFIG_HOME: /tmp/.config
+      XDG_CACHE_HOME: /tmp/.cache
+      MPLCONFIGDIR: /tmp/.config/matplotlib
+      YOLO_CONFIG_DIR: /tmp/.config/Ultralytics
       DATABASE_URL: postgresql+psycopg2://alpr:alpr@postgres:5432/alpr
       REDIS_URL: redis://redis:6379/0
       STORAGE_DIR: /storage
@@ -88,6 +93,11 @@ services:
               capabilities: [gpu]
     environment:
       TZ: Asia/Bangkok
+      HOME: /tmp
+      XDG_CONFIG_HOME: /tmp/.config
+      XDG_CACHE_HOME: /tmp/.cache
+      MPLCONFIGDIR: /tmp/.config/matplotlib
+      YOLO_CONFIG_DIR: /tmp/.config/Ultralytics
       # TensorRT settings
       TRT_WORKSPACE: "4096"
       TRT_FP16: "1"
@@ -211,6 +221,11 @@ services:
           condition: service_healthy
       environment:
         TZ: Asia/Bangkok
+        HOME: /tmp
+        XDG_CONFIG_HOME: /tmp/.config
+        XDG_CACHE_HOME: /tmp/.cache
+        MPLCONFIGDIR: /tmp/.config/matplotlib
+        YOLO_CONFIG_DIR: /tmp/.config/Ultralytics
         DATABASE_URL: postgresql+psycopg2://alpr:alpr@postgres:5432/alpr
         REDIS_URL: redis://redis:6379/0
         STORAGE_DIR: /storage
