@@ -1,11 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, text
 from typing import List, Optional
 from datetime import datetime, timedelta
 from pathlib import Path
 import cv2
+import time
+import logging
 
 from app.db.session import get_db
 from app.db import models
@@ -15,6 +17,7 @@ from app.schemas.camera import (
 )
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 
 @router.get("/", response_model=List[CameraOut])
@@ -179,22 +182,37 @@ def delete_camera(camera_id: str, db: Session = Depends(get_db)):
     return {"ok": True, "camera_id": camera_id}
 
 
+# ============================================================================
+# ✅ FIXED: Snapshot endpoint with better fallback logic
+# ============================================================================
 @router.get("/{camera_id}/snapshot")
 def get_camera_snapshot(camera_id: str, db: Session = Depends(get_db)):
     """
-    Get the latest snapshot from a camera for the trigger zone editor.
+    Get the latest snapshot from a camera.
 
     Priority order:
-    1. Live frame from a running CameraStreamManager  →  fastest / most current
-    2. Most-recent Capture row stored on disk          →  fallback when offline
-    3. 404 with a descriptive message
+    1. Live frame from camera pool (fastest, most current)
+    2. Most recent capture from database (fallback when offline)
+    3. Placeholder message (camera exists but no data)
     """
-
-    # ── 1. Try live frame from CameraPool ──────────────────────────────────
+    
+    # ✅ First, verify camera exists in database
+    camera = db.query(models.Camera).filter(
+        models.Camera.camera_id == camera_id
+    ).first()
+    
+    if not camera:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Camera '{camera_id}' not found in database"
+        )
+    
+    # ── 1. Try live frame from camera pool ──
     try:
         from app.services.camera_pool import get_camera_pool
         pool = get_camera_pool()
         cam_mgr = pool.get_camera(camera_id)
+        
         if cam_mgr is not None:
             frame_obj = cam_mgr.get_latest_frame()
             if frame_obj is not None:
@@ -203,75 +221,131 @@ def get_camera_snapshot(camera_id: str, db: Session = Depends(get_db)):
                     [cv2.IMWRITE_JPEG_QUALITY, 90]
                 )
                 if ret:
+                    log.info(f"✅ Snapshot from live stream: {camera_id}")
                     return Response(
                         content=buf.tobytes(),
                         media_type="image/jpeg",
-                        headers={"X-Snapshot-Source": "live"},
+                        headers={
+                            "X-Snapshot-Source": "live",
+                            "Cache-Control": "no-cache, no-store, must-revalidate",
+                            "Pragma": "no-cache",
+                        },
                     )
-    except Exception:
-        # Pool not initialised yet, or camera not in pool – fall through
-        pass
+    except Exception as e:
+        log.warning(f"Failed to get live frame for {camera_id}: {e}")
+        # Continue to fallback
 
-    # ── 2. Fall back to the most-recent DB capture ──────────────────────────
-    capture = (
-        db.query(models.Capture)
-        .filter(models.Capture.camera_id == camera_id)
-        .order_by(desc(models.Capture.captured_at))
-        .first()
-    )
+    # ── 2. Fall back to most recent database capture ──
+    try:
+        capture = (
+            db.query(models.Capture)
+            .filter(models.Capture.camera_id == camera_id)
+            .order_by(desc(models.Capture.captured_at))
+            .first()
+        )
 
-    if capture:
-        img_path = Path(capture.original_path)
-        if img_path.exists():
-            img = cv2.imread(str(img_path))
-            if img is not None:
-                ret, buf = cv2.imencode(
-                    ".jpg", img,
-                    [cv2.IMWRITE_JPEG_QUALITY, 90]
-                )
-                if ret:
-                    return Response(
-                        content=buf.tobytes(),
-                        media_type="image/jpeg",
-                        headers={"X-Snapshot-Source": "db"},
+        if capture:
+            img_path = Path(capture.original_path)
+            if img_path.exists():
+                img = cv2.imread(str(img_path))
+                if img is not None:
+                    ret, buf = cv2.imencode(
+                        ".jpg", img,
+                        [cv2.IMWRITE_JPEG_QUALITY, 90]
                     )
+                    if ret:
+                        log.info(f"✅ Snapshot from database: {camera_id}")
+                        return Response(
+                            content=buf.tobytes(),
+                            media_type="image/jpeg",
+                            headers={
+                                "X-Snapshot-Source": "db",
+                                "Cache-Control": "max-age=60",
+                            },
+                        )
+    except Exception as e:
+        log.warning(f"Failed to get DB capture for {camera_id}: {e}")
 
-    # ── 3. Nothing available ────────────────────────────────────────────────
+    # ── 3. No snapshot available ──
+    log.warning(f"❌ No snapshot available for {camera_id}")
     raise HTTPException(
         status_code=404,
-        detail=(
-            "No snapshot available for this camera. "
-            "Start the camera stream or upload an image with "
-            f"camera_id='{camera_id}' first."
-        ),
+        detail={
+            "message": "No snapshot available for this camera",
+            "camera_id": camera_id,
+            "camera_status": camera.status,
+            "suggestions": [
+                "Ensure camera is enabled and streaming",
+                "Check RTSP connection",
+                "Wait for camera pool initialization"
+            ]
+        }
     )
 
 
+# ============================================================================
+# ✅ FIXED: Stream endpoint with HEAD support
+# ============================================================================
 @router.get("/{camera_id}/stream")
-def get_camera_stream(camera_id: str):
+@router.head("/{camera_id}/stream")  # ✅ Support HEAD requests
+async def get_camera_stream(
+    camera_id: str, 
+    request: Request,  # ✅ Access request to check method
+    db: Session = Depends(get_db)
+):
     """
-    MJPEG live stream for the Trigger Zone Editor browser viewer.
-    Returns multipart/x-mixed-replace stream of JPEG frames.
-    Browser <img> tag handles this natively — no JS needed.
-
-    Returns 404 if camera is not in pool (frontend falls back to polling).
+    MJPEG live stream for browser viewing.
+    Supports both GET (streaming) and HEAD (availability check).
+    
+    Returns:
+    - GET: multipart/x-mixed-replace stream of JPEG frames
+    - HEAD: 200 OK if stream available, 404 if not
     """
-    import time
-    from fastapi.responses import StreamingResponse
-
-    # Quick check: is camera available in pool?
+    
+    # ✅ Verify camera exists
+    camera = db.query(models.Camera).filter(
+        models.Camera.camera_id == camera_id
+    ).first()
+    
+    if not camera:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Camera '{camera_id}' not found"
+        )
+    
+    # ✅ Check if camera is in pool
     try:
         from app.services.camera_pool import get_camera_pool
         pool = get_camera_pool()
         cam_mgr = pool.get_camera(camera_id)
+        
         if cam_mgr is None:
-            raise HTTPException(status_code=404, detail="Camera stream not available")
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Camera '{camera_id}' stream not available. Camera may be offline or not initialized."
+            )
     except HTTPException:
         raise
-    except Exception:
-        raise HTTPException(status_code=404, detail="Camera pool not ready")
-
+    except Exception as e:
+        log.error(f"Camera pool error for {camera_id}: {e}")
+        raise HTTPException(
+            status_code=503, 
+            detail="Camera pool not ready"
+        )
+    
+    # ✅ For HEAD requests, just return success (stream is available)
+    if request.method == "HEAD":
+        return Response(
+            status_code=200,
+            headers={
+                "Content-Type": "multipart/x-mixed-replace; boundary=frame",
+                "Cache-Control": "no-cache",
+            }
+        )
+    
+    # ✅ For GET requests, stream the video
     def generate():
+        """Generate MJPEG stream"""
         boundary = b"--frame"
         last_frame_id = None
 
@@ -279,30 +353,36 @@ def get_camera_stream(camera_id: str):
             from app.services.camera_pool import get_camera_pool
             pool = get_camera_pool()
             cam_mgr = pool.get_camera(camera_id)
+            
             if cam_mgr is None:
+                log.error(f"Camera {camera_id} disappeared from pool during streaming")
                 return
 
             while True:
                 frame_obj = cam_mgr.get_latest_frame()
+                
                 if frame_obj is None:
                     time.sleep(0.1)
                     continue
 
-                # Skip duplicate frames (avoid redundant JPEG encoding)
+                # Skip duplicate frames
                 frame_id = id(frame_obj)
                 if frame_id == last_frame_id:
                     time.sleep(0.05)
                     continue
                 last_frame_id = frame_id
 
+                # Encode frame as JPEG
                 ret, buf = cv2.imencode(
                     ".jpg", frame_obj.frame,
-                    [cv2.IMWRITE_JPEG_QUALITY, 75]  # Lower quality for streaming bandwidth
+                    [cv2.IMWRITE_JPEG_QUALITY, 75]
                 )
                 if not ret:
                     continue
 
                 jpg = buf.tobytes()
+                
+                # Yield MJPEG part
                 yield (
                     boundary + b"\r\n"
                     + b"Content-Type: image/jpeg\r\n"
@@ -310,16 +390,14 @@ def get_camera_stream(camera_id: str):
                     + jpg
                     + b"\r\n"
                 )
-                # Throttle to ~10 fps for editor view (saves bandwidth vs. full FPS)
+                
+                # Throttle to ~10 fps
                 time.sleep(0.1)
 
         except GeneratorExit:
-            pass  # Client disconnected normally
+            log.info(f"Client disconnected from stream: {camera_id}")
         except Exception as e:
-            log.error(f"MJPEG stream error for {camera_id}: {e}")
-
-    import logging
-    log = logging.getLogger(__name__)
+            log.error(f"MJPEG stream error for {camera_id}: {e}", exc_info=True)
 
     return StreamingResponse(
         generate(),
@@ -328,5 +406,6 @@ def get_camera_stream(camera_id: str):
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "Pragma": "no-cache",
             "Access-Control-Allow-Origin": "*",
+            "Connection": "keep-alive",
         },
     )
