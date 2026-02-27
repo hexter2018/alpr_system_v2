@@ -245,3 +245,88 @@ def get_camera_snapshot(camera_id: str, db: Session = Depends(get_db)):
             f"camera_id='{camera_id}' first."
         ),
     )
+
+
+@router.get("/{camera_id}/stream")
+def get_camera_stream(camera_id: str):
+    """
+    MJPEG live stream for the Trigger Zone Editor browser viewer.
+    Returns multipart/x-mixed-replace stream of JPEG frames.
+    Browser <img> tag handles this natively — no JS needed.
+
+    Returns 404 if camera is not in pool (frontend falls back to polling).
+    """
+    import time
+    from fastapi.responses import StreamingResponse
+
+    # Quick check: is camera available in pool?
+    try:
+        from app.services.camera_pool import get_camera_pool
+        pool = get_camera_pool()
+        cam_mgr = pool.get_camera(camera_id)
+        if cam_mgr is None:
+            raise HTTPException(status_code=404, detail="Camera stream not available")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=404, detail="Camera pool not ready")
+
+    def generate():
+        boundary = b"--frame"
+        last_frame_id = None
+
+        try:
+            from app.services.camera_pool import get_camera_pool
+            pool = get_camera_pool()
+            cam_mgr = pool.get_camera(camera_id)
+            if cam_mgr is None:
+                return
+
+            while True:
+                frame_obj = cam_mgr.get_latest_frame()
+                if frame_obj is None:
+                    time.sleep(0.1)
+                    continue
+
+                # Skip duplicate frames (avoid redundant JPEG encoding)
+                frame_id = id(frame_obj)
+                if frame_id == last_frame_id:
+                    time.sleep(0.05)
+                    continue
+                last_frame_id = frame_id
+
+                ret, buf = cv2.imencode(
+                    ".jpg", frame_obj.frame,
+                    [cv2.IMWRITE_JPEG_QUALITY, 75]  # Lower quality for streaming bandwidth
+                )
+                if not ret:
+                    continue
+
+                jpg = buf.tobytes()
+                yield (
+                    boundary + b"\r\n"
+                    + b"Content-Type: image/jpeg\r\n"
+                    + f"Content-Length: {len(jpg)}\r\n\r\n".encode()
+                    + jpg
+                    + b"\r\n"
+                )
+                # Throttle to ~10 fps for editor view (saves bandwidth vs. full FPS)
+                time.sleep(0.1)
+
+        except GeneratorExit:
+            pass  # Client disconnected normally
+        except Exception as e:
+            log.error(f"MJPEG stream error for {camera_id}: {e}")
+
+    import logging
+    log = logging.getLogger(__name__)
+
+    return StreamingResponse(
+        generate(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )

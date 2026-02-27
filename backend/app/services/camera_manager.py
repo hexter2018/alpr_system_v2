@@ -117,32 +117,97 @@ class CameraStreamManager:
         log.info(f"Camera Manager initialized for {config.camera_id}")
     
     def _load_trigger_zone(self):
-        """Load trigger zone from database"""
+        """
+        Load trigger zone from database.
+
+        Supports two coordinate formats:
+          - Normalized [0-1]: saved by the new CameraSettings frontend.
+            Must be scaled by the actual frame resolution.
+          - Legacy pixel coords: saved by older versions.
+            Used as-is.
+
+        Frame size is read from the RTSP stream on first capture.
+        Until then we store raw points and resolve on first frame.
+        """
         try:
             db = SessionLocal()
             try:
                 camera = db.query(models.Camera).filter(
                     models.Camera.camera_id == self.config.camera_id
                 ).first()
-                
+
                 if camera and camera.trigger_zone:
                     points = camera.trigger_zone.get("points", [])
-                    zone_type = camera.trigger_zone.get("type", "polygon")
-                    
+                    zone_type = camera.trigger_zone.get("zone_type",
+                                camera.trigger_zone.get("type", "polygon"))
+
                     if points:
-                        self.trigger_zone = TriggerZone(
-                            points=[(float(x), float(y)) for x, y in points],
-                            zone_type=zone_type
+                        # Detect whether points are normalized (all values ≤ 1.0)
+                        is_normalized = all(
+                            0.0 <= float(x) <= 1.0 and 0.0 <= float(y) <= 1.0
+                            for x, y in points
                         )
-                        log.info(f"Loaded trigger zone for {self.config.camera_id}: {len(points)} points")
+                        self._raw_zone_points = [(float(x), float(y)) for x, y in points]
+                        self._zone_is_normalized = is_normalized
+                        self._zone_type = zone_type
+
+                        if is_normalized:
+                            # Cannot build TriggerZone yet — we need frame dimensions.
+                            # _apply_trigger_zone_with_frame_size() will be called
+                            # on the first processed frame.
+                            self.trigger_zone = None
+                            log.info(
+                                f"Trigger zone for {self.config.camera_id}: "
+                                f"{len(points)} normalized points — "
+                                "will scale on first frame"
+                            )
+                        else:
+                            # Legacy pixel coordinates — use directly
+                            self.trigger_zone = TriggerZone(
+                                points=self._raw_zone_points,
+                                zone_type=zone_type
+                            )
+                            log.info(
+                                f"Loaded trigger zone for {self.config.camera_id}: "
+                                f"{len(points)} pixel points"
+                            )
                     else:
                         log.warning(f"No trigger zone points for {self.config.camera_id}")
+                        self._raw_zone_points = []
+                        self._zone_is_normalized = False
                 else:
                     log.warning(f"No trigger zone configured for {self.config.camera_id}")
+                    self._raw_zone_points = []
+                    self._zone_is_normalized = False
             finally:
                 db.close()
         except Exception as e:
             log.error(f"Failed to load trigger zone: {e}", exc_info=True)
+
+    def _apply_trigger_zone_with_frame_size(self, frame_w: int, frame_h: int):
+        """
+        Build TriggerZone using actual frame dimensions.
+        Called once on the first processed frame when points are normalized.
+        """
+        if not getattr(self, '_zone_is_normalized', False):
+            return
+        if not getattr(self, '_raw_zone_points', []):
+            return
+
+        pixel_points = [
+            (x * frame_w, y * frame_h)
+            for x, y in self._raw_zone_points
+        ]
+        self.trigger_zone = TriggerZone(
+            points=pixel_points,
+            zone_type=getattr(self, '_zone_type', 'polygon')
+        )
+        # Only do this once
+        self._zone_is_normalized = False
+        log.info(
+            f"Trigger zone applied for {self.config.camera_id} "
+            f"at {frame_w}×{frame_h}: {pixel_points}"
+        )
     
     def reload_trigger_zone(self):
         """Reload trigger zone from database (called when updated)"""
@@ -359,6 +424,13 @@ class CameraStreamManager:
                 
                 self.frame_count += 1
                 
+                # On the first frame, resolve normalized trigger zone → pixel coords
+                if self.frame_count == 1 or (
+                    self.trigger_zone is None and getattr(self, '_zone_is_normalized', False)
+                ):
+                    h, w = raw_frame.shape[:2]
+                    self._apply_trigger_zone_with_frame_size(w, h)
+
                 # Update FPS stats
                 current_time = time.time()
                 self.fps_frame_count += 1
@@ -523,11 +595,21 @@ class CameraStreamManager:
         log.info(f"Camera stream stopped: {self.config.camera_id}")
     
     def get_latest_frame(self) -> Optional[ProcessedFrame]:
-        """Get latest processed frame (non-blocking)"""
-        try:
-            return self.processed_frame_queue.get_nowait()
-        except:
-            return None
+        """
+        Get latest processed frame (non-destructive peek).
+        Stores the last seen frame so multiple callers
+        (snapshot endpoint, MJPEG stream) all see the same frame.
+        """
+        # Drain queue into _last_frame so we always have the newest
+        latest = None
+        while True:
+            try:
+                latest = self.processed_frame_queue.get_nowait()
+            except Exception:
+                break
+        if latest is not None:
+            self._last_frame: Optional[ProcessedFrame] = latest
+        return getattr(self, '_last_frame', None)
     
     def get_stats(self) -> Dict:
         """Get camera statistics"""
