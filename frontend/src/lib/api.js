@@ -1,5 +1,26 @@
 const rawApiBase = (import.meta.env.VITE_API_BASE || "").replace(/\/+$/, "");
 export const API_BASE = rawApiBase.replace(/\/api$/i, "");
+const DEFAULT_TIMEOUT_MS = 15000;
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      cache: "no-store",
+      ...options,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`request timeout after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 async function throwDetailedError(res, fallbackMessage) {
   let detail = "";
@@ -18,7 +39,7 @@ async function throwDetailedError(res, fallbackMessage) {
 }
 
 export async function getKPI() {
-  const res = await fetch(`${API_BASE}/api/dashboard/kpi`);
+  const res = await fetchWithTimeout(`${API_BASE}/api/dashboard/kpi`);
   if (!res.ok) throw new Error("failed to load KPI");
   return res.json();
 }
