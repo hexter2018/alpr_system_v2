@@ -2,6 +2,7 @@ const rawApiBase = (import.meta.env.VITE_API_BASE || "").replace(/\/+$/, "");
 export const API_BASE = rawApiBase.replace(/\/api$/i, "");
 const DEFAULT_TIMEOUT_MS = 15000;
 
+
 export async function apiFetch(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -10,6 +11,15 @@ export async function apiFetch(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS
   try {
     return await fetch(url, {
       ...(method === "GET" || method === "HEAD" ? { cache: "no-store" } : {}),
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      cache: "no-store",
+
       ...options,
       signal: controller.signal,
     });
@@ -40,7 +50,10 @@ async function throwDetailedError(res, fallbackMessage) {
 }
 
 export async function getKPI() {
-  const res = await apiFetch(`${API_BASE}/api/dashboard/kpi`);
+
+
+  const res = await fetchWithTimeout(`${API_BASE}/api/dashboard/kpi`);
+
   if (!res.ok) throw new Error("failed to load KPI");
   return res.json();
 }
