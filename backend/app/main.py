@@ -1,4 +1,6 @@
 # backend/app/main.py
+# ✅ FIXED: เพิ่ม CORS support สำหรับ WebSocket และ Streaming
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -11,16 +13,12 @@ from app.services.camera_pool import get_camera_pool
 from app.db.session import SessionLocal
 from app.db import models
 
-# ✅ เพิ่ม lifespan event
+# ✅ Lifespan event
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Startup and shutdown events for the application.
-    """
-    # Startup
+    """Startup and shutdown events"""
     print("[STARTUP] Initializing Camera Pool...")
     
-    # Initialize camera pool
     storage_dir = Path(settings.storage_dir)
     model_path = os.getenv("MODEL_PATH", "/models/best.pt")
     
@@ -46,31 +44,54 @@ async def lifespan(app: FastAPI):
     
     print(f"[STARTUP] Camera Pool initialized with {len(pool.list_cameras())} cameras")
     
-    yield  # Application runs
+    yield
     
-    # Shutdown
     print("[SHUTDOWN] Stopping all cameras...")
     pool.stop_all()
     print("[SHUTDOWN] Camera Pool stopped")
 
-# ✅ เปลี่ยนจาก app = FastAPI() เป็น
+
+# ✅ Create FastAPI app
 app = FastAPI(
     title="Thai ALPR API", 
     version="2.0.0",
-    lifespan=lifespan  # ← เพิ่มบรรทัดนี้
+    lifespan=lifespan
 )
 
+# ================================================================
+# ✅ FIXED: CORS Configuration
+# ================================================================
+# ตั้งค่า CORS ให้รองรับ WebSocket และ Streaming
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
+    # ✅ Allow all origins for development (จำกัดใน production)
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://10.32.70.136",
+        "http://10.32.70.136:5173",
+        "http://10.32.70.136:3000",
+        "*",  # ⚠️ ใน production ควรระบุ origin ที่ชัดเจน
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # GET, POST, PUT, DELETE, OPTIONS, etc.
+    allow_headers=["*"],  # Accept all headers
+    expose_headers=[
+        "Content-Length",
+        "Content-Range", 
+        "X-Snapshot-Source",  # Custom header สำหรับ snapshot
+    ],
+    max_age=3600,  # Preflight cache duration
 )
 
-# Include main API router (รวม cameras, watchlist, health, search อยู่แล้ว)
+# ================================================================
+# Include API Router
+# ================================================================
 app.include_router(api_router, prefix="/api")
 
+# ================================================================
+# Health Check Endpoints
+# ================================================================
 @app.get("/healthz")
 def healthz():
     return {"ok": True}
@@ -78,3 +99,18 @@ def healthz():
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+# ================================================================
+# ✅ OPTIONAL: Debugging WebSocket connections
+# ================================================================
+if os.getenv("DEBUG", "false").lower() == "true":
+    @app.middleware("http")
+    async def log_requests(request, call_next):
+        print(f"📨 {request.method} {request.url.path}")
+        if "upgrade" in request.headers.get("connection", "").lower():
+            print(f"  ⚡ WebSocket upgrade request detected")
+            print(f"  Headers: {dict(request.headers)}")
+        response = await call_next(request)
+        print(f"📤 {response.status_code}")
+        return response

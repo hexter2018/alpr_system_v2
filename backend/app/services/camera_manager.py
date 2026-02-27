@@ -1,6 +1,10 @@
 """
-Camera Manager with Trigger Zone Integration
-Manages RTSP streams with trigger zone overlay and intelligent processing
+Camera Manager with RTSP Reconnect Logic - FIXED VERSION
+แก้ไขปัญหา:
+1. เพิ่ม retry logic พร้อม exponential backoff
+2. เพิ่ม connection timeout และ verification
+3. เพิ่ม error handling ที่ครบถ้วน
+4. ป้องกัน memory leak จาก failed connections
 """
 
 import cv2
@@ -30,33 +34,32 @@ class CameraConfig:
     name: str
     rtsp_url: str
     fps: float
-    trigger_zone: Optional[Dict] = None  # {"points": [[x,y], ...], "type": "polygon"}
+    trigger_zone: Optional[Dict] = None
     enabled: bool = True
 
 
 @dataclass
 class ProcessedFrame:
     """Frame with overlay and metadata"""
-    frame: np.ndarray  # Frame with trigger zone overlay
-    raw_frame: np.ndarray  # Original frame without overlay
+    frame: np.ndarray
+    raw_frame: np.ndarray
     timestamp: datetime
     frame_number: int
     camera_id: str
-    detections: List[Tuple[BBox, float]]  # Bounding boxes and confidences
+    detections: List[Tuple[BBox, float]]
     tracks: Dict[int, VehicleTrack]
-    in_zone_count: int  # Number of vehicles in trigger zone
+    in_zone_count: int
 
 
 class CameraStreamManager:
     """
-    Manages RTSP camera stream with trigger zone integration.
+    ✅ FIXED: Camera stream manager with robust RTSP reconnection
     
-    Key Features:
-    - Background thread for frame capture
-    - Trigger zone overlay on every frame
-    - Vehicle detection and tracking
-    - Zone-based OCR triggering
-    - Pub/Sub pattern for frame distribution
+    Key improvements:
+    - Auto-reconnect with exponential backoff
+    - Connection verification with timeout
+    - Proper cleanup on errors
+    - Consecutive failure tracking
     """
     
     def __init__(
@@ -76,7 +79,7 @@ class CameraStreamManager:
         self.raw_frame_queue = Queue(maxsize=frame_queue_size)
         self.processed_frame_queue = Queue(maxsize=frame_queue_size)
         
-        # Subscribers (for WebSocket/MJPEG streaming)
+        # Subscribers
         self.subscribers: List[Callable[[ProcessedFrame], None]] = []
         self.subscriber_lock = threading.Lock()
         
@@ -85,8 +88,6 @@ class CameraStreamManager:
         import torch
 
         self.device = 0 if torch.cuda.is_available() else 'cpu'
-        print(f"Using device: {self.device}")
-
         self.detector = YOLO(detector_model_path, task="detect")
         self.detector_conf = detector_conf
         self.detector_iou = detector_iou
@@ -99,7 +100,7 @@ class CameraStreamManager:
             min_frames_out_of_zone=10
         )
         
-        # Trigger zone (loaded from DB)
+        # Trigger zone
         self.trigger_zone: Optional[TriggerZone] = None
         self._load_trigger_zone()
         
@@ -117,18 +118,7 @@ class CameraStreamManager:
         log.info(f"Camera Manager initialized for {config.camera_id}")
     
     def _load_trigger_zone(self):
-        """
-        Load trigger zone from database.
-
-        Supports two coordinate formats:
-          - Normalized [0-1]: saved by the new CameraSettings frontend.
-            Must be scaled by the actual frame resolution.
-          - Legacy pixel coords: saved by older versions.
-            Used as-is.
-
-        Frame size is read from the RTSP stream on first capture.
-        Until then we store raw points and resolve on first frame.
-        """
+        """Load trigger zone from database"""
         try:
             db = SessionLocal()
             try:
@@ -142,7 +132,6 @@ class CameraStreamManager:
                                 camera.trigger_zone.get("type", "polygon"))
 
                     if points:
-                        # Detect whether points are normalized (all values ≤ 1.0)
                         is_normalized = all(
                             0.0 <= float(x) <= 1.0 and 0.0 <= float(y) <= 1.0
                             for x, y in points
@@ -152,17 +141,12 @@ class CameraStreamManager:
                         self._zone_type = zone_type
 
                         if is_normalized:
-                            # Cannot build TriggerZone yet — we need frame dimensions.
-                            # _apply_trigger_zone_with_frame_size() will be called
-                            # on the first processed frame.
                             self.trigger_zone = None
                             log.info(
                                 f"Trigger zone for {self.config.camera_id}: "
-                                f"{len(points)} normalized points — "
-                                "will scale on first frame"
+                                f"{len(points)} normalized points"
                             )
                         else:
-                            # Legacy pixel coordinates — use directly
                             self.trigger_zone = TriggerZone(
                                 points=self._raw_zone_points,
                                 zone_type=zone_type
@@ -185,10 +169,7 @@ class CameraStreamManager:
             log.error(f"Failed to load trigger zone: {e}", exc_info=True)
 
     def _apply_trigger_zone_with_frame_size(self, frame_w: int, frame_h: int):
-        """
-        Build TriggerZone using actual frame dimensions.
-        Called once on the first processed frame when points are normalized.
-        """
+        """Build TriggerZone using actual frame dimensions"""
         if not getattr(self, '_zone_is_normalized', False):
             return
         if not getattr(self, '_raw_zone_points', []):
@@ -202,23 +183,152 @@ class CameraStreamManager:
             points=pixel_points,
             zone_type=getattr(self, '_zone_type', 'polygon')
         )
-        # Only do this once
         self._zone_is_normalized = False
         log.info(
             f"Trigger zone applied for {self.config.camera_id} "
-            f"at {frame_w}×{frame_h}: {pixel_points}"
+            f"at {frame_w}×{frame_h}"
         )
     
+    # ========================================================================
+    # ✅ FIXED: _capture_frames with retry logic
+    # ========================================================================
+    def _capture_frames(self):
+        """
+        ✅ FIXED: Background thread with auto-reconnect and error recovery
+        
+        Improvements:
+        - Exponential backoff retry logic
+        - Connection verification with timeout
+        - Consecutive failure tracking
+        - Proper resource cleanup
+        """
+        log.info(f"Starting frame capture for {self.config.camera_id}")
+
+        import os
+        # Set RTSP transport to TCP for better reliability
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|stimeout;5000000"
+        
+        max_retries = 5
+        retry_delay = 5.0  # seconds
+        consecutive_failures = 0
+        cap = None
+        
+        while self.running:
+            try:
+                # ─── Try to open/reopen camera ───
+                if cap is None or not cap.isOpened():
+                    log.info(f"Connecting to RTSP stream: {self.config.rtsp_url}")
+                    
+                    # Create VideoCapture with timeout
+                    cap = cv2.VideoCapture(self.config.rtsp_url, cv2.CAP_FFMPEG)
+                    
+                    # Configure camera settings
+                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize latency
+                    cap.set(cv2.CAP_PROP_FPS, self.config.fps)
+                    
+                    # ✅ Verify connection with timeout
+                    start_time = time.time()
+                    connection_verified = False
+                    
+                    while (time.time() - start_time) < 10.0:  # 10 second timeout
+                        if cap.isOpened():
+                            ret, test_frame = cap.read()
+                            if ret and test_frame is not None:
+                                log.info(
+                                    f"✅ Successfully connected to {self.config.camera_id} "
+                                    f"(resolution: {test_frame.shape[1]}x{test_frame.shape[0]})"
+                                )
+                                consecutive_failures = 0
+                                connection_verified = True
+                                break
+                        time.sleep(0.1)
+                    
+                    if not connection_verified:
+                        raise Exception("Connection timeout - camera did not respond within 10s")
+                
+                # ─── Frame capture loop ───
+                target_interval = 1.0 / self.config.fps
+                last_capture_time = time.time()
+                
+                while self.running and cap.isOpened():
+                    current_time = time.time()
+                    
+                    # Rate limiting
+                    if current_time - last_capture_time < target_interval:
+                        time.sleep(0.001)
+                        continue
+                    
+                    ret, frame = cap.read()
+                    
+                    if not ret or frame is None:
+                        consecutive_failures += 1
+                        log.warning(
+                            f"Failed to read frame from {self.config.camera_id} "
+                            f"(consecutive failures: {consecutive_failures})"
+                        )
+                        
+                        # ✅ Reconnect if too many failures
+                        if consecutive_failures >= 10:
+                            log.error(f"❌ Too many consecutive failures, forcing reconnect...")
+                            raise Exception("Stream connection lost")
+                        
+                        time.sleep(0.1)
+                        continue
+                    
+                    # ✅ Reset failure counter on successful read
+                    consecutive_failures = 0
+                    
+                    # Try to add to queue (non-blocking)
+                    try:
+                        self.raw_frame_queue.put_nowait((frame.copy(), current_time))
+                        last_capture_time = current_time
+                    except Full:
+                        # Queue full, skip frame
+                        pass
+                
+            except Exception as e:
+                log.error(f"❌ RTSP capture error for {self.config.camera_id}: {e}")
+                
+                # ✅ Cleanup old connection
+                if cap is not None:
+                    try:
+                        cap.release()
+                    except:
+                        pass
+                    cap = None
+                
+                # ✅ Retry logic with exponential backoff
+                if self.running:
+                    retry_count = min(consecutive_failures, max_retries)
+                    wait_time = retry_delay * (2 ** min(retry_count, 3))  # Max 40s
+                    log.info(
+                        f"🔄 Retrying connection in {wait_time:.1f}s... "
+                        f"(attempt {retry_count + 1}/{max_retries})"
+                    )
+                    time.sleep(wait_time)
+                    consecutive_failures += 1
+        
+        # ✅ Final cleanup
+        if cap is not None:
+            try:
+                cap.release()
+            except:
+                pass
+        log.info(f"Frame capture stopped for {self.config.camera_id}")
+    
+    # ========================================================================
+    # อันนี้ไม่ต้องแก้ - เหมือนเดิม
+    # ========================================================================
     def reload_trigger_zone(self):
-        """Reload trigger zone from database (called when updated)"""
+        """Reload trigger zone from database"""
         self._load_trigger_zone()
     
     def set_ocr_callback(self, callback: Callable[[VehicleTrack, np.ndarray, BBox], None]):
-        """Set callback for OCR processing when vehicle exits trigger zone"""
+        """Set callback for OCR processing"""
         self.ocr_callback = callback
     
     def subscribe(self, callback: Callable[[ProcessedFrame], None]):
-        """Subscribe to processed frames (for WebSocket/MJPEG streaming)"""
+        """Subscribe to processed frames"""
         with self.subscriber_lock:
             self.subscribers.append(callback)
             log.info(f"New subscriber added. Total: {len(self.subscribers)}")
@@ -239,85 +349,27 @@ class CameraStreamManager:
                 except Exception as e:
                     log.error(f"Subscriber error: {e}", exc_info=True)
     
-    def _capture_frames(self):
-        """Background thread: Capture frames from RTSP stream"""
-        log.info(f"Starting frame capture for {self.config.camera_id}")
-
-        import os
-        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
-        
-        cap = cv2.VideoCapture(self.config.rtsp_url)
-        if not cap.isOpened():
-            log.error(f"Failed to open RTSP stream: {self.config.rtsp_url}")
-            return
-        
-        # Set buffer size to 1 to get latest frame
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        
-        target_interval = 1.0 / self.config.fps
-        last_capture_time = time.time()
-        
-        while self.running:
-            current_time = time.time()
-            
-            # Rate limiting
-            if current_time - last_capture_time < target_interval:
-                time.sleep(0.001)  # Small sleep to prevent CPU spinning
-                continue
-            
-            ret, frame = cap.read()
-            if not ret:
-                log.warning(f"Failed to read frame from {self.config.camera_id}")
-                time.sleep(0.1)
-                continue
-            
-            # Try to add to queue (non-blocking)
-            try:
-                self.raw_frame_queue.put_nowait((frame.copy(), current_time))
-                last_capture_time = current_time
-            except Full:
-                # Queue full, skip frame
-                pass
-        
-        cap.release()
-        log.info(f"Frame capture stopped for {self.config.camera_id}")
-    
     def _draw_trigger_zone_overlay(self, frame: np.ndarray) -> np.ndarray:
-        """
-        Draw trigger zone overlay on frame.
-        
-        CRITICAL: This must be called BEFORE broadcasting frame to web!
-        """
+        """Draw trigger zone overlay on frame"""
         if not self.trigger_zone:
             return frame
         
-        # Create overlay
         overlay = frame.copy()
-        
-        # Draw polygon
         points = self.trigger_zone.points.astype(np.int32)
         
-        # Fill polygon with semi-transparent green
         cv2.fillPoly(overlay, [points], color=(0, 255, 0))
-        
-        # Blend overlay with original frame (20% opacity)
         frame_with_overlay = cv2.addWeighted(frame, 0.8, overlay, 0.2, 0)
-        
-        # Draw polygon border (bright green, thick)
         cv2.polylines(frame_with_overlay, [points], isClosed=True, 
                      color=(0, 255, 0), thickness=3)
         
-        # Add label
         text = "TRIGGER ZONE"
         font = cv2.FONT_HERSHEY_SIMPLEX
         text_size = cv2.getTextSize(text, font, 0.7, 2)[0]
         
-        # Position text at top-left of zone
         if len(points) > 0:
             text_x = int(points[:, 0].min())
             text_y = int(points[:, 1].min()) - 10
             
-            # Background for text
             cv2.rectangle(
                 frame_with_overlay,
                 (text_x - 5, text_y - text_size[1] - 5),
@@ -326,7 +378,6 @@ class CameraStreamManager:
                 -1
             )
             
-            # Text
             cv2.putText(
                 frame_with_overlay,
                 text,
@@ -346,9 +397,9 @@ class CameraStreamManager:
                 source=frame,
                 conf=self.detector_conf,
                 iou=self.detector_iou,
-                classes=[2, 3, 5, 7],  # car, motorcycle, bus, truck
+                classes=[2, 3, 5, 7],
                 verbose=False,
-                device=0,  # GPU
+                device=0,
             )
             
             if not results or results[0].boxes is None:
@@ -377,16 +428,11 @@ class CameraStreamManager:
             return []
     
     def _trigger_ocr_for_track(self, track: VehicleTrack):
-        """
-        Trigger OCR processing for vehicle track.
-        
-        This is called when vehicle exits trigger zone.
-        """
+        """Trigger OCR processing for vehicle track"""
         if not self.ocr_callback:
             log.warning("No OCR callback set, skipping processing")
             return
         
-        # Get best shot
         best_frame, best_bbox = track.get_best_shot()
         if best_frame is None or best_bbox is None:
             log.warning(f"No best shot for track {track.track_id}")
@@ -400,23 +446,11 @@ class CameraStreamManager:
             log.error(f"OCR callback error: {e}", exc_info=True)
     
     def _process_frames(self):
-        """
-        Background thread: Process frames with detection, tracking, and zone checking.
-        
-        CRITICAL FLOW:
-        1. Get raw frame
-        2. Run vehicle detection
-        3. Update tracker
-        4. Check which vehicles are in trigger zone
-        5. Trigger OCR for vehicles exiting zone
-        6. Draw overlay (trigger zone + bounding boxes)
-        7. Broadcast to subscribers
-        """
+        """Background thread: Process frames with detection and tracking"""
         log.info(f"Starting frame processing for {self.config.camera_id}")
         
         while self.running:
             try:
-                # Get frame from queue (blocking with timeout)
                 try:
                     raw_frame, capture_time = self.raw_frame_queue.get(timeout=1.0)
                 except:
@@ -424,14 +458,12 @@ class CameraStreamManager:
                 
                 self.frame_count += 1
                 
-                # On the first frame, resolve normalized trigger zone → pixel coords
                 if self.frame_count == 1 or (
                     self.trigger_zone is None and getattr(self, '_zone_is_normalized', False)
                 ):
                     h, w = raw_frame.shape[:2]
                     self._apply_trigger_zone_with_frame_size(w, h)
 
-                # Update FPS stats
                 current_time = time.time()
                 self.fps_frame_count += 1
                 if current_time - self.last_fps_update >= 1.0:
@@ -439,45 +471,32 @@ class CameraStreamManager:
                     self.fps_frame_count = 0
                     self.last_fps_update = current_time
                 
-                # Step 1: Run vehicle detection
                 detections = self._detect_vehicles(raw_frame)
-                
-                # Step 2: Update tracker
                 tracks = self.tracker.update(detections, raw_frame, self.trigger_zone)
-                
-                # Step 3: Check for tracks ready for OCR processing
-                # (vehicles that have exited trigger zone)
                 ready_tracks = self.tracker.get_tracks_ready_for_processing()
                 
-                # Step 4: Trigger OCR for ready tracks
                 for track in ready_tracks:
                     self._trigger_ocr_for_track(track)
                 
-                # Step 5: Count vehicles in zone
                 in_zone_count = sum(
                     1 for track in tracks.values()
                     if track.state.value in ["ENTERING_ZONE", "IN_ZONE"]
                 )
                 
-                # Step 6: Draw overlay
-                # CRITICAL: Draw trigger zone FIRST
                 frame_with_overlay = self._draw_trigger_zone_overlay(raw_frame.copy())
                 
-                # Draw bounding boxes and track IDs
                 for track_id, track in tracks.items():
                     bbox = track.current_bbox
                     if bbox is None:
                         continue
                     
-                    # Color based on state
                     if track.state.value in ["ENTERING_ZONE", "IN_ZONE"]:
-                        color = (0, 255, 0)  # Green - in zone
+                        color = (0, 255, 0)
                     elif track.state.value == "PROCESSING":
-                        color = (0, 165, 255)  # Orange - processing
+                        color = (0, 165, 255)
                     else:
-                        color = (255, 255, 255)  # White - idle
+                        color = (255, 255, 255)
                     
-                    # Draw bounding box
                     cv2.rectangle(
                         frame_with_overlay,
                         (int(bbox.x1), int(bbox.y1)),
@@ -486,7 +505,6 @@ class CameraStreamManager:
                         2
                     )
                     
-                    # Draw track ID and state
                     label = f"ID:{track_id} {track.state.value}"
                     cv2.putText(
                         frame_with_overlay,
@@ -498,7 +516,6 @@ class CameraStreamManager:
                         2
                     )
                 
-                # Add stats overlay
                 stats_text = [
                     f"FPS: {self.fps_actual:.1f}",
                     f"Vehicles: {len(tracks)}",
@@ -519,7 +536,6 @@ class CameraStreamManager:
                     )
                     y_offset += 30
                 
-                # Step 7: Create processed frame object
                 processed = ProcessedFrame(
                     frame=frame_with_overlay,
                     raw_frame=raw_frame,
@@ -531,14 +547,11 @@ class CameraStreamManager:
                     in_zone_count=in_zone_count
                 )
                 
-                # Step 8: Broadcast to subscribers (WebSocket/MJPEG)
                 self._broadcast_frame(processed)
                 
-                # Add to processed queue (for retrieval)
                 try:
                     self.processed_frame_queue.put_nowait(processed)
                 except Full:
-                    # Remove oldest frame
                     try:
                         self.processed_frame_queue.get_nowait()
                         self.processed_frame_queue.put_nowait(processed)
@@ -560,7 +573,6 @@ class CameraStreamManager:
         
         self.running = True
         
-        # Start capture thread
         self.capture_thread = threading.Thread(
             target=self._capture_frames,
             name=f"Capture-{self.config.camera_id}",
@@ -568,7 +580,6 @@ class CameraStreamManager:
         )
         self.capture_thread.start()
         
-        # Start processing thread
         self.process_thread = threading.Thread(
             target=self._process_frames,
             name=f"Process-{self.config.camera_id}",
@@ -586,7 +597,6 @@ class CameraStreamManager:
         log.info(f"Stopping camera stream: {self.config.camera_id}")
         self.running = False
         
-        # Wait for threads
         if self.capture_thread:
             self.capture_thread.join(timeout=5.0)
         if self.process_thread:
@@ -595,12 +605,7 @@ class CameraStreamManager:
         log.info(f"Camera stream stopped: {self.config.camera_id}")
     
     def get_latest_frame(self) -> Optional[ProcessedFrame]:
-        """
-        Get latest processed frame (non-destructive peek).
-        Stores the last seen frame so multiple callers
-        (snapshot endpoint, MJPEG stream) all see the same frame.
-        """
-        # Drain queue into _last_frame so we always have the newest
+        """Get latest processed frame"""
         latest = None
         while True:
             try:
