@@ -229,15 +229,11 @@ class VehicleTracker:
                 self._register_new_track(bbox, frame, conf, zone)
         
         # Update state machine for all tracks
+        # (_update_state_machine enqueues captures into _pending_ready_tracks directly)
         self._update_state_machine(zone)
 
-        # ✅ Collect ready tracks BEFORE cleanup so deletions don't race with OCR
-        for track in list(self.tracks.values()):
-            if track.state == VehicleState.PROCESSING and not track.processing_started:
-                track.processing_started = True
-                self._pending_ready_tracks.append(track)
-
         # Cleanup old tracks
+        # (_cleanup_old_tracks also enqueues forced captures before removal)
         self._cleanup_old_tracks()
 
         return self.tracks
@@ -322,13 +318,14 @@ class VehicleTracker:
         for track in self.tracks.values():
             track.frames_out_of_zone += 1
 
-            # ✅ Auto-transition: vehicle was in zone but now gone from camera
+            # Auto-transition: vehicle was in zone but now gone from camera
+            # Guard: processing_started ensures we enqueue EXACTLY once per track
             if (track.state == VehicleState.IN_ZONE
                     and track.frames_out_of_zone >= self.min_frames_out_of_zone
                     and not track.processing_started):
                 track.state = VehicleState.PROCESSING
                 track.zone_exit_time = time.time()
-                track.processing_started = True
+                track.processing_started = True          # ← one-way gate
                 self.debug_stats["captured"] += 1
                 self._pending_ready_tracks.append(track)
                 log.info(
@@ -403,12 +400,15 @@ class VehicleTracker:
                 else:
                     track.frames_out_of_zone += 1
                     
-                    # ✅ RELAXED: Trigger capture after fewer frames out
-                    if track.frames_out_of_zone >= self.min_frames_out_of_zone:
-                        # Vehicle has exited - trigger best shot processing
+                    # Trigger capture after vehicle exits zone
+                    # Guard: processing_started is a one-way gate — never fires twice
+                    if (track.frames_out_of_zone >= self.min_frames_out_of_zone
+                            and not track.processing_started):
                         track.state = VehicleState.PROCESSING
                         track.zone_exit_time = time.time()
+                        track.processing_started = True      # ← one-way gate
                         self.debug_stats["captured"] += 1
+                        self._pending_ready_tracks.append(track)
                         log.info(
                             f"📸 Track {track.track_id} EXITING -> PROCESSING "
                             f"(time_in_zone={(track.zone_exit_time - track.zone_entry_time):.1f}s)"
@@ -433,11 +433,12 @@ class VehicleTracker:
         for track_id, track in self.tracks.items():
             # Remove if disappeared for too long
             if track.time_since_last_seen > max_disappeared_sec:
-                # ✅ Force capture for IN_ZONE tracks before deletion
+                # Force capture for IN_ZONE tracks before deletion
+                # Guard: processing_started ensures we enqueue EXACTLY once per track
                 if track.state == VehicleState.IN_ZONE and not track.processing_started:
                     track.state = VehicleState.PROCESSING
                     track.zone_exit_time = time.time()
-                    track.processing_started = True
+                    track.processing_started = True          # ← one-way gate
                     self.debug_stats["captured"] += 1
                     self._pending_ready_tracks.append(track)
                     log.info(
