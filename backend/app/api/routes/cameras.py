@@ -105,19 +105,42 @@ def update_camera(
     if not camera:
         raise HTTPException(status_code=404, detail="Camera not found")
 
+    # Track which fields affect the live stream (require pool restart)
+    stream_changed = False
+
     if payload.name is not None:
         camera.name = payload.name
     if payload.rtsp_url is not None:
+        if camera.rtsp_url != payload.rtsp_url:
+            stream_changed = True
         camera.rtsp_url = payload.rtsp_url
     if payload.enabled is not None:
+        if camera.enabled != payload.enabled:
+            stream_changed = True
         camera.enabled = payload.enabled
     if payload.fps is not None:
+        if camera.fps != payload.fps:
+            stream_changed = True
         camera.fps = payload.fps
     if payload.trigger_zone is not None:
         camera.trigger_zone = payload.trigger_zone.model_dump() if payload.trigger_zone else None
 
     db.commit()
     db.refresh(camera)
+
+    # Restart camera pool entry when stream-affecting settings change
+    if stream_changed:
+        try:
+            from app.services.camera_pool import get_camera_pool
+            pool = get_camera_pool()
+            if camera.enabled:
+                pool.restart_camera(camera_id)
+                log.info(f"Camera pool restarted for {camera_id} after config change")
+            else:
+                pool.stop_camera(camera_id)
+                log.info(f"Camera pool stopped for {camera_id} (disabled)")
+        except Exception as e:
+            log.warning(f"Could not restart camera pool for {camera_id}: {e}")
 
     return CameraOut.model_validate(camera)
 
