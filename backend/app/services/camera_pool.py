@@ -65,27 +65,55 @@ class CameraPoolManager:
     def _create_ocr_callback(self, camera_id: str):
         """
         Create OCR callback for a specific camera.
-        
-        This callback is triggered when a vehicle exits the trigger zone.
+
+        ✅ FIXED: SHA256 dedup — if the same JPEG was already saved as a
+        capture (same pixel content → same hash), we skip it entirely.
+        This is the final safety net that prevents duplicate plate_reads
+        even if the tracker somehow fires the callback twice.
         """
         def ocr_callback(track, best_frame, best_bbox):
             try:
-                # Save frame to storage
-                timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
-                filename = f"stream_{camera_id}_track_{track.track_id}_{timestamp}.jpg"
-                image_path = self.storage_dir / "original" / filename
-                image_path.parent.mkdir(parents=True, exist_ok=True)
-                
-                cv2.imwrite(str(image_path), best_frame)
-                
-                # Create capture record in database
+                # ── 1. Encode frame to JPEG bytes first ───────────────────────
+                ret, jpg_buf = cv2.imencode(
+                    ".jpg", best_frame,
+                    [cv2.IMWRITE_JPEG_QUALITY, 90]
+                )
+                if not ret:
+                    log.error(
+                        f"Failed to encode frame for track {track.track_id}"
+                    )
+                    return
+
+                jpg_bytes = jpg_buf.tobytes()
+                sha256 = hashlib.sha256(jpg_bytes).hexdigest()
+
+                # ── 2. Dedup check BEFORE writing to disk ─────────────────────
                 db = SessionLocal()
                 try:
-                    # Compute SHA256
-                    with open(image_path, "rb") as f:
-                        sha256 = hashlib.sha256(f.read()).hexdigest()
-                    
-                    # Create capture
+                    existing = db.query(models.Capture).filter(
+                        models.Capture.sha256 == sha256
+                    ).first()
+
+                    if existing:
+                        log.info(
+                            f"⏭️  Duplicate capture skipped — "
+                            f"track {track.track_id} cam {camera_id} "
+                            f"sha256={sha256[:8]}… already capture_id={existing.id}"
+                        )
+                        return
+
+                    # ── 3. Save JPEG to storage ────────────────────────────────
+                    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
+                    filename = (
+                        f"stream_{camera_id}_track_{track.track_id}_{timestamp}.jpg"
+                    )
+                    image_path = self.storage_dir / "original" / filename
+                    image_path.parent.mkdir(parents=True, exist_ok=True)
+
+                    with open(image_path, "wb") as f:
+                        f.write(jpg_bytes)
+
+                    # ── 4. Create capture record ───────────────────────────────
                     capture = models.Capture(
                         source="STREAM",
                         camera_id=camera_id,
@@ -93,25 +121,25 @@ class CameraPoolManager:
                         original_path=str(image_path),
                         sha256=sha256
                     )
-                    
+
                     db.add(capture)
                     db.commit()
                     db.refresh(capture)
-                    
-                    # Enqueue for OCR processing
+
+                    # ── 5. Enqueue for OCR / plate-recognition ─────────────────
                     enqueue_process_capture(capture.id, str(image_path))
-                    
+
                     log.info(
-                        f"OCR queued for camera {camera_id}, "
-                        f"track {track.track_id}, capture_id {capture.id}"
+                        f"✅ OCR queued — camera {camera_id} "
+                        f"track {track.track_id} capture_id {capture.id}"
                     )
-                    
+
                 finally:
                     db.close()
-                    
+
             except Exception as e:
                 log.error(f"OCR callback error: {e}", exc_info=True)
-        
+
         return ocr_callback
     
     def start_camera(self, camera_id: str) -> bool:
