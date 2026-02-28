@@ -96,8 +96,8 @@ class CameraStreamManager:
         self.tracker = VehicleTracker(
             max_disappeared=30,
             max_distance=100.0,
-            min_frames_in_zone=5,
-            min_frames_out_of_zone=10
+            min_frames_in_zone=3,        # ✅ REDUCED from 5 to 3
+            min_frames_out_of_zone=5     # ✅ REDUCED from 10 to 5
         )
         
         # Trigger zone
@@ -350,43 +350,131 @@ class CameraStreamManager:
                     log.error(f"Subscriber error: {e}", exc_info=True)
     
     def _draw_trigger_zone_overlay(self, frame: np.ndarray) -> np.ndarray:
-        """Draw trigger zone overlay on frame"""
+        """
+        ✅ ENHANCED: Draw trigger zone overlay with debug visualization
+        
+        Shows:
+        1. Trigger zone polygon (green when empty, red when vehicle inside)
+        2. Bottom-center points of all tracked vehicles
+        3. Vehicle bounding boxes with state colors
+        4. Real-time stats and coordinates
+        """
         if not self.trigger_zone:
             return frame
         
+        # Count vehicles in zone
+        in_zone_count = sum(
+            1 for track in self.tracker.tracks.values()
+            if track.state.value in ["ENTERING_ZONE", "IN_ZONE"]
+        )
+        
+        # ✅ Draw zone polygon (color changes based on occupancy)
+        zone_color = (0, 0, 255) if in_zone_count > 0 else (0, 255, 0)  # Red if occupied, Green if empty
+        
+        # Draw filled polygon with transparency
         overlay = frame.copy()
         points = self.trigger_zone.points.astype(np.int32)
-        
-        cv2.fillPoly(overlay, [points], color=(0, 255, 0))
+        cv2.fillPoly(overlay, [points], color=zone_color)
         frame_with_overlay = cv2.addWeighted(frame, 0.8, overlay, 0.2, 0)
+        
+        # Draw zone border
         cv2.polylines(frame_with_overlay, [points], isClosed=True, 
-                     color=(0, 255, 0), thickness=3)
+                    color=zone_color, thickness=3)
         
-        text = "TRIGGER ZONE"
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        text_size = cv2.getTextSize(text, font, 0.7, 2)[0]
-        
-        if len(points) > 0:
-            text_x = int(points[:, 0].min())
-            text_y = int(points[:, 1].min()) - 10
+        # ✅ Draw debug points for all tracked vehicles
+        for track_id, track in self.tracker.tracks.items():
+            bbox = track.current_bbox
+            if bbox is None:
+                continue
             
-            cv2.rectangle(
-                frame_with_overlay,
-                (text_x - 5, text_y - text_size[1] - 5),
-                (text_x + text_size[0] + 5, text_y + 5),
-                (0, 255, 0),
-                -1
+            # Calculate bottom-center point
+            bottom_center_x = (bbox.x1 + bbox.x2) / 2
+            bottom_center_y = bbox.y2
+            
+            # Check if bottom-center is in zone
+            is_inside = self.trigger_zone.contains_point(
+                type('Point', (), {'x': bottom_center_x, 'y': bottom_center_y})()
             )
             
+            # ✅ Draw bottom-center point (RED if inside, WHITE if outside)
+            point_color = (0, 0, 255) if is_inside else (255, 255, 255)
+            cv2.circle(
+                frame_with_overlay,
+                (int(bottom_center_x), int(bottom_center_y)),
+                radius=10,
+                color=point_color,
+                thickness=-1  # Filled
+            )
+            
+            # Draw black outline for visibility
+            cv2.circle(
+                frame_with_overlay,
+                (int(bottom_center_x), int(bottom_center_y)),
+                radius=10,
+                color=(0, 0, 0),
+                thickness=3
+            )
+            
+            # ✅ Draw line from bbox bottom to bottom-center
+            cv2.line(
+                frame_with_overlay,
+                (int(bottom_center_x), int(bbox.y2)),
+                (int(bottom_center_x), int(bottom_center_y)),
+                color=(255, 255, 0),  # Cyan
+                thickness=2
+            )
+            
+            # ✅ Draw coordinate text near point
+            coord_text = f"({bottom_center_x:.0f},{bottom_center_y:.0f})"
             cv2.putText(
                 frame_with_overlay,
-                text,
-                (text_x, text_y),
-                font,
-                0.7,
-                (0, 0, 0),
-                2
+                coord_text,
+                (int(bottom_center_x) + 15, int(bottom_center_y)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (255, 255, 255),
+                2,
+                cv2.LINE_AA
             )
+        
+        # ✅ Draw zone label and stats
+        text_lines = [
+            "TRIGGER ZONE",
+            f"Vehicles: {in_zone_count}/{len(self.tracker.tracks)}",
+            f"Captured: {self.tracker.debug_stats.get('captured', 0) if hasattr(self.tracker, 'debug_stats') else self.ocr_triggered_count}"
+        ]
+        
+        if len(points) > 0:
+            # Position text at top-left of zone
+            text_x = int(points[:, 0].min())
+            text_y = int(points[:, 1].min()) - 15
+            
+            for i, text in enumerate(text_lines):
+                y_pos = text_y - (len(text_lines) - 1 - i) * 30
+                
+                # Calculate text size
+                text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0]
+                
+                # Background rectangle
+                cv2.rectangle(
+                    frame_with_overlay,
+                    (text_x - 5, y_pos - text_size[1] - 5),
+                    (text_x + text_size[0] + 5, y_pos + 5),
+                    zone_color,
+                    -1
+                )
+                
+                # Text
+                cv2.putText(
+                    frame_with_overlay,
+                    text,
+                    (text_x, y_pos),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (0, 0, 0),
+                    2,
+                    cv2.LINE_AA
+                )
         
         return frame_with_overlay
     

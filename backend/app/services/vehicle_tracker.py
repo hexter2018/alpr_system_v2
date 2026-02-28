@@ -4,8 +4,11 @@ from enum import Enum
 import numpy as np
 from collections import deque
 import time
+import logging
 
 from .trigger_zone import BBox, TriggerZone
+
+log = logging.getLogger(__name__)
 
 
 class VehicleState(str, Enum):
@@ -34,6 +37,9 @@ class VehicleTrack:
     frames_in_zone: int = 0
     frames_out_of_zone: int = 0
     zone_id: Optional[int] = None
+    
+    # ✅ NEW: Track if vehicle was born inside zone
+    born_in_zone: bool = False
     
     # Best shot selection
     best_shot_frame: Optional[np.ndarray] = None
@@ -121,16 +127,20 @@ class VehicleTrack:
 
 class VehicleTracker:
     """
-    Multi-object tracker with state machine for 100% capture rate.
-    Uses centroid tracking for simplicity and reliability.
+    ✅ FIXED: Multi-object tracker with improved state machine
+    
+    Key improvements:
+    1. Relaxed zone entry detection (bottom-center point only)
+    2. Handle vehicles born inside zone
+    3. Better debug logging
     """
     
     def __init__(
         self,
         max_disappeared: int = 30,          # Frames before removing lost track
         max_distance: float = 100.0,        # Max centroid distance for matching
-        min_frames_in_zone: int = 5,        # Min frames in zone before triggering
-        min_frames_out_of_zone: int = 10,   # Min frames out before considering exited
+        min_frames_in_zone: int = 3,        # ✅ REDUCED: from 5 to 3 frames
+        min_frames_out_of_zone: int = 5,    # ✅ REDUCED: from 10 to 5 frames
     ):
         self.next_track_id = 0
         self.tracks: Dict[int, VehicleTrack] = {}
@@ -139,6 +149,14 @@ class VehicleTracker:
         self.max_distance = max_distance
         self.min_frames_in_zone = min_frames_in_zone
         self.min_frames_out_of_zone = min_frames_out_of_zone
+        
+        # ✅ DEBUG: Count zone events
+        self.debug_stats = {
+            "total_vehicles": 0,
+            "born_in_zone": 0,
+            "entered_zone": 0,
+            "captured": 0
+        }
     
     def update(
         self,
@@ -165,7 +183,7 @@ class VehicleTracker:
         if len(self.tracks) == 0:
             # Initialize new tracks
             for bbox, conf in detections:
-                self._register_new_track(bbox, frame, conf)
+                self._register_new_track(bbox, frame, conf, zone)
         else:
             # Get existing track centroids
             track_ids = list(self.tracks.keys())
@@ -192,7 +210,7 @@ class VehicleTracker:
             unmatched_det_indices = set(range(len(detections))) - set(matched_detections)
             for det_idx in unmatched_det_indices:
                 bbox, conf = detections[det_idx]
-                self._register_new_track(bbox, frame, conf)
+                self._register_new_track(bbox, frame, conf, zone)
         
         # Update state machine for all tracks
         self._update_state_machine(zone)
@@ -202,12 +220,36 @@ class VehicleTracker:
         
         return self.tracks
     
-    def _register_new_track(self, bbox: BBox, frame: np.ndarray, confidence: float):
-        """Create a new vehicle track"""
+    def _register_new_track(
+        self, 
+        bbox: BBox, 
+        frame: np.ndarray, 
+        confidence: float,
+        zone: Optional[TriggerZone] = None
+    ):
+        """
+        ✅ FIXED: Create a new vehicle track and check if born in zone
+        """
         track = VehicleTrack(track_id=self.next_track_id)
         track.update(bbox, frame, confidence)
+        
+        # ✅ NEW: Check if vehicle is born inside zone
+        if zone is not None:
+            in_zone = zone.contains_bbox(bbox, threshold=0.0)
+            if in_zone:
+                track.born_in_zone = True
+                track.state = VehicleState.IN_ZONE  # Skip ENTERING, go directly to IN_ZONE
+                track.frames_in_zone = 1
+                track.zone_entry_time = time.time()
+                self.debug_stats["born_in_zone"] += 1
+                log.info(
+                    f"🚗 Track {self.next_track_id} BORN IN ZONE "
+                    f"(bbox: {bbox.x1:.0f},{bbox.y1:.0f},{bbox.x2:.0f},{bbox.y2:.0f})"
+                )
+        
         self.tracks[self.next_track_id] = track
         self.next_track_id += 1
+        self.debug_stats["total_vehicles"] += 1
     
     def _compute_distances(
         self, 
@@ -259,7 +301,9 @@ class VehicleTracker:
             track.frames_out_of_zone += 1
     
     def _update_state_machine(self, zone: Optional[TriggerZone]):
-        """Update state machine for all tracks based on zone interaction"""
+        """
+        ✅ FIXED: Update state machine with better zone entry/exit logic
+        """
         if zone is None:
             return
         
@@ -268,7 +312,18 @@ class VehicleTracker:
             if current_bbox is None:
                 continue
             
-            in_zone = zone.contains_bbox(current_bbox, threshold=0.3)
+            # ✅ CHECK: Is vehicle's bottom-center in zone?
+            in_zone = zone.contains_bbox(current_bbox, threshold=0.0)
+            
+            # ✅ DEBUG: Log zone checks for young tracks
+            if track.age < 2.0:  # First 2 seconds
+                bottom_center = zone.get_bottom_center(current_bbox)
+                log.debug(
+                    f"Track {track.track_id} age={track.age:.1f}s "
+                    f"state={track.state.value} in_zone={in_zone} "
+                    f"bottom_center=({bottom_center.x:.0f},{bottom_center.y:.0f}) "
+                    f"frames_in_zone={track.frames_in_zone}"
+                )
             
             # State transitions
             if track.state == VehicleState.IDLE:
@@ -276,16 +331,23 @@ class VehicleTracker:
                     track.state = VehicleState.ENTERING_ZONE
                     track.frames_in_zone = 1
                     track.zone_entry_time = time.time()
+                    log.info(f"🚗 Track {track.track_id} ENTERING ZONE")
             
             elif track.state == VehicleState.ENTERING_ZONE:
                 if in_zone:
                     track.frames_in_zone += 1
                     if track.frames_in_zone >= self.min_frames_in_zone:
                         track.state = VehicleState.IN_ZONE
+                        self.debug_stats["entered_zone"] += 1
+                        log.info(
+                            f"✅ Track {track.track_id} IN ZONE "
+                            f"(frames={track.frames_in_zone})"
+                        )
                 else:
                     # False alarm, vehicle didn't fully enter
                     track.state = VehicleState.IDLE
                     track.frames_in_zone = 0
+                    log.info(f"⚠️ Track {track.track_id} FALSE ENTRY (went back outside)")
             
             elif track.state == VehicleState.IN_ZONE:
                 if in_zone:
@@ -293,10 +355,17 @@ class VehicleTracker:
                     track.frames_out_of_zone = 0
                 else:
                     track.frames_out_of_zone += 1
+                    
+                    # ✅ RELAXED: Trigger capture after fewer frames out
                     if track.frames_out_of_zone >= self.min_frames_out_of_zone:
                         # Vehicle has exited - trigger best shot processing
                         track.state = VehicleState.PROCESSING
                         track.zone_exit_time = time.time()
+                        self.debug_stats["captured"] += 1
+                        log.info(
+                            f"📸 Track {track.track_id} EXITING -> PROCESSING "
+                            f"(time_in_zone={(track.zone_exit_time - track.zone_entry_time):.1f}s)"
+                        )
             
             elif track.state == VehicleState.PROCESSING:
                 # Waiting for OCR result
@@ -325,7 +394,24 @@ class VehicleTracker:
     
     def get_tracks_ready_for_processing(self) -> List[VehicleTrack]:
         """Get tracks that need OCR processing"""
-        return [
+        ready = [
             track for track in self.tracks.values()
             if track.state == VehicleState.PROCESSING and not track.processing_started
         ]
+        
+        if ready:
+            log.info(
+                f"🎯 {len(ready)} tracks ready for processing "
+                f"(stats: {self.debug_stats})"
+            )
+        
+        return ready
+    
+    def get_debug_stats(self) -> Dict:
+        """Get debug statistics"""
+        return {
+            **self.debug_stats,
+            "active_tracks": len(self.tracks),
+            "in_zone": sum(1 for t in self.tracks.values() if t.state.value in ["ENTERING_ZONE", "IN_ZONE"]),
+            "processing": sum(1 for t in self.tracks.values() if t.state == VehicleState.PROCESSING),
+        }
