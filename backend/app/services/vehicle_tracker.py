@@ -427,7 +427,14 @@ class VehicleTracker:
                     )
                 to_remove.append(track_id)
 
-            # Remove processed tracks after 5 seconds
+            # ✅ Remove PROCESSING tracks after a short window (OCR already queued)
+            # Prevents YOLO re-creating a new track for the same vehicle
+            elif (track.state == VehicleState.PROCESSING
+                  and track.processing_started
+                  and (time.time() - (track.zone_exit_time or track.last_seen)) > 5.0):
+                to_remove.append(track_id)
+
+            # Remove processed/exited tracks after 5 seconds
             elif track.state == VehicleState.EXITED and track.age > 5.0:
                 to_remove.append(track_id)
 
