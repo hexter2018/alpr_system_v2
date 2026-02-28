@@ -240,8 +240,10 @@ class CameraStreamManager:
         log.info(f"Starting frame capture for {self.config.camera_id}")
 
         import os
+        import re
         # Set RTSP transport to TCP for better reliability
-        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|stimeout;5000000"
+        # stimeout=30s — gives H.265 cameras time for keyframe negotiation
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|stimeout;30000000"
 
         max_retries = 5
         retry_delay = 5.0  # seconds
@@ -250,11 +252,14 @@ class CameraStreamManager:
         last_heartbeat_time = 0.0
         heartbeat_interval = 20.0  # update last_seen every 20 seconds while connected
 
+        # Mask password in URL for safe logging: rtsp://user:PASS@host → rtsp://user:***@host
+        _safe_url = re.sub(r'(rtsp://[^:]+:)[^@]+(@)', r'\1***\2', self.config.rtsp_url)
+
         while self.running:
             try:
                 # ─── Try to open/reopen camera ───
                 if cap is None or not cap.isOpened():
-                    log.info(f"Connecting to RTSP stream: {self.config.rtsp_url}")
+                    log.info(f"Connecting to RTSP stream [{self.config.camera_id}]: {_safe_url}")
 
                     # Create VideoCapture with timeout
                     cap = cv2.VideoCapture(self.config.rtsp_url, cv2.CAP_FFMPEG)
@@ -263,28 +268,40 @@ class CameraStreamManager:
                     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize latency
                     cap.set(cv2.CAP_PROP_FPS, self.config.fps)
 
-                    # ✅ Verify connection with timeout
+                    if not cap.isOpened():
+                        raise Exception(f"Failed to open RTSP stream (check URL/credentials): {_safe_url}")
+
+                    # ✅ Verify connection — wait for first valid frame
+                    # Timeout raised to 30s: H.265 cameras must wait for next IDR/keyframe
+                    # (GOP interval can be 2-4s + RTSP handshake + network latency)
                     start_time = time.time()
                     connection_verified = False
+                    connect_timeout = 30.0
 
-                    while (time.time() - start_time) < 10.0:  # 10 second timeout
-                        if cap.isOpened():
-                            ret, test_frame = cap.read()
-                            if ret and test_frame is not None:
-                                log.info(
-                                    f"✅ Successfully connected to {self.config.camera_id} "
-                                    f"(resolution: {test_frame.shape[1]}x{test_frame.shape[0]})"
-                                )
-                                consecutive_failures = 0
-                                connection_verified = True
-                                # ✅ Mark ONLINE in DB immediately on connect
-                                self._update_db_status("ONLINE")
-                                last_heartbeat_time = time.time()
-                                break
-                        time.sleep(0.1)
+                    while (time.time() - start_time) < connect_timeout:
+                        ret, test_frame = cap.read()
+                        if ret and test_frame is not None:
+                            elapsed = time.time() - start_time
+                            log.info(
+                                f"✅ Successfully connected to {self.config.camera_id} "
+                                f"(resolution: {test_frame.shape[1]}x{test_frame.shape[0]}, "
+                                f"first frame in {elapsed:.1f}s)"
+                            )
+                            consecutive_failures = 0
+                            connection_verified = True
+                            # ✅ Mark ONLINE in DB immediately on connect
+                            self._update_db_status("ONLINE")
+                            last_heartbeat_time = time.time()
+                            break
+                        # Brief sleep to avoid busy-looping between blocking cap.read() calls
+                        time.sleep(0.05)
 
                     if not connection_verified:
-                        raise Exception("Connection timeout - camera did not respond within 10s")
+                        raise Exception(
+                            f"Connection timeout after {connect_timeout:.0f}s — "
+                            f"no frame received from {_safe_url}. "
+                            f"Check: camera reachable? correct codec? RTSP URL format?"
+                        )
 
                 # ─── Frame capture loop ───
                 target_interval = 1.0 / self.config.fps
