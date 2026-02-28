@@ -39,7 +39,7 @@
 
   /* Enhanced table header */
   thead th {
-    @apply bg-surface-inset/30;
+    background-color: color-mix(in srgb, var(--color-surface-inset) 30%, transparent);
   }
 
   /* Smooth page transitions */
