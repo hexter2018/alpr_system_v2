@@ -195,44 +195,64 @@ class CameraStreamManager:
     # ========================================================================
     # ✅ FIXED: _capture_frames with retry logic
     # ========================================================================
+    def _update_db_status(self, status: str):
+        """Update camera status and last_seen in DB"""
+        try:
+            db = SessionLocal()
+            try:
+                camera = db.query(models.Camera).filter(
+                    models.Camera.camera_id == self.config.camera_id
+                ).first()
+                if camera:
+                    camera.status = status
+                    camera.last_seen = datetime.utcnow()
+                    db.commit()
+            finally:
+                db.close()
+        except Exception as e:
+            log.warning(f"Failed to update DB status for {self.config.camera_id}: {e}")
+
     def _capture_frames(self):
         """
         ✅ FIXED: Background thread with auto-reconnect and error recovery
-        
+
         Improvements:
         - Exponential backoff retry logic
         - Connection verification with timeout
         - Consecutive failure tracking
         - Proper resource cleanup
+        - Heartbeat: updates camera status/last_seen in DB
         """
         log.info(f"Starting frame capture for {self.config.camera_id}")
 
         import os
         # Set RTSP transport to TCP for better reliability
         os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|stimeout;5000000"
-        
+
         max_retries = 5
         retry_delay = 5.0  # seconds
         consecutive_failures = 0
         cap = None
-        
+        last_heartbeat_time = 0.0
+        heartbeat_interval = 20.0  # update last_seen every 20 seconds while connected
+
         while self.running:
             try:
                 # ─── Try to open/reopen camera ───
                 if cap is None or not cap.isOpened():
                     log.info(f"Connecting to RTSP stream: {self.config.rtsp_url}")
-                    
+
                     # Create VideoCapture with timeout
                     cap = cv2.VideoCapture(self.config.rtsp_url, cv2.CAP_FFMPEG)
-                    
+
                     # Configure camera settings
                     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize latency
                     cap.set(cv2.CAP_PROP_FPS, self.config.fps)
-                    
+
                     # ✅ Verify connection with timeout
                     start_time = time.time()
                     connection_verified = False
-                    
+
                     while (time.time() - start_time) < 10.0:  # 10 second timeout
                         if cap.isOpened():
                             ret, test_frame = cap.read()
@@ -243,44 +263,52 @@ class CameraStreamManager:
                                 )
                                 consecutive_failures = 0
                                 connection_verified = True
+                                # ✅ Mark ONLINE in DB immediately on connect
+                                self._update_db_status("ONLINE")
+                                last_heartbeat_time = time.time()
                                 break
                         time.sleep(0.1)
-                    
+
                     if not connection_verified:
                         raise Exception("Connection timeout - camera did not respond within 10s")
-                
+
                 # ─── Frame capture loop ───
                 target_interval = 1.0 / self.config.fps
                 last_capture_time = time.time()
-                
+
                 while self.running and cap.isOpened():
                     current_time = time.time()
-                    
+
                     # Rate limiting
                     if current_time - last_capture_time < target_interval:
                         time.sleep(0.001)
                         continue
-                    
+
                     ret, frame = cap.read()
-                    
+
                     if not ret or frame is None:
                         consecutive_failures += 1
                         log.warning(
                             f"Failed to read frame from {self.config.camera_id} "
                             f"(consecutive failures: {consecutive_failures})"
                         )
-                        
+
                         # ✅ Reconnect if too many failures
                         if consecutive_failures >= 10:
                             log.error(f"❌ Too many consecutive failures, forcing reconnect...")
                             raise Exception("Stream connection lost")
-                        
+
                         time.sleep(0.1)
                         continue
-                    
+
                     # ✅ Reset failure counter on successful read
                     consecutive_failures = 0
-                    
+
+                    # ✅ Periodic heartbeat: keep last_seen fresh in DB
+                    if current_time - last_heartbeat_time >= heartbeat_interval:
+                        self._update_db_status("ONLINE")
+                        last_heartbeat_time = current_time
+
                     # Try to add to queue (non-blocking)
                     try:
                         self.raw_frame_queue.put_nowait((frame.copy(), current_time))
@@ -288,10 +316,13 @@ class CameraStreamManager:
                     except Full:
                         # Queue full, skip frame
                         pass
-                
+
             except Exception as e:
                 log.error(f"❌ RTSP capture error for {self.config.camera_id}: {e}")
-                
+
+                # ✅ Mark OFFLINE when connection fails
+                self._update_db_status("OFFLINE")
+
                 # ✅ Cleanup old connection
                 if cap is not None:
                     try:
@@ -299,7 +330,7 @@ class CameraStreamManager:
                     except:
                         pass
                     cap = None
-                
+
                 # ✅ Retry logic with exponential backoff
                 if self.running:
                     retry_count = min(consecutive_failures, max_retries)
@@ -310,13 +341,14 @@ class CameraStreamManager:
                     )
                     time.sleep(wait_time)
                     consecutive_failures += 1
-        
-        # ✅ Final cleanup
+
+        # ✅ Final cleanup — mark OFFLINE when stopped
         if cap is not None:
             try:
                 cap.release()
             except:
                 pass
+        self._update_db_status("OFFLINE")
         log.info(f"Frame capture stopped for {self.config.camera_id}")
     
     # ========================================================================
