@@ -173,6 +173,13 @@ def process_capture(capture_id: int, image_path: str):
 
     db = SessionLocal()
     try:
+        # ✅ Fetch camera_id from captures table (needed for watchlist check)
+        cam_row = db.execute(
+            text("SELECT camera_id FROM captures WHERE id = :id"),
+            {"id": capture_id}
+        ).first()
+        camera_id = cam_row[0] if cam_row else None
+
         # 1) detect + crop
         det = detector.detect_and_crop(str(img_path))
         crop_path = det.crop_path
