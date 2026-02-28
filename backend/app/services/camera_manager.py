@@ -93,12 +93,14 @@ class CameraStreamManager:
         self.detector_iou = detector_iou
         
         # Initialize tracker
+        _fps = config.fps or 2.0
         self.tracker = VehicleTracker(
             max_disappeared=30,
-            max_distance=100.0,
-            min_frames_in_zone=3,        # ✅ REDUCED from 5 to 3
-            min_frames_out_of_zone=5,    # ✅ REDUCED from 10 to 5
-            fps=config.fps or 2.0,       # ✅ Pass actual FPS so cleanup timing is correct
+            max_distance=max(250.0, _fps * 125),  # ✅ Scale with fps: 250px at 2fps, 375px at 3fps
+            min_frames_in_zone=3,                  # ✅ REDUCED from 5 to 3
+            min_frames_out_of_zone=5,              # ✅ REDUCED from 10 to 5
+            fps=_fps,                              # ✅ Pass actual FPS so cleanup timing is correct
+            zone_capture_cooldown_sec=8.0,         # ✅ 1 vehicle = 1 capture: 8s cooldown
         )
         
         # Trigger zone
