@@ -66,7 +66,7 @@ class CameraStreamManager:
         self,
         config: CameraConfig,
         detector_model_path: str,
-        detector_conf: float = 0.35,
+        detector_conf: float = 0.25,  # ✅ LOWERED from 0.35 → better detection in difficult lighting (night, headlights)
         detector_iou: float = 0.45,
         frame_queue_size: int = 10
     ):
@@ -522,7 +522,7 @@ class CameraStreamManager:
                 iou=self.detector_iou,
                 classes=[2, 3, 5, 7],
                 verbose=False,
-                device=0,
+                device=self.device,  # ✅ FIXED: was hardcoded to 0 (GPU), use self.device (cpu or gpu)
             )
             
             if not results or results[0].boxes is None:

@@ -430,8 +430,10 @@ class VehicleTracker:
                             # ✅ 1 CAPTURE PER VEHICLE: time elapsed + cooldown passed
                             track.state = VehicleState.PROCESSING
                             track.zone_exit_time = now
+                            track.processing_started = True   # ✅ FIXED: set gate so frame-based fallback doesn't fire again
                             self._last_zone_capture_time = now
                             self.debug_stats["captured"] += 1
+                            self._pending_ready_tracks.append(track)  # ✅ FIXED: enqueue here
                             log.info(
                                 f"📸 Track {track.track_id} EXITING -> PROCESSING "
                                 f"(in_zone={( now - track.zone_entry_time):.1f}s, "
@@ -440,15 +442,15 @@ class VehicleTracker:
                         else:
                             # Cooldown active → discard without capture
                             track.state = VehicleState.EXITED
+                            track.processing_started = True   # ✅ FIXED: prevent frame-based fallback on EXITED track
                             log.info(
                                 f"🚫 Track {track.track_id} skipped "
                                 f"(cooldown {self.zone_capture_cooldown_sec - cooldown_elapsed:.1f}s remaining)"
                             )
 
-                    
-                    # ✅ RELAXED: Trigger capture after fewer frames out
-                    # Guard: not processing_started prevents duplicate enqueue
-                    if (track.frames_out_of_zone >= self.min_frames_out_of_zone
+                    # ✅ FRAME-BASED FALLBACK: fires only if time-based hasn't already triggered
+                    # (processing_started=True gate prevents duplicate capture)
+                    elif (track.frames_out_of_zone >= self.min_frames_out_of_zone
                             and not track.processing_started):
                         track.state = VehicleState.PROCESSING
                         track.zone_exit_time = time.time()
@@ -456,8 +458,9 @@ class VehicleTracker:
                         self.debug_stats["captured"] += 1
                         self._pending_ready_tracks.append(track)
                         log.info(
-                            f"📸 Track {track.track_id} EXITING -> PROCESSING "
-                            f"(time_in_zone={(track.zone_exit_time - track.zone_entry_time):.1f}s)"
+                            f"📸 Track {track.track_id} EXITING -> PROCESSING [frame-based fallback] "
+                            f"(frames_out={track.frames_out_of_zone}, "
+                            f"time_in_zone={(track.zone_exit_time - track.zone_entry_time):.1f}s)"
                         )
 
             
