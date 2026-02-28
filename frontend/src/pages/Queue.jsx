@@ -1,58 +1,49 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react'
-import { absImageUrl, deleteRead, listPending, verifyRead, API_BASE } from '../lib/api.js'
-import { 
-  Button, 
-  Card, 
-  CardHeader, 
-  CardBody,
-  Input, 
-  Badge, 
-  ConfidenceBadge, 
-  Toast, 
-  Modal,
-  EmptyState,
-  Spinner 
+import { absImageUrl, deleteRead, listPending, verifyRead } from '../lib/api.js'
+import {
+  Button, Card, CardHeader, CardBody, Input, Badge, ConfidenceBadge,
+  Toast, Modal, EmptyState, Spinner, PageHeader, StatCard,
 } from '../components/UIComponents.jsx'
+import {
+  CheckCircle, Edit3, Trash2, RefreshCw, ZoomIn, ZoomOut,
+  RotateCcw, X, Keyboard, Clock, ListChecks, Settings2,
+} from 'lucide-react'
 
 /* ===== PROVINCES DATA ===== */
 const POPULAR_PROVINCES = [
-  { value: 'กรุงเทพมหานคร', label: 'กทม', icon: '🏙️' },
-  { value: 'สมุทรปราการ', label: 'ปราการ', icon: '🏭' },
-  { value: 'สมุทรสาคร', label: 'สาคร', icon: '⚓' },
-  { value: 'นนทบุรี', label: 'นนท์', icon: '🏘️' },
-  { value: 'ปทุมธานี', label: 'ปทุม', icon: '🌾' },
-  { value: 'ชลบุรี', label: 'ชล', icon: '🏖️' }
+  { value: 'กรุงเทพมหานคร', label: 'กทม' },
+  { value: 'สมุทรปราการ', label: 'ปราการ' },
+  { value: 'สมุทรสาคร', label: 'สาคร' },
+  { value: 'นนทบุรี', label: 'นนท์' },
+  { value: 'ปทุมธานี', label: 'ปทุม' },
+  { value: 'ชลบุรี', label: 'ชล' },
 ]
 
 /* ===== CONFUSABLE CHARACTER FIXES ===== */
 const CONFUSION_FIXES = {
   high: [
-    { from: 'ข', to: 'ฆ', tooltip: 'ข เป็น ฆ (สับสนบ่อย)' },
-    { from: 'ฆ', to: 'ข', tooltip: 'ฆ เป็น ข (สับสนบ่อย)' },
-    { from: 'ข', to: 'ม', tooltip: 'ข เป็น ม (สับสนบ่อย)' },
-    { from: 'ม', to: 'ข', tooltip: 'ม เป็น ข (สับสนบ่อย)' }
+    { from: 'ข', to: 'ฆ', tooltip: 'ข -> ฆ' },
+    { from: 'ฆ', to: 'ข', tooltip: 'ฆ -> ข' },
+    { from: 'ข', to: 'ม', tooltip: 'ข -> ม' },
+    { from: 'ม', to: 'ข', tooltip: 'ม -> ข' },
   ],
   medium: [
-    { from: 'ค', to: 'ฅ', tooltip: 'ค เป็น ฅ' },
-    { from: 'ถ', to: 'ค', tooltip: 'ถ เป็น ค' },
-    { from: 'ศ', to: 'ส', tooltip: 'ศ เป็น ส' },
-    { from: 'ผ', to: 'พ', tooltip: 'ผ เป็น พ' },
-    { from: 'พ', to: 'ผ', tooltip: 'พ เป็น ผ' },
-    { from: 'บ', to: 'ป', tooltip: 'บ เป็น ป' },
-    { from: 'ป', to: 'บ', tooltip: 'ป เป็น บ' }
-  ]
+    { from: 'ค', to: 'ฅ', tooltip: 'ค -> ฅ' },
+    { from: 'ถ', to: 'ค', tooltip: 'ถ -> ค' },
+    { from: 'ศ', to: 'ส', tooltip: 'ศ -> ส' },
+    { from: 'ผ', to: 'พ', tooltip: 'ผ -> พ' },
+    { from: 'พ', to: 'ผ', tooltip: 'พ -> ผ' },
+    { from: 'บ', to: 'ป', tooltip: 'บ -> ป' },
+    { from: 'ป', to: 'บ', tooltip: 'ป -> บ' },
+  ],
 }
 
 /* ===== TOAST CONTAINER ===== */
 function ToastContainer({ toasts }) {
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 max-w-md">
-      {toasts.map(toast => (
-        <Toast 
-          key={toast.id} 
-          message={toast.message} 
-          type={toast.type}
-        />
+      {toasts.map((toast) => (
+        <Toast key={toast.id} message={toast.message} type={toast.type} />
       ))}
     </div>
   )
@@ -66,91 +57,59 @@ function ImageViewer({ open, src, title, onClose }) {
 
   useEffect(() => {
     if (!open) return
-    
     const handleKey = (e) => {
       if (e.key === 'Escape') onClose()
-      if (e.key === '+' || e.key === '=') setScale(s => Math.min(4, s + 0.2))
-      if (e.key === '-') setScale(s => Math.max(0.5, s - 0.2))
+      if (e.key === '+' || e.key === '=') setScale((s) => Math.min(4, s + 0.2))
+      if (e.key === '-') setScale((s) => Math.max(0.5, s - 0.2))
       if (e.key === '0') { setScale(1); setPosition({ x: 0, y: 0 }) }
     }
-    
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
   }, [open, onClose])
 
   useEffect(() => {
-    if (open) {
-      setScale(1)
-      setPosition({ x: 0, y: 0 })
-    }
+    if (open) { setScale(1); setPosition({ x: 0, y: 0 }) }
   }, [open, src])
 
   if (!open) return null
 
   const handleWheel = (e) => {
     e.preventDefault()
-    const delta = e.deltaY * -0.001
-    setScale(s => Math.min(4, Math.max(0.5, s + delta)))
+    setScale((s) => Math.min(4, Math.max(0.5, s + e.deltaY * -0.001)))
   }
 
   const handleMouseDown = (e) => {
-    dragState.current = {
-      dragging: true,
-      startX: e.clientX,
-      startY: e.clientY,
-      x: position.x,
-      y: position.y
-    }
+    dragState.current = { dragging: true, startX: e.clientX, startY: e.clientY, x: position.x, y: position.y }
   }
-
   const handleMouseMove = (e) => {
     if (!dragState.current.dragging) return
-    const dx = e.clientX - dragState.current.startX
-    const dy = e.clientY - dragState.current.startY
-    setPosition({ x: dragState.current.x + dx, y: dragState.current.y + dy })
+    setPosition({ x: dragState.current.x + e.clientX - dragState.current.startX, y: dragState.current.y + e.clientY - dragState.current.startY })
   }
-
-  const handleMouseUp = () => {
-    dragState.current.dragging = false
-  }
+  const handleMouseUp = () => { dragState.current.dragging = false }
 
   return (
-    <div 
-      className="fixed inset-0 z-50 flex flex-col bg-slate-950/95 backdrop-blur-sm"
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-700/50 px-6 py-4 bg-slate-900/50">
+    <div className="fixed inset-0 z-50 flex flex-col bg-black/95 backdrop-blur-sm" onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}>
+      <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-surface-raised/80 backdrop-blur">
         <div>
-          <h3 className="text-lg font-semibold text-slate-100">{title}</h3>
-          <p className="text-xs text-slate-400 mt-1">
-            Zoom: {(scale * 100).toFixed(0)}% • คลิกค้างและลากเพื่อเลื่อน • เลื่อนล้อเมาส์เพื่อซูม
+          <h3 className="text-lg font-semibold text-content">{title}</h3>
+          <p className="text-xs text-content-tertiary mt-0.5">
+            Zoom: {(scale * 100).toFixed(0)}% | Scroll to zoom | Drag to pan
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={() => setScale(s => Math.max(0.5, s - 0.2))}>
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-            </svg>
+          <Button variant="ghost" size="sm" onClick={() => setScale((s) => Math.max(0.5, s - 0.2))}>
+            <ZoomOut className="w-4 h-4" />
           </Button>
           <Badge variant="default" size="sm">{(scale * 100).toFixed(0)}%</Badge>
-          <Button variant="ghost" size="sm" onClick={() => setScale(s => Math.min(4, s + 0.2))}>
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
+          <Button variant="ghost" size="sm" onClick={() => setScale((s) => Math.min(4, s + 0.2))}>
+            <ZoomIn className="w-4 h-4" />
           </Button>
-          <div className="w-px h-6 bg-slate-700/50 mx-2" />
+          <div className="w-px h-6 bg-border mx-1" />
           <Button variant="ghost" size="sm" onClick={onClose}>
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-            ปิด (Esc)
+            <X className="w-4 h-4" /> Close
           </Button>
         </div>
       </div>
-
-      {/* Image Container */}
       <div className="flex-1 overflow-hidden" onWheel={handleWheel}>
         <div className="flex h-full w-full items-center justify-center p-8">
           <img
@@ -160,10 +119,11 @@ function ImageViewer({ open, src, title, onClose }) {
             style={{
               transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
               cursor: dragState.current.dragging ? 'grabbing' : 'grab',
-              transition: dragState.current.dragging ? 'none' : 'transform 0.1s ease-out'
+              transition: dragState.current.dragging ? 'none' : 'transform 0.1s ease-out',
             }}
             onMouseDown={handleMouseDown}
             draggable={false}
+            crossOrigin="anonymous"
           />
         </div>
       </div>
@@ -174,38 +134,29 @@ function ImageViewer({ open, src, title, onClose }) {
 /* ===== DELETE CONFIRMATION MODAL ===== */
 function DeleteConfirmModal({ open, onClose, onConfirm, plate, province, confidence }) {
   if (!open) return null
-
   return (
-    <Modal open={open} onClose={onClose} title="ยืนยันการลบรายการ" size="sm">
+    <Modal open={open} onClose={onClose} title="Confirm Delete" size="sm">
       <div className="space-y-4">
-        <p className="text-sm text-slate-300">
-          โปรดยืนยันการลบรายการต่อไปนี้จากคิวตรวจสอบ
+        <p className="text-sm text-content-secondary">
+          Please confirm deletion of this item from the review queue.
         </p>
-        
-        <Card className="bg-rose-500/5 border-rose-300/30">
+        <Card className="bg-danger-muted border-danger/20">
           <CardBody className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-slate-400">ป้ายทะเบียน</span>
-              <span className="font-semibold text-slate-100">{plate || '-'}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-slate-400">จังหวัด</span>
-              <span className="font-semibold text-slate-100">{province || '-'}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-slate-400">ความมั่นใจ</span>
-              <span className="font-semibold text-slate-100">{confidence}</span>
-            </div>
+            {[
+              { label: 'Plate', value: plate || '-' },
+              { label: 'Province', value: province || '-' },
+              { label: 'Confidence', value: confidence },
+            ].map((row) => (
+              <div key={row.label} className="flex justify-between text-sm">
+                <span className="text-content-secondary">{row.label}</span>
+                <span className="font-semibold text-content">{row.value}</span>
+              </div>
+            ))}
           </CardBody>
         </Card>
-
         <div className="flex justify-end gap-2 pt-2">
-          <Button variant="secondary" onClick={onClose}>
-            ยกเลิก
-          </Button>
-          <Button variant="danger" onClick={onConfirm}>
-            ยืนยันการลบ
-          </Button>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button variant="danger" onClick={onConfirm}>Confirm Delete</Button>
         </div>
       </div>
     </Modal>
@@ -234,22 +185,11 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
 
   const handleKeyDown = useCallback((e) => {
     if (busy) return
-    
     const isTyping = ['INPUT', 'TEXTAREA'].includes(e.target.tagName)
-    
-    if (e.key === 'Enter' && e.ctrlKey) {
-      e.preventDefault()
-      onCorrect(plateText, province, note)
-    } else if (e.key === 'Enter' && !e.ctrlKey && !isTyping) {
-      e.preventDefault()
-      onConfirm()
-    } else if (e.key === 'Delete' && !isTyping) {
-      e.preventDefault()
-      setDeleteOpen(true)
-    } else if ((e.key === 'n' || e.key === 'N') && !isTyping) {
-      e.preventDefault()
-      handleNormalize()
-    }
+    if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); onCorrect(plateText, province, note) }
+    else if (e.key === 'Enter' && !e.ctrlKey && !isTyping) { e.preventDefault(); onConfirm() }
+    else if (e.key === 'Delete' && !isTyping) { e.preventDefault(); setDeleteOpen(true) }
+    else if ((e.key === 'n' || e.key === 'N') && !isTyping) { e.preventDefault(); handleNormalize() }
   }, [busy, plateText, province, note, onConfirm, onCorrect])
 
   useEffect(() => {
@@ -262,271 +202,174 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
     setLastChange({ field: 'plate', from, to, prev: plateText })
     setPlateText(next)
     setHighlightField('plate')
-    onToast?.(`แทนที่ ${from} → ${to}`, 'info')
+    onToast?.(`Replaced ${from} -> ${to}`, 'info')
   }
 
   const handleNormalize = () => {
-    const normalized = plateText
-      .trim()
-      .replace(/[\s\-.]/g, '')
-      .replace(/[๐-๙]/g, (d) => '๐๑๒๓๔๕๖๗๘๙'.indexOf(d))
-      .toUpperCase()
+    const normalized = plateText.trim().replace(/[\s\-.]/g, '').replace(/[๐-๙]/g, (d) => '๐๑๒๓๔๕๖๗๘๙'.indexOf(d)).toUpperCase()
     setLastChange({ field: 'plate', prev: plateText })
     setPlateText(normalized)
     setHighlightField('plate')
-    onToast?.('จัดรูปแบบป้ายทะเบียนแล้ว', 'info')
+    onToast?.('Plate text normalized', 'info')
   }
 
   const handleUndo = () => {
     if (!lastChange) return
-    if (lastChange.field === 'plate') {
-      setPlateText(lastChange.prev)
-      setHighlightField('plate')
-    }
+    if (lastChange.field === 'plate') { setPlateText(lastChange.prev); setHighlightField('plate') }
     setLastChange(null)
   }
 
-  const openViewer = (src, title) => {
-    setViewerSrc(src)
-    setViewerTitle(title)
-    setViewerOpen(true)
-  }
+  const openViewer = (src, title) => { setViewerSrc(src); setViewerTitle(title); setViewerOpen(true) }
 
   return (
     <>
-      <Card className="p-5">
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[600px_minmax(0,1fr)]">
+      <Card className="overflow-hidden">
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(400px,1fr)_minmax(0,1fr)]">
           {/* Left: Image Evidence */}
-          <div>
-            <CardHeader className="px-0 pt-0">
-              <h3 className="text-sm font-semibold text-slate-100">หลักฐานภาพ</h3>
-              <p className="text-xs text-slate-400 mt-0.5">ดูภาพรวมและภาพป้ายเพื่อยืนยัน</p>
-            </CardHeader>
-            
-            <div className="grid grid-cols-2 gap-4 mt-4">
-              {/* Original Image */}
-              <div>
-                <div className="text-xs font-medium text-slate-400 mb-2">ภาพต้นฉบับ</div>
-                <div 
-                  className="relative group cursor-pointer rounded-xl overflow-hidden border border-blue-300/20 hover:border-blue-400/40 transition-colors"
-                  onClick={() => openViewer(absImageUrl(item.original_url), 'ภาพต้นฉบับ')}
-                >
-                  <img
-                    src={absImageUrl(item.original_url)}
-                    alt="Original"
-                    className="w-full h-44 object-contain bg-slate-950/40"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-3">
-                    <Badge variant="primary" size="sm">
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
-                      </svg>
-                      คลิกเพื่อดูขนาดเต็ม
-                    </Badge>
-                  </div>
+          <div className="p-5 border-b xl:border-b-0 xl:border-r border-border">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-content">Image Evidence</h3>
+              <Badge variant={item.confidence >= 0.9 ? 'success' : item.confidence >= 0.7 ? 'warning' : 'danger'} size="sm">
+                {(item.confidence * 100).toFixed(0)}% confidence
+              </Badge>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              {[
+                { url: item.original_url, label: 'Original Image' },
+                { url: item.crop_url, label: 'Plate Crop' },
+              ].map((img) => (
+                <div key={img.label}>
+                  <p className="text-xs font-medium text-content-tertiary mb-2">{img.label}</p>
+                  <button
+                    onClick={() => openViewer(absImageUrl(img.url), img.label)}
+                    className="relative group w-full rounded-xl overflow-hidden border border-border hover:border-accent/50 transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
+                  >
+                    <img src={absImageUrl(img.url)} alt={img.label} className="w-full h-48 object-contain bg-surface-inset" crossOrigin="anonymous" />
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <Badge variant="primary" size="sm"><ZoomIn className="w-3 h-3 mr-1" /> View full size</Badge>
+                    </div>
+                  </button>
                 </div>
-              </div>
-
-              {/* Cropped Plate */}
-              <div>
-                <div className="text-xs font-medium text-slate-400 mb-2">ภาพป้ายที่ตัดออก</div>
-                <div 
-                  className="relative group cursor-pointer rounded-xl overflow-hidden border border-blue-300/20 hover:border-blue-400/40 transition-colors"
-                  onClick={() => openViewer(absImageUrl(item.crop_url), 'ภาพป้ายที่ตัดออก')}
-                >
-                  <img
-                    src={absImageUrl(item.crop_url)}
-                    alt="Cropped Plate"
-                    className="w-full h-44 object-contain bg-slate-950/40"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-3">
-                    <Badge variant="primary" size="sm">
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
-                      </svg>
-                      คลิกเพื่อดูขนาดเต็ม
-                    </Badge>
-                  </div>
-                </div>
-              </div>
+              ))}
             </div>
           </div>
 
           {/* Right: Form & Actions */}
-          <div className="flex flex-col">
-            <CardHeader className="px-0 pt-0 pb-4">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-100">ผล OCR และการตรวจสอบ</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Enter = ยืนยัน • Ctrl+Enter = บันทึกการแก้ไข • N = จัดรูปแบบ • Delete = ลบ
+          <div className="p-5 flex flex-col">
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-semibold text-content">OCR Result & Verification</h3>
+                <div className="flex items-center gap-2 mt-1">
+                  <Keyboard className="w-3 h-3 text-content-tertiary" />
+                  <p className="text-xs text-content-tertiary">
+                    Enter = Confirm | Ctrl+Enter = Save Edit | N = Normalize | Delete = Remove
                   </p>
                 </div>
-                <ConfidenceBadge score={item.confidence || 0} />
               </div>
-            </CardHeader>
+            </div>
 
-            {/* Plate Input */}
-            <div className="space-y-4">
+            <div className="space-y-4 flex-1">
+              {/* Plate Input */}
               <Input
-                label="ป้ายทะเบียน"
+                label="Plate Text"
                 value={plateText}
                 onChange={(e) => setPlateText(e.target.value)}
-                placeholder="กรอก/แก้ไขป้ายทะเบียน"
-                className={`text-lg font-semibold tracking-wide ${highlightField === 'plate' ? 'ring-2 ring-blue-400' : ''}`}
+                placeholder="Enter/edit plate text"
+                className={`text-lg font-mono font-bold tracking-wider ${highlightField === 'plate' ? 'ring-2 ring-accent' : ''}`}
               />
 
               {/* Quick Fix Buttons */}
               <div className="space-y-3">
                 <div>
                   <div className="flex items-center gap-2 mb-2">
-                    <div className="w-1 h-3 bg-rose-400 rounded-full" />
-                    <span className="text-xs font-medium text-slate-400">สับสนบ่อย</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-danger" />
+                    <span className="text-xs font-medium text-content-tertiary">Common Confusions</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    {CONFUSION_FIXES.high.map(fix => (
-                      <button
-                        key={`${fix.from}-${fix.to}`}
-                        type="button"
-                        title={fix.tooltip}
-                        onClick={() => applyFix(fix.from, fix.to)}
-                        className="px-2.5 py-1 text-xs font-medium rounded-lg border border-rose-300/40 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20 hover:border-rose-300/60 transition-colors"
+                    {CONFUSION_FIXES.high.map((fix) => (
+                      <button key={`${fix.from}-${fix.to}`} type="button" title={fix.tooltip} onClick={() => applyFix(fix.from, fix.to)}
+                        className="px-2.5 py-1 text-xs font-medium rounded-lg border border-danger/30 bg-danger-muted text-danger-content hover:bg-danger/20 transition-colors"
                       >
-                        {fix.from}→{fix.to}
+                        {fix.from}-{'>'}
+                        {fix.to}
                       </button>
                     ))}
                   </div>
                 </div>
-
                 <div>
                   <div className="flex items-center gap-2 mb-2">
-                    <div className="w-1 h-3 bg-amber-400 rounded-full" />
-                    <span className="text-xs font-medium text-slate-400">อื่นๆ</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-warning" />
+                    <span className="text-xs font-medium text-content-tertiary">Other Fixes</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    {CONFUSION_FIXES.medium.map(fix => (
-                      <button
-                        key={`${fix.from}-${fix.to}`}
-                        type="button"
-                        title={fix.tooltip}
-                        onClick={() => applyFix(fix.from, fix.to)}
-                        className="px-2.5 py-1 text-xs font-medium rounded-lg border border-amber-300/40 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20 hover:border-amber-300/60 transition-colors"
+                    {CONFUSION_FIXES.medium.map((fix) => (
+                      <button key={`${fix.from}-${fix.to}`} type="button" title={fix.tooltip} onClick={() => applyFix(fix.from, fix.to)}
+                        className="px-2.5 py-1 text-xs font-medium rounded-lg border border-warning/30 bg-warning-muted text-warning-content hover:bg-warning/20 transition-colors"
                       >
-                        {fix.from}→{fix.to}
+                        {fix.from}-{'>'}
+                        {fix.to}
                       </button>
                     ))}
                   </div>
                 </div>
               </div>
 
-              {/* Province Input */}
+              {/* Province */}
               <Input
-                label="จังหวัด"
+                label="Province"
                 value={province}
                 onChange={(e) => setProvince(e.target.value)}
-                placeholder="ระบุจังหวัด"
-                className={`text-lg font-semibold ${provinceMissing ? 'border-amber-400/50 bg-amber-500/5' : ''} ${highlightField === 'province' ? 'ring-2 ring-blue-400' : ''}`}
-                hint={provinceMissing ? 'ยังอ่านจังหวัดไม่ได้ - สามารถยืนยันหรือแก้ไขได้' : undefined}
+                placeholder="Enter province"
+                className={`text-base font-semibold ${provinceMissing ? 'border-warning' : ''} ${highlightField === 'province' ? 'ring-2 ring-accent' : ''}`}
+                hint={provinceMissing ? 'Province not detected - you can confirm or correct it' : undefined}
               />
 
-              {/* Province Quick Select */}
               <div>
-                <div className="text-xs font-medium text-slate-400 mb-2">จังหวัดยอดนิยม</div>
+                <p className="text-xs font-medium text-content-tertiary mb-2">Quick Select Province</p>
                 <div className="flex flex-wrap gap-2">
-                  {POPULAR_PROVINCES.map(prov => (
-                    <button
-                      key={prov.value}
-                      type="button"
-                      onClick={() => { setProvince(prov.value); setHighlightField('province') }}
-                      className="px-3 py-1.5 text-sm font-medium rounded-lg border border-blue-300/30 bg-slate-800/80 text-blue-100 hover:bg-blue-500/20 hover:border-blue-300/60 transition-colors"
+                  {POPULAR_PROVINCES.map((prov) => (
+                    <button key={prov.value} type="button" onClick={() => { setProvince(prov.value); setHighlightField('province') }}
+                      className="px-3 py-1.5 text-sm font-medium rounded-lg border border-border bg-surface-raised text-content hover:bg-surface-overlay hover:border-accent/30 transition-colors"
                     >
-                      {prov.icon} {prov.label}
+                      {prov.label}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Note */}
-              <Input
-                label="หมายเหตุ (ถ้ามี)"
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="ระบุหมายเหตุเพิ่มเติม"
-              />
+              <Input label="Notes (optional)" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Additional notes" />
 
-              {/* Undo */}
               {lastChange && (
-                <div className="flex items-center gap-2 text-xs text-slate-400">
-                  <span>การเปลี่ยนแปลงล่าสุด:</span>
+                <div className="flex items-center gap-2 text-xs text-content-tertiary">
+                  <span>Last change:</span>
                   <Badge variant="default" size="sm">
-                    {lastChange.from ? `${lastChange.from}→${lastChange.to}` : 'จัดรูปแบบ'}
+                    {lastChange.from ? `${lastChange.from}->${lastChange.to}` : 'Normalized'}
                   </Badge>
-                  <button
-                    onClick={handleUndo}
-                    className="text-blue-400 hover:text-blue-300 font-medium"
-                  >
-                    เลิกทำ
+                  <button onClick={handleUndo} className="text-accent hover:underline font-medium flex items-center gap-1">
+                    <RotateCcw className="w-3 h-3" /> Undo
                   </button>
                 </div>
               )}
             </div>
 
             {/* Action Buttons */}
-            <div className="mt-6 pt-4 border-t border-slate-700/50">
+            <div className="mt-5 pt-4 border-t border-border">
               <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="primary"
-                  disabled={busy}
-                  onClick={onConfirm}
-                  className="flex-1"
-                  icon={
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                    </svg>
-                  }
-                >
-                  ยืนยัน
-                  <kbd className="ml-2 px-1.5 py-0.5 text-xs font-mono bg-blue-700/50 rounded">Enter</kbd>
+                <Button variant="primary" disabled={busy} onClick={onConfirm} className="flex-1 min-w-0"
+                  icon={<CheckCircle className="w-4 h-4" />}>
+                  Confirm
+                  <kbd className="ml-1.5 px-1.5 py-0.5 text-[10px] font-mono bg-white/20 rounded hidden sm:inline-block">Enter</kbd>
                 </Button>
-                
-                <Button
-                  variant="secondary"
-                  disabled={busy}
-                  onClick={() => onCorrect(plateText, province, note)}
-                  className="flex-1"
-                  icon={
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M7.707 10.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V6h5a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2h5v5.586l-1.293-1.293zM9 4a1 1 0 012 0v2H9V4z" />
-                    </svg>
-                  }
-                >
-                  บันทึกการแก้ไข
-                  <kbd className="ml-2 px-1.5 py-0.5 text-xs font-mono bg-slate-700 rounded">Ctrl+Enter</kbd>
+                <Button variant="secondary" disabled={busy} onClick={() => onCorrect(plateText, province, note)} className="flex-1 min-w-0"
+                  icon={<Edit3 className="w-4 h-4" />}>
+                  Save Edit
+                  <kbd className="ml-1.5 px-1.5 py-0.5 text-[10px] font-mono bg-surface-overlay rounded hidden sm:inline-block">Ctrl+Enter</kbd>
                 </Button>
-                
-                <Button
-                  variant="secondary"
-                  onClick={handleNormalize}
-                  icon={
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
-                    </svg>
-                  }
-                >
-                  จัดรูปแบบ
+                <Button variant="secondary" onClick={handleNormalize} icon={<Settings2 className="w-4 h-4" />}>
+                  Normalize
                 </Button>
-
-                <Button
-                  variant="danger"
-                  disabled={busy}
-                  onClick={() => setDeleteOpen(true)}
-                  icon={
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                    </svg>
-                  }
-                >
-                  ลบ
+                <Button variant="danger" disabled={busy} onClick={() => setDeleteOpen(true)} icon={<Trash2 className="w-4 h-4" />}>
+                  Delete
                 </Button>
               </div>
             </div>
@@ -537,21 +380,12 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
       <DeleteConfirmModal
         open={deleteOpen}
         onClose={() => setDeleteOpen(false)}
-        onConfirm={() => {
-          setDeleteOpen(false)
-          onDelete()
-        }}
+        onConfirm={() => { setDeleteOpen(false); onDelete() }}
         plate={plateText}
         province={province}
         confidence={(item.confidence * 100).toFixed(1) + '%'}
       />
-
-      <ImageViewer
-        open={viewerOpen}
-        src={viewerSrc}
-        title={viewerTitle}
-        onClose={() => setViewerOpen(false)}
-      />
+      <ImageViewer open={viewerOpen} src={viewerSrc} title={viewerTitle} onClose={() => setViewerOpen(false)} />
     </>
   )
 }
@@ -567,10 +401,8 @@ export default function Queue() {
 
   const addToast = useCallback((message, type = 'info') => {
     const id = Date.now()
-    setToasts(prev => [...prev, { id, message, type }])
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id))
-    }, 3000)
+    setToasts((prev) => [...prev, { id, message, type }])
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000)
   }, [])
 
   const refresh = useCallback(async () => {
@@ -598,12 +430,8 @@ export default function Queue() {
     try {
       await verifyRead(id, { action: 'confirm', user: 'reviewer' })
       await refresh()
-      addToast('ยืนยันเรียบร้อยแล้ว', 'success')
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setBusyId(null)
-    }
+      addToast('Confirmed successfully', 'success')
+    } catch (e) { setError(String(e)) } finally { setBusyId(null) }
   }, [refresh, addToast])
 
   const handleCorrect = useCallback(async (id, corrected_text, corrected_province, note) => {
@@ -611,12 +439,8 @@ export default function Queue() {
     try {
       await verifyRead(id, { action: 'correct', corrected_text, corrected_province, note, user: 'reviewer' })
       await refresh()
-      addToast('บันทึกการแก้ไขแล้ว', 'success')
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setBusyId(null)
-    }
+      addToast('Correction saved', 'success')
+    } catch (e) { setError(String(e)) } finally { setBusyId(null) }
   }, [refresh, addToast])
 
   const handleDelete = useCallback(async (id) => {
@@ -624,77 +448,51 @@ export default function Queue() {
     try {
       await deleteRead(id)
       await refresh()
-      addToast('ลบรายการแล้ว', 'success')
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setBusyId(null)
-    }
+      addToast('Item deleted', 'success')
+    } catch (e) { setError(String(e)) } finally { setBusyId(null) }
   }, [refresh, addToast])
 
   return (
-    <div className="mx-auto max-w-7xl space-y-5">
-      {/* Header */}
-      <Card className="bg-gradient-to-r from-blue-600/20 via-blue-500/10 to-cyan-500/10">
-        <CardBody>
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-100">คิวตรวจสอบ</h1>
-              <p className="text-sm text-slate-300 mt-1">
-                ตรวจผล OCR และยืนยัน/แก้ไขก่อนบันทึกเข้า Master
-              </p>
-              <p className="text-xs text-slate-400 mt-1">
-                รีเฟรชอัตโนมัติทุก 10 วินาที
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <Badge variant="primary" size="lg">
-                รอการตรวจสอบ {items.length}
+    <div className="space-y-6">
+      <PageHeader
+        title="Verification Queue"
+        description="Review OCR results and confirm or correct before saving to Master DB"
+        actions={
+          <div className="flex items-center gap-3">
+            {lastRefresh && (
+              <Badge variant="default" size="sm">
+                Updated {lastRefresh.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
               </Badge>
-              {lastRefresh && (
-                <Badge variant="default" size="sm">
-                  อัปเดต {lastRefresh.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-                </Badge>
-              )}
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={refresh}
-                disabled={loading}
-                icon={loading ? <Spinner size="sm" /> : (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                )}
-              >
-                {loading ? 'กำลังรีเฟรช...' : 'รีเฟรช'}
-              </Button>
-            </div>
+            )}
+            <Button variant="secondary" size="sm" onClick={refresh} loading={loading}
+              icon={!loading ? <RefreshCw className="w-4 h-4" /> : undefined}>
+              {loading ? 'Refreshing...' : 'Refresh'}
+            </Button>
           </div>
-        </CardBody>
-      </Card>
+        }
+      />
 
-      {/* Error */}
+      {/* Stats */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard title="Pending" value={items.length} icon={<Clock className="w-5 h-5" />} />
+        <StatCard title="Auto-refresh" value="10s" icon={<RefreshCw className="w-5 h-5" />} />
+        <StatCard title="Queue Status" value={items.length === 0 ? 'Clear' : 'Active'} icon={<ListChecks className="w-5 h-5" />} />
+      </div>
+
       {error && (
-        <Card className="bg-rose-500/10 border-rose-300/40">
+        <Card className="bg-danger-muted border-danger/30">
           <CardBody>
-            <div className="flex items-start gap-3">
-              <svg className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-              </svg>
-              <p className="text-sm text-rose-200">{error}</p>
-            </div>
+            <p className="text-sm text-danger-content">{error}</p>
           </CardBody>
         </Card>
       )}
 
-      {/* Items */}
       {loading && items.length === 0 ? (
         <Card>
           <CardBody>
-            <div className="flex items-center justify-center py-12">
-              <Spinner size="lg" className="text-blue-500" />
-              <span className="ml-3 text-slate-300">กำลังโหลดข้อมูล...</span>
+            <div className="flex items-center justify-center py-16">
+              <Spinner size="lg" />
+              <span className="ml-3 text-content-secondary">Loading queue...</span>
             </div>
           </CardBody>
         </Card>
@@ -702,15 +500,15 @@ export default function Queue() {
         <Card>
           <CardBody>
             <EmptyState
-              icon="✓"
-              title="ไม่มีรายการที่รอการตรวจสอบ"
-              description="คิวว่างเปล่า - ทุกรายการได้รับการตรวจสอบแล้ว"
+              icon={<CheckCircle className="w-8 h-8" />}
+              title="Queue is empty"
+              description="All items have been reviewed. The queue will auto-refresh when new items arrive."
             />
           </CardBody>
         </Card>
       ) : (
         <div className="space-y-4">
-          {items.map(item => (
+          {items.map((item) => (
             <VerificationItem
               key={item.id}
               item={item}

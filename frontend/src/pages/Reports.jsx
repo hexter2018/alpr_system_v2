@@ -1,18 +1,54 @@
 import React, { useState, useEffect } from 'react'
 import { absImageUrl, API_BASE, apiFetch } from '../lib/api.js'
+import {
+  Card, CardBody, CardHeader, Badge, Button, Input, Spinner,
+  PageHeader, Modal,
+} from '../components/UIComponents.jsx'
+import {
+  Search, Download, Calendar, MapPin, Camera as CameraIcon,
+  FileText, CheckCircle, AlertTriangle, XCircle, Eye,
+} from 'lucide-react'
 
 function formatBangkokDateTime(value) {
   if (!value) return '-'
-
   const raw = String(value)
   const hasTimezone = /([zZ]|[+-]\d{2}:\d{2})$/.test(raw)
   const normalized = hasTimezone ? raw : `${raw}Z`
   const parsed = new Date(normalized)
-
   if (Number.isNaN(parsed.getTime())) return raw
-  return parsed.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })
+  return parsed.toLocaleString('en-US', {
+    timeZone: 'Asia/Bangkok',
+    dateStyle: 'short',
+    timeStyle: 'medium',
+  })
 }
 
+/* ===== INLINE STAT ===== */
+function ReportStat({ title, value, variant = 'default', icon }) {
+  const variantStyles = {
+    default: '',
+    success: 'border-success/20',
+    danger: 'border-danger/20',
+  }
+
+  return (
+    <Card className={`p-5 ${variantStyles[variant]}`}>
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-wider font-medium text-content-tertiary">{title}</p>
+          <p className="text-3xl font-bold text-content mt-1 tabular-nums">{value}</p>
+        </div>
+        {icon && (
+          <div className="w-10 h-10 rounded-xl bg-accent-muted flex items-center justify-center text-accent">
+            {icon}
+          </div>
+        )}
+      </div>
+    </Card>
+  )
+}
+
+/* ===== MAIN REPORTS ===== */
 export default function Reports() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
@@ -23,9 +59,9 @@ export default function Reports() {
   const [accuracy, setAccuracy] = useState([])
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
+  const [previewImg, setPreviewImg] = useState(null)
 
   useEffect(() => {
-    // Set default dates (last 7 days)
     const end = new Date()
     const start = new Date()
     start.setDate(start.getDate() - 7)
@@ -82,202 +118,238 @@ export default function Reports() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-5">
-      <div className="rounded-2xl border border-blue-300/20 bg-gradient-to-r from-blue-600/20 to-cyan-500/10 p-5">
-        <h1 className="text-2xl font-semibold text-slate-100">รายงานย้อนหลัง</h1>
-        <p className="text-sm text-slate-300">ดูสถิติและข้อมูลการตรวจจับป้ายทะเบียนย้อนหลังตามช่วงเวลา</p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Reports"
+        description="Historical detection statistics and activity logs"
+        actions={
+          <Button
+            variant="secondary"
+            icon={<Download className="w-4 h-4" />}
+            onClick={exportCSV}
+            disabled={!stats}
+          >
+            Export CSV
+          </Button>
+        }
+      />
 
-      {err && <div className="rounded-xl border border-rose-300/40 bg-rose-500/10 p-3 text-rose-200">{err}</div>}
+      {err && (
+        <Card className="bg-danger-muted border-danger/30">
+          <CardBody>
+            <p className="text-sm text-danger-content flex items-center gap-2">
+              <XCircle className="w-4 h-4 flex-shrink-0" /> {err}
+            </p>
+          </CardBody>
+        </Card>
+      )}
 
-      <div className="rounded-2xl border border-blue-300/20 bg-slate-900/55 p-5 shadow-lg">
-        <h2 className="mb-4 text-lg font-semibold text-slate-100">ตัวกรอง</h2>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <label className="text-sm text-slate-300">
-            วันเริ่มต้น
-            <input
+      {/* Filters */}
+      <Card>
+        <CardHeader>
+          <h2 className="text-base font-semibold text-content">Filters</h2>
+        </CardHeader>
+        <CardBody>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <Input
+              label="Start Date"
               type="date"
-              className="input-dark mt-1"
+              icon={<Calendar className="w-4 h-4" />}
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
             />
-          </label>
-          <label className="text-sm text-slate-300">
-            วันสิ้นสุด
-            <input
+            <Input
+              label="End Date"
               type="date"
-              className="input-dark mt-1"
+              icon={<Calendar className="w-4 h-4" />}
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
             />
-          </label>
-          <label className="text-sm text-slate-300">
-            จังหวัด (ถ้ามี)
-            <input
+            <Input
+              label="Province"
               type="text"
-              placeholder="กรุงเทพมหานคร"
-              className="input-dark mt-1"
+              placeholder="e.g. Bangkok"
+              icon={<MapPin className="w-4 h-4" />}
               value={province}
               onChange={(e) => setProvince(e.target.value)}
             />
-          </label>
-          <label className="text-sm text-slate-300">
-            Camera ID (ถ้ามี)
-            <input
+            <Input
+              label="Camera ID"
               type="text"
-              placeholder="plaza2-lane1"
-              className="input-dark mt-1"
+              placeholder="e.g. plaza2-lane1"
+              icon={<CameraIcon className="w-4 h-4" />}
               value={cameraId}
               onChange={(e) => setCameraId(e.target.value)}
             />
-          </label>
-        </div>
-        <div className="mt-4 flex gap-2">
-          <button onClick={fetchStats} disabled={loading} className="btn-blue">
-            {loading ? 'กำลังโหลด...' : 'ค้นหา'}
-          </button>
-          <button onClick={exportCSV} disabled={!stats} className="btn-soft">
-            📥 Export CSV
-          </button>
-        </div>
-      </div>
+          </div>
+          <div className="mt-4 flex items-center gap-3">
+            <Button onClick={fetchStats} loading={loading} icon={<Search className="w-4 h-4" />}>
+              Search
+            </Button>
+          </div>
+        </CardBody>
+      </Card>
 
       {stats && (
         <>
+          {/* KPI Row */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard title="Total Reads" value={stats.total_reads} />
-            <StatCard title="Verified" value={stats.verified_reads} />
-            <StatCard title="ALPR (ถูกต้อง)" value={stats.alpr_total} color="emerald" />
-            <StatCard title="MLPR (แก้ไข)" value={stats.mlpr_total} color="rose" />
+            <ReportStat title="Total Reads" value={stats.total_reads.toLocaleString()} icon={<FileText className="w-5 h-5" />} />
+            <ReportStat title="Verified" value={stats.verified_reads.toLocaleString()} icon={<CheckCircle className="w-5 h-5" />} />
+            <ReportStat title="ALPR (Correct)" value={stats.alpr_total.toLocaleString()} variant="success" icon={<CheckCircle className="w-5 h-5" />} />
+            <ReportStat title="MLPR (Corrected)" value={stats.mlpr_total.toLocaleString()} variant="danger" icon={<AlertTriangle className="w-5 h-5" />} />
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-2xl border border-blue-300/20 bg-slate-900/55 p-5 shadow-lg">
-              <h2 className="mb-4 text-lg font-semibold text-slate-100">
-                ความแม่นยำ: {stats.accuracy.toFixed(1)}%
-              </h2>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-300">High Confidence (≥90%)</span>
-                  <span className="text-emerald-400">{stats.high_confidence}</span>
+          {/* Accuracy + Top Provinces */}
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-base font-semibold text-content">Accuracy: {stats.accuracy.toFixed(1)}%</h2>
+                  <Badge variant={stats.accuracy >= 90 ? 'success' : stats.accuracy >= 75 ? 'warning' : 'danger'}>
+                    {stats.accuracy >= 90 ? 'Excellent' : stats.accuracy >= 75 ? 'Good' : 'Needs Work'}
+                  </Badge>
                 </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
-                  <div
-                    className="h-full bg-emerald-500"
-                    style={{ width: `${(stats.high_confidence / Math.max(stats.total_reads, 1)) * 100}%` }}
-                  />
+              </CardHeader>
+              <CardBody>
+                <div className="space-y-4">
+                  {[
+                    { label: 'High Confidence (>=90%)', value: stats.high_confidence, total: stats.total_reads, color: 'bg-success', text: 'text-success' },
+                    { label: 'Medium (70-90%)', value: stats.medium_confidence, total: stats.total_reads, color: 'bg-warning', text: 'text-warning' },
+                    { label: 'Low (<70%)', value: stats.low_confidence, total: stats.total_reads, color: 'bg-danger', text: 'text-danger' },
+                  ].map((bar) => (
+                    <div key={bar.label}>
+                      <div className="flex justify-between text-sm mb-1.5">
+                        <span className="text-content-secondary">{bar.label}</span>
+                        <span className={`font-semibold ${bar.text}`}>{bar.value.toLocaleString()}</span>
+                      </div>
+                      <div className="h-2.5 w-full overflow-hidden rounded-full bg-surface-inset">
+                        <div
+                          className={`h-full rounded-full ${bar.color} transition-all duration-500`}
+                          style={{ width: `${(bar.value / Math.max(bar.total, 1)) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
+              </CardBody>
+            </Card>
 
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-300">Medium Confidence (70-90%)</span>
-                  <span className="text-amber-400">{stats.medium_confidence}</span>
+            <Card>
+              <CardHeader>
+                <h2 className="text-base font-semibold text-content">Top 10 Provinces</h2>
+              </CardHeader>
+              <CardBody>
+                <div className="space-y-3">
+                  {stats.top_provinces.map((p, i) => (
+                    <div key={i} className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-bold text-content-tertiary w-5 text-right tabular-nums">{i + 1}</span>
+                        <span className="text-sm text-content">{p.province || 'Unknown'}</span>
+                      </div>
+                      <span className="text-sm font-semibold text-content tabular-nums">{p.count.toLocaleString()}</span>
+                    </div>
+                  ))}
                 </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
-                  <div
-                    className="h-full bg-amber-500"
-                    style={{ width: `${(stats.medium_confidence / Math.max(stats.total_reads, 1)) * 100}%` }}
-                  />
-                </div>
-
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-300">Low Confidence (&lt;70%)</span>
-                  <span className="text-rose-400">{stats.low_confidence}</span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
-                  <div
-                    className="h-full bg-rose-500"
-                    style={{ width: `${(stats.low_confidence / Math.max(stats.total_reads, 1)) * 100}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-blue-300/20 bg-slate-900/55 p-5 shadow-lg">
-              <h2 className="mb-4 text-lg font-semibold text-slate-100">จังหวัดยอดนิยม Top 10</h2>
-              <div className="space-y-2 text-sm">
-                {stats.top_provinces.map((p, i) => (
-                  <div key={i} className="flex items-center justify-between">
-                    <span className="text-slate-300">{p.province || 'ไม่ระบุ'}</span>
-                    <span className="font-semibold text-blue-100">{p.count}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+              </CardBody>
+            </Card>
           </div>
 
+          {/* Accuracy Table */}
           {accuracy.length > 0 && (
-            <div className="rounded-2xl border border-blue-300/20 bg-slate-900/55 p-5 shadow-lg">
-              <h2 className="mb-4 text-lg font-semibold text-slate-100">กราฟความแม่นยำรายวัน</h2>
+            <Card>
+              <CardHeader>
+                <h2 className="text-base font-semibold text-content">Daily Accuracy</h2>
+              </CardHeader>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead className="border-b border-blue-200/20">
-                    <tr>
-                      <th className="p-2 text-left text-slate-300">วันที่</th>
-                      <th className="p-2 text-right text-slate-300">ALPR</th>
-                      <th className="p-2 text-right text-slate-300">MLPR</th>
-                      <th className="p-2 text-right text-slate-300">Total</th>
-                      <th className="p-2 text-right text-slate-300">Accuracy</th>
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="px-5 py-3 text-left text-xs uppercase tracking-wider font-semibold text-content-tertiary">Date</th>
+                      <th className="px-5 py-3 text-right text-xs uppercase tracking-wider font-semibold text-content-tertiary">ALPR</th>
+                      <th className="px-5 py-3 text-right text-xs uppercase tracking-wider font-semibold text-content-tertiary">MLPR</th>
+                      <th className="px-5 py-3 text-right text-xs uppercase tracking-wider font-semibold text-content-tertiary">Total</th>
+                      <th className="px-5 py-3 text-right text-xs uppercase tracking-wider font-semibold text-content-tertiary">Accuracy</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-border">
                     {accuracy.map((row, i) => (
-                      <tr key={i} className="border-b border-slate-800">
-                        <td className="p-2 text-slate-100">{row.date}</td>
-                        <td className="p-2 text-right text-emerald-400">{row.alpr}</td>
-                        <td className="p-2 text-right text-rose-400">{row.mlpr}</td>
-                        <td className="p-2 text-right text-slate-100">{row.total}</td>
-                        <td className="p-2 text-right font-semibold text-blue-100">{row.accuracy.toFixed(1)}%</td>
+                      <tr key={i} className="hover:bg-surface-overlay/50 transition-colors">
+                        <td className="px-5 py-3 text-content">{row.date}</td>
+                        <td className="px-5 py-3 text-right text-success tabular-nums font-medium">{row.alpr}</td>
+                        <td className="px-5 py-3 text-right text-danger tabular-nums font-medium">{row.mlpr}</td>
+                        <td className="px-5 py-3 text-right text-content tabular-nums font-medium">{row.total}</td>
+                        <td className="px-5 py-3 text-right">
+                          <Badge variant={row.accuracy >= 90 ? 'success' : row.accuracy >= 75 ? 'warning' : 'danger'} size="sm">
+                            {row.accuracy.toFixed(1)}%
+                          </Badge>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            </div>
+            </Card>
           )}
 
-          <div className="rounded-2xl border border-blue-300/20 bg-slate-900/55 p-5 shadow-lg">
-            <h2 className="mb-4 text-lg font-semibold text-slate-100">Activity Log (ล่าสุด 50 รายการ)</h2>
+          {/* Activity Log */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-semibold text-content">Activity Log</h2>
+                <Badge variant="default" size="sm">{activity.length} entries</Badge>
+              </div>
+            </CardHeader>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="border-b border-blue-200/20">
-                  <tr>
-                    <th className="p-2 text-left text-slate-300">Crop</th>
-                    <th className="p-2 text-left text-slate-300">Plate</th>
-                    <th className="p-2 text-left text-slate-300">Province</th>
-                    <th className="p-2 text-left text-slate-300">Conf.</th>
-                    <th className="p-2 text-left text-slate-300">Status</th>
-                    <th className="p-2 text-left text-slate-300">Camera</th>
-                    <th className="p-2 text-left text-slate-300">Time</th>
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="px-5 py-3 text-left text-xs uppercase tracking-wider font-semibold text-content-tertiary">Plate Crop</th>
+                    <th className="px-5 py-3 text-left text-xs uppercase tracking-wider font-semibold text-content-tertiary">Plate Text</th>
+                    <th className="px-5 py-3 text-left text-xs uppercase tracking-wider font-semibold text-content-tertiary">Province</th>
+                    <th className="px-5 py-3 text-left text-xs uppercase tracking-wider font-semibold text-content-tertiary">Confidence</th>
+                    <th className="px-5 py-3 text-left text-xs uppercase tracking-wider font-semibold text-content-tertiary">Status</th>
+                    <th className="px-5 py-3 text-left text-xs uppercase tracking-wider font-semibold text-content-tertiary">Camera</th>
+                    <th className="px-5 py-3 text-left text-xs uppercase tracking-wider font-semibold text-content-tertiary">Time</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-border">
                   {activity.map((a) => (
-                    <tr key={a.id} className="border-b border-slate-800">
-                      <td className="p-2">
-                        <img
-                          src={absImageUrl(a.crop_url)}
-                          alt="crop"
-                          className="h-10 w-16 rounded border border-blue-200/20 object-cover"
-                        />
+                    <tr key={a.id} className="hover:bg-surface-overlay/50 transition-colors">
+                      <td className="px-5 py-3">
+                        <button
+                          onClick={() => setPreviewImg(absImageUrl(a.crop_url))}
+                          className="block rounded-lg overflow-hidden border border-border hover:border-accent/50 transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
+                        >
+                          <img
+                            src={absImageUrl(a.crop_url)}
+                            alt="plate crop"
+                            className="h-12 w-20 object-cover"
+                            crossOrigin="anonymous"
+                          />
+                        </button>
                       </td>
-                      <td className="p-2 font-mono text-slate-100">{a.plate_text || '-'}</td>
-                      <td className="p-2 text-slate-300">{a.province || '-'}</td>
-                      <td className="p-2">
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-xs ${
-                            a.confidence >= 0.9
-                              ? 'bg-emerald-500/20 text-emerald-300'
-                              : a.confidence >= 0.7
-                                ? 'bg-amber-500/20 text-amber-300'
-                                : 'bg-rose-500/20 text-rose-300'
-                          }`}
+                      <td className="px-5 py-3">
+                        <span className="font-mono text-base font-bold text-content">{a.plate_text || '-'}</span>
+                      </td>
+                      <td className="px-5 py-3 text-content-secondary">{a.province || '-'}</td>
+                      <td className="px-5 py-3">
+                        <Badge
+                          variant={a.confidence >= 0.9 ? 'success' : a.confidence >= 0.7 ? 'warning' : 'danger'}
+                          size="sm"
                         >
                           {(a.confidence * 100).toFixed(0)}%
-                        </span>
+                        </Badge>
                       </td>
-                      <td className="p-2 text-slate-300">{a.status}</td>
-                      <td className="p-2 text-slate-300">{a.camera_id}</td>
-                      <td className="p-2 text-slate-400">
+                      <td className="px-5 py-3">
+                        <Badge variant={a.status === 'verified' ? 'success' : a.status === 'rejected' ? 'danger' : 'default'} size="sm">
+                          {a.status}
+                        </Badge>
+                      </td>
+                      <td className="px-5 py-3">
+                        <Badge variant="primary" size="sm">{a.camera_id}</Badge>
+                      </td>
+                      <td className="px-5 py-3 text-content-tertiary text-xs whitespace-nowrap">
                         {formatBangkokDateTime(a.created_at)}
                       </td>
                     </tr>
@@ -285,23 +357,21 @@ export default function Reports() {
                 </tbody>
               </table>
             </div>
-          </div>
+          </Card>
         </>
       )}
-    </div>
-  )
-}
 
-function StatCard({ title, value, color = 'blue' }) {
-  const colors = {
-    blue: 'border-blue-300/20 bg-slate-900/55',
-    emerald: 'border-emerald-300/20 bg-emerald-500/10',
-    rose: 'border-rose-300/20 bg-rose-500/10',
-  }
-  return (
-    <div className={`rounded-2xl border p-4 shadow-lg ${colors[color]}`}>
-      <div className="text-xs uppercase tracking-wide text-slate-400">{title}</div>
-      <div className="mt-1 text-2xl font-semibold text-slate-100">{value}</div>
+      {/* Image Preview Modal */}
+      <Modal open={!!previewImg} onClose={() => setPreviewImg(null)} title="Plate Crop" size="lg">
+        {previewImg && (
+          <img
+            src={previewImg}
+            alt="Full size plate crop"
+            className="w-full rounded-lg"
+            crossOrigin="anonymous"
+          />
+        )}
+      </Modal>
     </div>
   )
 }
