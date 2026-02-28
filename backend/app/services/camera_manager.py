@@ -97,7 +97,8 @@ class CameraStreamManager:
             max_disappeared=30,
             max_distance=100.0,
             min_frames_in_zone=3,        # ✅ REDUCED from 5 to 3
-            min_frames_out_of_zone=5     # ✅ REDUCED from 10 to 5
+            min_frames_out_of_zone=5,    # ✅ REDUCED from 10 to 5
+            fps=config.fps or 2.0,       # ✅ Pass actual FPS so cleanup timing is correct
         )
         
         # Trigger zone
@@ -157,10 +158,12 @@ class CameraStreamManager:
                             )
                     else:
                         log.warning(f"No trigger zone points for {self.config.camera_id}")
+                        self.trigger_zone = None
                         self._raw_zone_points = []
                         self._zone_is_normalized = False
                 else:
                     log.warning(f"No trigger zone configured for {self.config.camera_id}")
+                    self.trigger_zone = None
                     self._raw_zone_points = []
                     self._zone_is_normalized = False
             finally:
@@ -520,16 +523,19 @@ class CameraStreamManager:
         if not self.ocr_callback:
             log.warning("No OCR callback set, skipping processing")
             return
-        
+
         best_frame, best_bbox = track.get_best_shot()
         if best_frame is None or best_bbox is None:
             log.warning(f"No best shot for track {track.track_id}")
             return
-        
+
         try:
             self.ocr_callback(track, best_frame, best_bbox)
             self.ocr_triggered_count += 1
-            log.info(f"OCR triggered for track {track.track_id}")
+            log.info(
+                f"Captured image for Track {track.track_id} "
+                f"(cam={self.config.camera_id}, total={self.ocr_triggered_count})"
+            )
         except Exception as e:
             log.error(f"OCR callback error: {e}", exc_info=True)
     

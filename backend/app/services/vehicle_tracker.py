@@ -128,28 +128,34 @@ class VehicleTrack:
 class VehicleTracker:
     """
     ✅ FIXED: Multi-object tracker with improved state machine
-    
+
     Key improvements:
     1. Relaxed zone entry detection (bottom-center point only)
     2. Handle vehicles born inside zone
     3. Better debug logging
+    4. fps-aware cleanup timing (fixes tracks deleted before OCR triggered)
     """
-    
+
     def __init__(
         self,
         max_disappeared: int = 30,          # Frames before removing lost track
         max_distance: float = 100.0,        # Max centroid distance for matching
         min_frames_in_zone: int = 3,        # ✅ REDUCED: from 5 to 3 frames
         min_frames_out_of_zone: int = 5,    # ✅ REDUCED: from 10 to 5 frames
+        fps: float = 2.0,                   # ✅ NEW: actual camera FPS for timing
     ):
         self.next_track_id = 0
         self.tracks: Dict[int, VehicleTrack] = {}
-        
+
         self.max_disappeared = max_disappeared
         self.max_distance = max_distance
         self.min_frames_in_zone = min_frames_in_zone
         self.min_frames_out_of_zone = min_frames_out_of_zone
-        
+        self.fps = max(fps, 0.1)            # ✅ Prevent division by zero
+
+        # ✅ Pending tracks ready for OCR (collected before cleanup so cleanup can't race-delete)
+        self._pending_ready_tracks: List[VehicleTrack] = []
+
         # ✅ DEBUG: Count zone events
         self.debug_stats = {
             "total_vehicles": 0,
@@ -168,6 +174,9 @@ class VehicleTracker:
         Update tracker with new detections.
         Returns active tracks with their current states.
         """
+        # ✅ Reset pending list at start of each update
+        self._pending_ready_tracks = []
+
         # Handle empty detections
         if len(detections) == 0:
             self._handle_disappeared_tracks()
@@ -214,10 +223,16 @@ class VehicleTracker:
         
         # Update state machine for all tracks
         self._update_state_machine(zone)
-        
+
+        # ✅ Collect ready tracks BEFORE cleanup so deletions don't race with OCR
+        for track in list(self.tracks.values()):
+            if track.state == VehicleState.PROCESSING and not track.processing_started:
+                track.processing_started = True
+                self._pending_ready_tracks.append(track)
+
         # Cleanup old tracks
         self._cleanup_old_tracks()
-        
+
         return self.tracks
     
     def _register_new_track(
@@ -299,6 +314,20 @@ class VehicleTracker:
         """Increment disappeared counter for tracks with no detections"""
         for track in self.tracks.values():
             track.frames_out_of_zone += 1
+
+            # ✅ Auto-transition: vehicle was in zone but now gone from camera
+            if (track.state == VehicleState.IN_ZONE
+                    and track.frames_out_of_zone >= self.min_frames_out_of_zone
+                    and not track.processing_started):
+                track.state = VehicleState.PROCESSING
+                track.zone_exit_time = time.time()
+                track.processing_started = True
+                self.debug_stats["captured"] += 1
+                self._pending_ready_tracks.append(track)
+                log.info(
+                    f"📸 Track {track.track_id} PROCESSING "
+                    f"(auto: no detections, frames_out={track.frames_out_of_zone})"
+                )
     
     def _update_state_machine(self, zone: Optional[TriggerZone]):
         """
@@ -379,32 +408,47 @@ class VehicleTracker:
     def _cleanup_old_tracks(self):
         """Remove tracks that are too old or have exited"""
         to_remove = []
-        
+
+        # ✅ Use actual fps to compute timeout (was hardcoded to 30 fps → too short at 2 fps)
+        max_disappeared_sec = self.max_disappeared / self.fps
+
         for track_id, track in self.tracks.items():
             # Remove if disappeared for too long
-            if track.time_since_last_seen > (self.max_disappeared / 30.0):  # Assume 30 FPS
+            if track.time_since_last_seen > max_disappeared_sec:
+                # ✅ Force capture for IN_ZONE tracks before deletion
+                if track.state == VehicleState.IN_ZONE and not track.processing_started:
+                    track.state = VehicleState.PROCESSING
+                    track.zone_exit_time = time.time()
+                    track.processing_started = True
+                    self.debug_stats["captured"] += 1
+                    self._pending_ready_tracks.append(track)
+                    log.info(
+                        f"📸 Track {track_id} FORCED PROCESSING (cleanup, "
+                        f"gone={track.time_since_last_seen:.1f}s)"
+                    )
                 to_remove.append(track_id)
-            
+
             # Remove processed tracks after 5 seconds
             elif track.state == VehicleState.EXITED and track.age > 5.0:
                 to_remove.append(track_id)
-        
+
         for track_id in to_remove:
             del self.tracks[track_id]
     
     def get_tracks_ready_for_processing(self) -> List[VehicleTrack]:
-        """Get tracks that need OCR processing"""
-        ready = [
-            track for track in self.tracks.values()
-            if track.state == VehicleState.PROCESSING and not track.processing_started
-        ]
-        
+        """
+        ✅ Returns tracks collected during last update() before cleanup ran.
+        This prevents a race where tracks could be deleted before OCR is triggered.
+        """
+        ready = list(self._pending_ready_tracks)
+        self._pending_ready_tracks = []
+
         if ready:
             log.info(
                 f"🎯 {len(ready)} tracks ready for processing "
                 f"(stats: {self.debug_stats})"
             )
-        
+
         return ready
     
     def get_debug_stats(self) -> Dict:
