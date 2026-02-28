@@ -482,19 +482,19 @@ export default function CameraSettings() {
               <div className="divide-y divide-border">
                 {cameras.map((camera) => (
                   <div key={camera.camera_id}
-                    className={`transition-colors ${selectedCamera?.camera_id === camera.camera_id ? 'bg-accent-muted border-l-4 border-accent' : 'hover:bg-surface-overlay'}`}>
-                    <button onClick={() => setSelectedCamera(camera)} className="w-full text-left px-4 py-3">
+                    className={`transition-all duration-200 ${selectedCamera?.camera_id === camera.camera_id ? 'bg-accent-muted/60 border-l-4 border-l-accent' : 'hover:bg-surface-overlay/60 border-l-4 border-l-transparent'}`}>
+                    <button onClick={() => setSelectedCamera(camera)} className="w-full text-left px-4 py-3.5">
                       <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-content text-sm truncate">{camera.name || camera.camera_id}</p>
-                          <p className="text-xs text-content-tertiary mt-0.5 truncate">{camera.camera_id}</p>
+                        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${camera.status === 'ONLINE' ? 'bg-success shadow-sm shadow-success/50' : 'bg-content-tertiary'}`} />
+                          <div className="min-w-0">
+                            <p className="font-semibold text-content text-sm truncate">{camera.name || camera.camera_id}</p>
+                            <p className="text-[11px] text-content-tertiary mt-0.5 truncate font-mono">{camera.camera_id}</p>
+                          </div>
                         </div>
-                        <Badge variant={camera.status === 'ONLINE' ? 'success' : 'default'} size="sm" dot>
-                          {camera.status || 'OFFLINE'}
-                        </Badge>
                       </div>
                       {camera.trigger_zone?.points && (
-                        <p className="text-xs text-success mt-2 flex items-center gap-1">
+                        <p className="text-[11px] text-success mt-2 flex items-center gap-1 ml-5">
                           <CheckCircle className="w-3 h-3" /> Zone ({camera.trigger_zone.points.length} pts)
                         </p>
                       )}

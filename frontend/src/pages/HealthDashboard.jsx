@@ -12,11 +12,19 @@ function CameraHealthCard({ camera }) {
   }
 
   return (
-    <Card hover className="p-5">
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex-1 min-w-0">
-          <h4 className="font-semibold text-content text-sm truncate">{camera.name || camera.camera_id}</h4>
-          <p className="text-xs text-content-tertiary mt-0.5 font-mono">{camera.camera_id}</p>
+    <Card hover className="p-5 relative overflow-hidden">
+      {/* Status indicator strip */}
+      <div className={`absolute top-0 left-0 right-0 h-1 ${camera.status === 'ONLINE' ? 'bg-success' : 'bg-danger'}`} />
+      
+      <div className="flex items-start justify-between mb-4 mt-1">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${camera.status === 'ONLINE' ? 'bg-success-muted text-success' : 'bg-danger-muted text-danger'}`}>
+            <Camera className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <h4 className="font-bold text-content text-sm truncate">{camera.name || camera.camera_id}</h4>
+            <p className="text-[11px] text-content-tertiary mt-0.5 font-mono">{camera.camera_id}</p>
+          </div>
         </div>
         <Badge
           variant={camera.status === 'ONLINE' ? 'success' : 'danger'}
@@ -27,30 +35,24 @@ function CameraHealthCard({ camera }) {
         </Badge>
       </div>
 
-      <div className="grid grid-cols-3 gap-4 text-sm">
-        <div>
-          <div className="text-xs text-content-tertiary mb-1 flex items-center gap-1">
-            <Gauge className="w-3 h-3" /> FPS
-          </div>
-          <div className="font-bold text-content tabular-nums">
+      <div className="grid grid-cols-3 gap-4 text-sm bg-surface-inset/50 rounded-xl p-3">
+        <div className="text-center">
+          <div className="text-[10px] uppercase tracking-wider text-content-tertiary mb-1.5 font-semibold">FPS</div>
+          <div className="font-extrabold text-content tabular-nums text-lg">
             {camera.fps !== null && camera.fps !== undefined ? camera.fps.toFixed(1) : '-'}
           </div>
         </div>
         
-        <div>
-          <div className="text-xs text-content-tertiary mb-1 flex items-center gap-1">
-            <Activity className="w-3 h-3" /> Uptime
-          </div>
-          <div className={`font-bold tabular-nums ${getUptimeColor(camera.uptime || 0)}`}>
+        <div className="text-center border-x border-border">
+          <div className="text-[10px] uppercase tracking-wider text-content-tertiary mb-1.5 font-semibold">Uptime</div>
+          <div className={`font-extrabold tabular-nums text-lg ${getUptimeColor(camera.uptime || 0)}`}>
             {camera.uptime !== null && camera.uptime !== undefined ? `${camera.uptime.toFixed(1)}%` : '-'}
           </div>
         </div>
         
-        <div>
-          <div className="text-xs text-content-tertiary mb-1 flex items-center gap-1">
-            <BarChart3 className="w-3 h-3" /> Reads
-          </div>
-          <div className="font-bold text-content tabular-nums">
+        <div className="text-center">
+          <div className="text-[10px] uppercase tracking-wider text-content-tertiary mb-1.5 font-semibold">Reads</div>
+          <div className="font-extrabold text-content tabular-nums text-lg">
             {camera.total_reads || 0}
           </div>
         </div>
@@ -93,24 +95,24 @@ function MetricsChart({ data, label, color = 'accent' }) {
 
   return (
     <div>
-      <div className="text-xs text-content-tertiary mb-3">{label}</div>
-      <div className="flex items-end gap-1 h-24">
+      <div className="text-[11px] font-medium uppercase tracking-wider text-content-tertiary mb-3">{label}</div>
+      <div className="flex items-end gap-[3px] h-28 bg-surface-inset/30 rounded-xl p-2">
         {data.map((point, i) => {
           const height = (point.value / max) * 100
           return (
             <div key={i} className="flex-1 flex flex-col items-center group relative">
               <div 
-                className={`w-full ${colors[color] || colors.accent} rounded-t transition-all duration-300 hover:opacity-80`}
-                style={{ height: `${Math.max(height, 2)}%` }}
+                className={`w-full ${colors[color] || colors.accent} rounded-sm transition-all duration-300 hover:opacity-80 hover:scale-x-110`}
+                style={{ height: `${Math.max(height, 3)}%` }}
               />
-              <div className="absolute -top-9 hidden group-hover:block bg-content text-content-inverse px-2 py-1 rounded-lg text-xs font-mono z-10 shadow-lg">
+              <div className="absolute -top-10 hidden group-hover:block bg-content text-content-inverse px-2.5 py-1.5 rounded-lg text-xs font-mono z-10 shadow-xl ring-1 ring-black/5">
                 {point.value.toFixed(2)}
               </div>
             </div>
           )
         })}
       </div>
-      <div className="flex justify-between text-xs text-content-tertiary mt-2">
+      <div className="flex justify-between text-[11px] text-content-tertiary mt-2.5 px-1">
         <span>{data[0]?.timestamp ? new Date(data[0].timestamp).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
         <span>{data[data.length - 1]?.timestamp ? new Date(data[data.length - 1].timestamp).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
       </div>

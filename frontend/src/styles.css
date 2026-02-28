@@ -13,6 +13,19 @@
     outline: none;
     @apply ring-2 ring-accent ring-offset-2 ring-offset-surface;
   }
+
+  /* Smooth selection colors */
+  ::selection {
+    background-color: var(--color-accent-muted);
+    color: var(--color-accent);
+  }
+
+  /* Better focus for inputs */
+  input:focus,
+  select:focus,
+  textarea:focus {
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
 }
 
 @layer components {
@@ -22,5 +35,15 @@
   .theme-transition *::before,
   .theme-transition *::after {
     transition: background-color 300ms ease, border-color 300ms ease, color 300ms ease, box-shadow 300ms ease !important;
+  }
+
+  /* Enhanced table header */
+  thead th {
+    @apply bg-surface-inset/30;
+  }
+
+  /* Smooth page transitions */
+  main {
+    animation: fadeIn 0.3s ease-out;
   }
 }

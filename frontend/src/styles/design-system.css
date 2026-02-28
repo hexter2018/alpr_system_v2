@@ -208,6 +208,95 @@ body {
   50% { opacity: 0.5; }
 }
 
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes glowPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+  50% { box-shadow: 0 0 12px 2px rgba(59, 130, 246, 0.15); }
+}
+
+/* ============================================
+   ENHANCED VISUAL EFFECTS
+   ============================================ */
+.animate-count-up {
+  animation: countUp 0.5s ease-out both;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.3s ease-out both;
+}
+
+.stagger-1 { animation-delay: 50ms; }
+.stagger-2 { animation-delay: 100ms; }
+.stagger-3 { animation-delay: 150ms; }
+.stagger-4 { animation-delay: 200ms; }
+
+/* Glassmorphism helpers */
+.glass {
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+}
+
+.glass-subtle {
+  backdrop-filter: blur(8px) saturate(1.1);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
+}
+
+/* Enhanced card hover glow */
+.card-glow {
+  transition: box-shadow 0.3s ease, border-color 0.3s ease, transform 0.2s ease;
+}
+.card-glow:hover {
+  box-shadow: 0 0 0 1px var(--color-accent), 0 8px 25px -5px rgba(0, 0, 0, 0.1), 0 4px 10px -5px rgba(0, 0, 0, 0.04);
+  border-color: var(--color-accent);
+  transform: translateY(-1px);
+}
+.dark .card-glow:hover {
+  box-shadow: 0 0 0 1px var(--color-accent), 0 8px 25px -5px rgba(0, 0, 0, 0.3), 0 4px 10px -5px rgba(0, 0, 0, 0.2);
+}
+
+/* Subtle inset pattern for empty states */
+.pattern-dots {
+  background-image: radial-gradient(var(--color-border) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Smooth number transitions */
+.tabular-smooth {
+  font-variant-numeric: tabular-nums;
+  transition: color 0.3s ease;
+}
+
+/* Progress bar shimmer */
+.progress-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.progress-shimmer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.15) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
 /* ============================================
    SCROLLBAR STYLING
    ============================================ */

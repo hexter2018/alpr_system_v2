@@ -47,7 +47,7 @@ export function Button({
 export function Card({ children, className = '', hover = false, ...props }) {
   return (
     <div
-      className={`rounded-xl border border-border bg-surface-raised shadow-sm ${hover ? 'hover:border-accent/30 hover:shadow-md transition-all' : ''} ${className}`}
+      className={`rounded-2xl border border-border bg-surface-raised shadow-sm ${hover ? 'hover:border-accent/30 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300' : 'transition-colors duration-200'} ${className}`}
       {...props}
     >
       {children}
@@ -190,10 +190,13 @@ export function Badge({ children, variant = 'default', size = 'md', dot = false,
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full font-semibold ${variants[variant] || variants.default} ${sizes[size]} ${className}`}
+      className={`inline-flex items-center gap-1.5 rounded-full font-semibold ring-1 ring-inset ring-current/10 ${variants[variant] || variants.default} ${sizes[size]} ${className}`}
     >
       {dot && (
-        <span className="w-1.5 h-1.5 rounded-full bg-current" />
+        <span className="relative flex h-1.5 w-1.5">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-current opacity-50" />
+          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-current" />
+        </span>
       )}
       {children}
     </span>
@@ -316,7 +319,7 @@ export function Modal({ open, onClose, title, children, size = 'md' }) {
       onClick={onClose}
     >
       <div
-        className={`w-full ${sizes[size]} rounded-2xl border border-border bg-surface-raised shadow-2xl animate-[slideUp_0.3s_ease-out] max-h-[90vh] flex flex-col`}
+        className={`w-full ${sizes[size]} rounded-2xl border border-border bg-surface-raised shadow-2xl animate-[scaleIn_0.25s_ease-out] max-h-[90vh] flex flex-col ring-1 ring-black/5`}
         onClick={(e) => e.stopPropagation()}
       >
         {title && (
@@ -340,27 +343,29 @@ export function Modal({ open, onClose, title, children, size = 'md' }) {
 /* ===== STAT CARD ===== */
 export function StatCard({ title, value, subtitle, trend, icon, className = '' }) {
   return (
-    <Card className={`p-5 ${className}`}>
+    <Card className={`p-5 group ${className}`} hover>
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
-          <p className="text-xs uppercase tracking-wider font-medium text-content-tertiary mb-1">
+          <p className="text-[11px] uppercase tracking-widest font-semibold text-content-tertiary mb-2">
             {title}
           </p>
           <div className="flex items-baseline gap-2">
-            <p className="text-3xl font-bold text-content tabular-nums">{value}</p>
+            <p className="text-3xl font-extrabold text-content tabular-nums tracking-tight">{value}</p>
             {subtitle && (
               <p className="text-sm text-content-secondary truncate">{subtitle}</p>
             )}
           </div>
           {trend && (
-            <div className={`mt-2 flex items-center gap-1 text-xs font-medium ${trend.positive ? 'text-success' : 'text-danger'}`}>
-              {trend.positive ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            <div className={`mt-2.5 flex items-center gap-1.5 text-xs font-semibold ${trend.positive ? 'text-success' : 'text-danger'}`}>
+              <span className={`inline-flex items-center justify-center w-4 h-4 rounded-full ${trend.positive ? 'bg-success-muted' : 'bg-danger-muted'}`}>
+                {trend.positive ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              </span>
               {trend.value}
             </div>
           )}
         </div>
         {icon && (
-          <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-accent-muted flex items-center justify-center text-accent">
+          <div className="flex-shrink-0 w-11 h-11 rounded-xl bg-accent-muted flex items-center justify-center text-accent transition-transform duration-300 group-hover:scale-110 group-hover:shadow-md">
             {icon}
           </div>
         )}
@@ -372,15 +377,15 @@ export function StatCard({ title, value, subtitle, trend, icon, className = '' }
 /* ===== EMPTY STATE ===== */
 export function EmptyState({ icon, title, description, action }) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+    <div className="flex flex-col items-center justify-center py-20 px-4 text-center pattern-dots rounded-xl">
       {icon && (
-        <div className="mb-4 w-16 h-16 rounded-2xl bg-surface-overlay flex items-center justify-center text-content-tertiary">
+        <div className="mb-5 w-16 h-16 rounded-2xl bg-surface-overlay/80 border border-border flex items-center justify-center text-content-tertiary shadow-sm">
           {icon}
         </div>
       )}
-      <h3 className="text-lg font-semibold text-content mb-2">{title}</h3>
+      <h3 className="text-lg font-bold text-content mb-2">{title}</h3>
       {description && (
-        <p className="text-sm text-content-secondary mb-6 max-w-md">{description}</p>
+        <p className="text-sm text-content-secondary mb-6 max-w-md leading-relaxed">{description}</p>
       )}
       {action}
     </div>
@@ -420,9 +425,9 @@ export function DataTable({ columns, data, onSort, sortKey, sortDir, emptyMessag
             </tr>
           ) : (
             data.map((row, i) => (
-              <tr key={row.id || i} className="hover:bg-surface-overlay/50 transition-colors">
+              <tr key={row.id || i} className="hover:bg-accent-muted/30 transition-colors duration-150 group/row">
                 {columns.map((col) => (
-                  <td key={col.key} className={`px-4 py-3 ${col.cellClassName || ''}`}>
+                  <td key={col.key} className={`px-4 py-3.5 ${col.cellClassName || ''}`}>
                     {col.render ? col.render(row[col.key], row, i) : row[col.key]}
                   </td>
                 ))}
@@ -482,11 +487,11 @@ export function Tooltip({ children, text }) {
 /* ===== PAGE HEADER ===== */
 export function PageHeader({ title, description, actions }) {
   return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-8">
       <div>
-        <h1 className="text-2xl font-bold text-content">{title}</h1>
+        <h1 className="text-2xl font-extrabold text-content tracking-tight">{title}</h1>
         {description && (
-          <p className="mt-1 text-sm text-content-secondary">{description}</p>
+          <p className="mt-1.5 text-sm text-content-secondary leading-relaxed">{description}</p>
         )}
       </div>
       {actions && <div className="flex items-center gap-3">{actions}</div>}
