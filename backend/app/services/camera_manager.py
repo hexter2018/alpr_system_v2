@@ -474,9 +474,10 @@ class CameraStreamManager:
         ]
         
         if len(points) > 0:
-            # Position text at top-left of zone
-            text_x = int(points[:, 0].min())
-            text_y = int(points[:, 1].min()) - 15
+            # ✅ FIXED: points is (N,1,2) — reshape to (N,2) before column indexing
+            pts_flat = points.reshape(-1, 2)
+            text_x = int(pts_flat[:, 0].min())
+            text_y = int(pts_flat[:, 1].min()) - 15
             
             for i, text in enumerate(text_lines):
                 y_pos = text_y - (len(text_lines) - 1 - i) * 30
