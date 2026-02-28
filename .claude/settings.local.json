@@ -7,7 +7,12 @@
       "Bash(gh pr:*)",
       "Bash(winget list --name \"GitHub CLI\")",
       "Bash(git remote get-url origin)",
-      "Bash(git add backend/app/api/routes/cameras.py backend/app/services/camera_manager.py)"
+      "Bash(git add backend/app/api/routes/cameras.py backend/app/services/camera_manager.py)",
+      "Bash(python -c:*)",
+      "Bash(git add backend/app/services/vehicle_tracker.py)",
+      "Bash(git rebase --continue)",
+      "Bash(GIT_EDITOR=true git rebase --continue)",
+      "Bash(git add .claude/settings.local.json)"
     ]
   }
 }

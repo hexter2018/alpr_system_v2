@@ -94,13 +94,16 @@ class CameraStreamManager:
         
         # Initialize tracker
         _fps = config.fps or 2.0
+        # max_distance scales INVERSELY with fps (slow fps = bigger inter-frame jump)
+        _max_dist = max(100.0, 500.0 / max(_fps, 1.0))  # 250px@2fps, 100px@5fps
         self.tracker = VehicleTracker(
             max_disappeared=30,
-            max_distance=max(250.0, _fps * 125),  # ✅ Scale with fps: 250px at 2fps, 375px at 3fps
-            min_frames_in_zone=3,                  # ✅ REDUCED from 5 to 3
-            min_frames_out_of_zone=5,              # ✅ REDUCED from 10 to 5
-            fps=_fps,                              # ✅ Pass actual FPS so cleanup timing is correct
-            zone_capture_cooldown_sec=8.0,         # ✅ 1 vehicle = 1 capture: 8s cooldown
+            max_distance=_max_dist,
+            fps=_fps,
+            # ✅ TIME-BASED thresholds — work correctly at ANY fps (2fps, 15fps, etc.)
+            min_time_in_zone_sec=1.0,          # 1 second minimum in zone
+            min_time_out_of_zone_sec=2.0,      # 2 seconds out before capture
+            zone_capture_cooldown_sec=8.0,     # 8 second cooldown: 1 vehicle = 1 capture
         )
         
         # Trigger zone

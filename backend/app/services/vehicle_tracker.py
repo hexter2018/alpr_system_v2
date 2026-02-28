@@ -33,25 +33,31 @@ class VehicleTrack:
     frame_history: deque = field(default_factory=lambda: deque(maxlen=30))
     confidence_history: deque = field(default_factory=lambda: deque(maxlen=30))
     
-    # Zone tracking
+    # Zone tracking (frame-based counters kept for compatibility)
     frames_in_zone: int = 0
     frames_out_of_zone: int = 0
     zone_id: Optional[int] = None
-    
+
+    # ✅ TIME-BASED zone tracking (FPS-independent — replaces frame counters for decisions)
+    zone_first_exit_time: Optional[float] = None   # when vehicle FIRST left zone (for min_time_out check)
+
     # ✅ NEW: Track if vehicle was born inside zone
     born_in_zone: bool = False
-    
+
+    # ✅ NEW: Track previous bottom-center for fast-vehicle line-crossing detection
+    prev_bottom_center: Optional[Tuple[float, float]] = None
+
     # Best shot selection
     best_shot_frame: Optional[np.ndarray] = None
     best_shot_bbox: Optional[BBox] = None
     best_shot_score: float = 0.0
-    
+
     # Timestamps
     first_seen: float = field(default_factory=time.time)
     last_seen: float = field(default_factory=time.time)
     zone_entry_time: Optional[float] = None
     zone_exit_time: Optional[float] = None
-    
+
     # Processing results
     ocr_result: Optional[dict] = None
     processing_started: bool = False
@@ -138,12 +144,15 @@ class VehicleTracker:
 
     def __init__(
         self,
-        max_disappeared: int = 30,          # Frames before removing lost track
-        max_distance: float = 250.0,        # ✅ INCREASED: 100→250px for 2fps (vehicle moves ~500px/frame at 10km/h)
-        min_frames_in_zone: int = 3,        # ✅ REDUCED: from 5 to 3 frames
-        min_frames_out_of_zone: int = 5,    # ✅ REDUCED: from 10 to 5 frames
-        fps: float = 2.0,                   # ✅ NEW: actual camera FPS for timing
-        zone_capture_cooldown_sec: float = 8.0,  # ✅ NEW: min seconds between zone captures
+        max_disappeared: int = 30,              # Frames before removing lost track
+        max_distance: float = 200.0,            # Max centroid distance for matching (px)
+        min_frames_in_zone: int = 3,            # Legacy: kept for compatibility
+        min_frames_out_of_zone: int = 5,        # Legacy: kept for compatibility
+        fps: float = 2.0,                       # Camera FPS (used for timeout calculation)
+        zone_capture_cooldown_sec: float = 8.0, # Min seconds between captures (1 vehicle = 1 capture)
+        # ✅ TIME-BASED thresholds (FPS-independent — take priority over frame-based above)
+        min_time_in_zone_sec: float = 1.0,      # Vehicle must be in zone ≥ 1 second
+        min_time_out_of_zone_sec: float = 2.0,  # Vehicle must be out ≥ 2 seconds before capture
     ):
         self.next_track_id = 0
         self.tracks: Dict[int, VehicleTrack] = {}
@@ -152,11 +161,12 @@ class VehicleTracker:
         self.max_distance = max_distance
         self.min_frames_in_zone = min_frames_in_zone
         self.min_frames_out_of_zone = min_frames_out_of_zone
-        self.fps = max(fps, 0.1)            # ✅ Prevent division by zero
+        self.fps = max(fps, 0.1)
         self.zone_capture_cooldown_sec = zone_capture_cooldown_sec
+        self.min_time_in_zone_sec = min_time_in_zone_sec
+        self.min_time_out_of_zone_sec = min_time_out_of_zone_sec
 
         # ✅ Zone-level capture cooldown — prevents duplicate captures from re-detected tracks
-        # (same physical vehicle lost+re-tracked in rapid succession)
         self._last_zone_capture_time: float = 0.0
 
         # ✅ Pending tracks ready for OCR (collected before cleanup so cleanup can't race-delete)
@@ -258,6 +268,7 @@ class VehicleTracker:
                 track.state = VehicleState.IN_ZONE  # Skip ENTERING, go directly to IN_ZONE
                 track.frames_in_zone = 1
                 track.zone_entry_time = time.time()
+                track.zone_first_exit_time = None
                 self.debug_stats["born_in_zone"] += 1
                 log.info(
                     f"🚗 Track {self.next_track_id} BORN IN ZONE "
@@ -313,34 +324,38 @@ class VehicleTracker:
         return matched_tracks, matched_detections
     
     def _handle_disappeared_tracks(self):
-        """Increment disappeared counter for tracks with no detections"""
+        """Increment disappeared counter for tracks with no detections this frame"""
+        now = time.time()
         for track in self.tracks.values():
             track.frames_out_of_zone += 1
+            if track.zone_first_exit_time is None and track.state == VehicleState.IN_ZONE:
+                track.zone_first_exit_time = now  # mark when we first lost it
 
-            # ✅ Auto-transition: vehicle was in zone but now gone from camera
+            # ✅ TIME-BASED auto-transition: vehicle was in zone but camera lost it
             if (track.state == VehicleState.IN_ZONE
-                    and track.frames_out_of_zone >= self.min_frames_out_of_zone
+                    and track.zone_first_exit_time is not None
                     and not track.processing_started):
-                now = time.time()
-                cooldown_elapsed = now - self._last_zone_capture_time
-                if cooldown_elapsed >= self.zone_capture_cooldown_sec:
-                    track.state = VehicleState.PROCESSING
-                    track.zone_exit_time = now
-                    track.processing_started = True
-                    self._last_zone_capture_time = now
-                    self.debug_stats["captured"] += 1
-                    self._pending_ready_tracks.append(track)
-                    log.info(
-                        f"📸 Track {track.track_id} PROCESSING "
-                        f"(auto: no detections, frames_out={track.frames_out_of_zone})"
-                    )
-                else:
-                    track.state = VehicleState.EXITED
-                    track.processing_started = True  # prevent re-trigger
-                    log.info(
-                        f"🚫 Track {track.track_id} skipped auto-capture "
-                        f"(cooldown {self.zone_capture_cooldown_sec - cooldown_elapsed:.1f}s remaining)"
-                    )
+                time_out = now - track.zone_first_exit_time
+                if time_out >= self.min_time_out_of_zone_sec:
+                    cooldown_elapsed = now - self._last_zone_capture_time
+                    if cooldown_elapsed >= self.zone_capture_cooldown_sec:
+                        track.state = VehicleState.PROCESSING
+                        track.zone_exit_time = now
+                        track.processing_started = True
+                        self._last_zone_capture_time = now
+                        self.debug_stats["captured"] += 1
+                        self._pending_ready_tracks.append(track)
+                        log.info(
+                            f"📸 Track {track.track_id} PROCESSING "
+                            f"(auto: lost from camera, out={time_out:.2f}s)"
+                        )
+                    else:
+                        track.state = VehicleState.EXITED
+                        track.processing_started = True  # prevent re-trigger
+                        log.info(
+                            f"🚫 Track {track.track_id} skipped "
+                            f"(cooldown {self.zone_capture_cooldown_sec - cooldown_elapsed:.1f}s)"
+                        )
     
     def _update_state_machine(self, zone: Optional[TriggerZone]):
         """
@@ -367,56 +382,67 @@ class VehicleTracker:
                     f"frames_in_zone={track.frames_in_zone}"
                 )
             
-            # State transitions
+            # ─── State transitions (TIME-BASED — FPS-independent) ───
+            now = time.time()
+
             if track.state == VehicleState.IDLE:
                 if in_zone:
                     track.state = VehicleState.ENTERING_ZONE
                     track.frames_in_zone = 1
-                    track.zone_entry_time = time.time()
+                    track.zone_entry_time = now
+                    track.zone_first_exit_time = None
                     log.info(f"🚗 Track {track.track_id} ENTERING ZONE")
-            
+
             elif track.state == VehicleState.ENTERING_ZONE:
                 if in_zone:
                     track.frames_in_zone += 1
-                    if track.frames_in_zone >= self.min_frames_in_zone:
+                    # ✅ TIME-BASED: must be in zone for min_time_in_zone_sec (NOT frame count)
+                    time_in_zone = now - (track.zone_entry_time or now)
+                    if time_in_zone >= self.min_time_in_zone_sec:
                         track.state = VehicleState.IN_ZONE
                         self.debug_stats["entered_zone"] += 1
                         log.info(
                             f"✅ Track {track.track_id} IN ZONE "
-                            f"(frames={track.frames_in_zone})"
+                            f"(time={time_in_zone:.2f}s)"
                         )
                 else:
-                    # False alarm, vehicle didn't fully enter
+                    # Vehicle left before confirming entry → back to IDLE
                     track.state = VehicleState.IDLE
                     track.frames_in_zone = 0
+                    track.zone_entry_time = None
                     log.info(f"⚠️ Track {track.track_id} FALSE ENTRY (went back outside)")
-            
+
             elif track.state == VehicleState.IN_ZONE:
                 if in_zone:
                     track.frames_in_zone += 1
                     track.frames_out_of_zone = 0
+                    track.zone_first_exit_time = None  # reset exit timer on re-entry
                 else:
                     track.frames_out_of_zone += 1
+                    if track.zone_first_exit_time is None:
+                        track.zone_first_exit_time = now  # start exit timer on first miss
 
-                    # ✅ Trigger capture after min_frames_out_of_zone frames outside zone
-                    if track.frames_out_of_zone >= self.min_frames_out_of_zone:
-                        now = time.time()
+                    # ✅ TIME-BASED: must be out of zone for min_time_out_of_zone_sec
+                    time_out = now - track.zone_first_exit_time
+                    if time_out >= self.min_time_out_of_zone_sec:
                         cooldown_elapsed = now - self._last_zone_capture_time
                         if cooldown_elapsed >= self.zone_capture_cooldown_sec:
-                            # ✅ 1 CAPTURE PER VEHICLE: cooldown passed → allowed
+                            # ✅ 1 CAPTURE PER VEHICLE: time elapsed + cooldown passed
                             track.state = VehicleState.PROCESSING
                             track.zone_exit_time = now
                             self._last_zone_capture_time = now
                             self.debug_stats["captured"] += 1
                             log.info(
                                 f"📸 Track {track.track_id} EXITING -> PROCESSING "
-                                f"(time_in_zone={(track.zone_exit_time - track.zone_entry_time):.1f}s)"
+                                f"(in_zone={( now - track.zone_entry_time):.1f}s, "
+                                f"out={time_out:.2f}s)"
                             )
                         else:
-                            # ✅ COOLDOWN ACTIVE: skip duplicate capture, discard track
+                            # Cooldown active → discard without capture
                             track.state = VehicleState.EXITED
                             log.info(
-                                f"🚫 Track {track.track_id} skipped (cooldown {self.zone_capture_cooldown_sec - cooldown_elapsed:.1f}s remaining)"
+                                f"🚫 Track {track.track_id} skipped "
+                                f"(cooldown {self.zone_capture_cooldown_sec - cooldown_elapsed:.1f}s remaining)"
                             )
 
                     
