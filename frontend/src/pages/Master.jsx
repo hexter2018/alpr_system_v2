@@ -80,7 +80,7 @@ export default function Master() {
         title="Master Database"
         description="Verified plate records with sample images"
         actions={
-          <Badge variant="primary" size="lg">{rows.length} records</Badge>
+          <Badge variant="primary" size="lg" dot>{rows.length} records</Badge>
         }
       />
 
@@ -164,7 +164,7 @@ function Row({ r, onSave, onDelete, busy, onViewImage }) {
           <div className="relative inline-block group">
             <button
               onClick={() => onViewImage(absImageUrl(r.crops[0].crop_url))}
-              className="block rounded-lg overflow-hidden border border-border hover:border-accent/50 transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
+              className="block rounded-xl overflow-hidden border border-border hover:border-accent/50 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-accent/50 hover:shadow-md hover:scale-105"
             >
               <img src={absImageUrl(r.crops[0].crop_url)} alt="crop" className="h-16 w-24 object-cover" crossOrigin="anonymous" />
             </button>
@@ -175,8 +175,8 @@ function Row({ r, onSave, onDelete, busy, onViewImage }) {
             )}
           </div>
         ) : (
-          <div className="flex h-16 w-24 items-center justify-center rounded-lg border border-dashed border-border bg-surface-inset">
-            <ImageIcon className="w-5 h-5 text-content-tertiary" />
+          <div className="flex h-16 w-24 items-center justify-center rounded-xl border border-dashed border-border bg-surface-inset pattern-dots">
+            <ImageIcon className="w-5 h-5 text-content-tertiary opacity-60" />
           </div>
         )}
       </td>

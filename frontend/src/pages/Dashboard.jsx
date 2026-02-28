@@ -5,8 +5,8 @@ import { BarChart3, CheckCircle, Clock, Database, TrendingUp, TrendingDown, Acti
 
 /* ===== ACCURACY GAUGE ===== */
 function AccuracyGauge({ percentage }) {
-  const radius = 70
-  const stroke = 10
+  const radius = 76
+  const stroke = 12
   const normalizedRadius = radius - stroke / 2
   const circumference = normalizedRadius * 2 * Math.PI
   const strokeDashoffset = circumference - (percentage / 100) * circumference
@@ -17,10 +17,16 @@ function AccuracyGauge({ percentage }) {
     return 'var(--color-danger)'
   }
 
+  const getGlowColor = (pct) => {
+    if (pct >= 90) return 'rgba(16, 185, 129, 0.3)'
+    if (pct >= 75) return 'rgba(245, 158, 11, 0.3)'
+    return 'rgba(239, 68, 68, 0.3)'
+  }
+
   return (
     <div className="flex flex-col items-center justify-center py-4">
       <div className="relative">
-        <svg height={radius * 2} width={radius * 2} className="transform -rotate-90">
+        <svg height={radius * 2} width={radius * 2} className="transform -rotate-90" style={{ filter: `drop-shadow(0 0 8px ${getGlowColor(percentage)})` }}>
           <circle
             stroke="var(--color-surface-inset)"
             fill="transparent"
@@ -36,7 +42,7 @@ function AccuracyGauge({ percentage }) {
             strokeDasharray={`${circumference} ${circumference}`}
             style={{
               strokeDashoffset,
-              transition: 'stroke-dashoffset 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
+              transition: 'stroke-dashoffset 1.2s cubic-bezier(0.4, 0, 0.2, 1)',
             }}
             r={normalizedRadius}
             cx={radius}
@@ -45,14 +51,14 @@ function AccuracyGauge({ percentage }) {
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-4xl font-bold text-content">{percentage.toFixed(1)}%</span>
-          <span className="text-xs text-content-tertiary mt-1">Accuracy</span>
+          <span className="text-4xl font-extrabold text-content tracking-tight">{percentage.toFixed(1)}%</span>
+          <span className="text-[11px] font-medium text-content-tertiary mt-0.5 uppercase tracking-widest">Accuracy</span>
         </div>
       </div>
-      <div className="mt-4 flex items-center gap-4 text-xs">
-        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-success" /> {'>='}90%</span>
-        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-warning" /> 75-90%</span>
-        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-danger" /> {'<'}75%</span>
+      <div className="mt-5 flex items-center gap-5 text-xs font-medium text-content-secondary">
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-success ring-2 ring-success/20" /> {'>='}90%</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-warning ring-2 ring-warning/20" /> 75-90%</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-danger ring-2 ring-danger/20" /> {'<'}75%</span>
       </div>
     </div>
   )
@@ -68,19 +74,19 @@ function ConfidenceChart({ high, medium, low }) {
   ]
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {bars.map((bar) => (
-        <div key={bar.label} className="space-y-2">
+        <div key={bar.label} className="space-y-2.5">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-content-secondary">{bar.label}</span>
+            <span className="text-content-secondary font-medium">{bar.label}</span>
             <div className="flex items-center gap-2">
-              <span className={`font-semibold ${bar.textColor}`}>{bar.value.toLocaleString()}</span>
-              <span className="text-xs text-content-tertiary">({bar.pct.toFixed(1)}%)</span>
+              <span className={`font-bold tabular-nums ${bar.textColor}`}>{bar.value.toLocaleString()}</span>
+              <span className="text-xs text-content-tertiary font-medium">({bar.pct.toFixed(1)}%)</span>
             </div>
           </div>
           <div className="h-3 w-full overflow-hidden rounded-full bg-surface-inset">
             <div
-              className={`h-full rounded-full ${bar.color} transition-all duration-700 ease-out`}
+              className={`h-full rounded-full ${bar.color} transition-all duration-1000 ease-out progress-shimmer`}
               style={{ width: `${bar.pct}%` }}
             />
           </div>
@@ -123,25 +129,27 @@ function Sparkline({ data, positive = true }) {
 /* ===== ACTIVITY CARD ===== */
 function ActivityCard({ icon, title, value, trend, sparklineData }) {
   return (
-    <Card className="p-4" hover>
+    <Card className="p-5" hover>
       <div className="flex items-start justify-between">
         <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <div className="w-8 h-8 rounded-lg bg-accent-muted flex items-center justify-center text-accent">
+          <div className="flex items-center gap-2.5 mb-3">
+            <div className="w-9 h-9 rounded-xl bg-accent-muted flex items-center justify-center text-accent">
               {icon}
             </div>
-            <span className="text-xs font-medium text-content-tertiary">{title}</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-content-tertiary">{title}</span>
           </div>
-          <p className="text-2xl font-bold text-content mt-2 tabular-nums">{value}</p>
+          <p className="text-2xl font-extrabold text-content tabular-nums tracking-tight">{value}</p>
           {trend !== undefined && (
-            <div className={`text-xs font-medium mt-1 flex items-center gap-1 ${trend > 0 ? 'text-success' : 'text-danger'}`}>
-              {trend > 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+            <div className={`text-xs font-semibold mt-2 flex items-center gap-1.5 ${trend > 0 ? 'text-success' : 'text-danger'}`}>
+              <span className={`inline-flex items-center justify-center w-4 h-4 rounded-full ${trend > 0 ? 'bg-success-muted' : 'bg-danger-muted'}`}>
+                {trend > 0 ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
+              </span>
               {Math.abs(trend).toFixed(1)}%
             </div>
           )}
         </div>
         {sparklineData && (
-          <div className="flex items-center pt-2">
+          <div className="flex items-center pt-3">
             <Sparkline data={sparklineData} positive={trend > 0} />
           </div>
         )}
@@ -187,9 +195,15 @@ export default function Dashboard() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="flex flex-col items-center gap-4">
-          <Spinner size="lg" />
-          <p className="text-content-secondary">Loading Dashboard...</p>
+        <div className="flex flex-col items-center gap-5">
+          <div className="relative">
+            <Spinner size="xl" />
+            <div className="absolute inset-0 rounded-full bg-accent/5 animate-ping" style={{ animationDuration: '2s' }} />
+          </div>
+          <div className="text-center">
+            <p className="text-content font-semibold text-sm">Loading Dashboard</p>
+            <p className="text-content-tertiary text-xs mt-1">Fetching real-time statistics...</p>
+          </div>
         </div>
       </div>
     )
@@ -300,24 +314,32 @@ export default function Dashboard() {
               <AccuracyGauge percentage={accuracy} />
               <div className="flex flex-col justify-center space-y-3">
                 {[
-                  { label: 'ALPR', desc: 'Correct from start', value: kpi.alpr_total, variant: 'success' },
-                  { label: 'MLPR', desc: 'Human corrected', value: kpi.mlpr_total, variant: 'danger' },
-                  { label: 'Auto-Master', desc: 'Auto-inserted to DB', value: kpi.auto_master, variant: 'primary' },
+                  { label: 'ALPR', desc: 'Correct from start', value: kpi.alpr_total, variant: 'success', icon: <CheckCircle className="w-4 h-4" /> },
+                  { label: 'MLPR', desc: 'Human corrected', value: kpi.mlpr_total, variant: 'danger', icon: <Clock className="w-4 h-4" /> },
+                  { label: 'Auto-Master', desc: 'Auto-inserted to DB', value: kpi.auto_master, variant: 'primary', icon: <Database className="w-4 h-4" /> },
                 ].map((item) => (
-                  <div key={item.label} className={`rounded-xl border p-4 ${
-                    item.variant === 'success' ? 'border-success/20 bg-success-muted' :
-                    item.variant === 'danger' ? 'border-danger/20 bg-danger-muted' :
-                    'border-accent/20 bg-accent-muted'
+                  <div key={item.label} className={`rounded-xl border p-4 transition-all duration-200 hover:scale-[1.02] ${
+                    item.variant === 'success' ? 'border-success/20 bg-success-muted hover:border-success/40' :
+                    item.variant === 'danger' ? 'border-danger/20 bg-danger-muted hover:border-danger/40' :
+                    'border-accent/20 bg-accent-muted hover:border-accent/40'
                   }`}>
                     <div className="flex items-center justify-between">
-                      <div>
-                        <p className={`text-xs font-semibold uppercase tracking-wide ${
-                          item.variant === 'success' ? 'text-success' :
-                          item.variant === 'danger' ? 'text-danger' : 'text-accent'
-                        }`}>{item.label}</p>
-                        <p className="text-xs text-content-secondary mt-0.5">{item.desc}</p>
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                          item.variant === 'success' ? 'bg-success/15 text-success' :
+                          item.variant === 'danger' ? 'bg-danger/15 text-danger' : 'bg-accent/15 text-accent'
+                        }`}>
+                          {item.icon}
+                        </div>
+                        <div>
+                          <p className={`text-xs font-bold uppercase tracking-wider ${
+                            item.variant === 'success' ? 'text-success' :
+                            item.variant === 'danger' ? 'text-danger' : 'text-accent'
+                          }`}>{item.label}</p>
+                          <p className="text-[11px] text-content-secondary mt-0.5">{item.desc}</p>
+                        </div>
                       </div>
-                      <p className="text-2xl font-bold text-content tabular-nums">{item.value}</p>
+                      <p className="text-2xl font-extrabold text-content tabular-nums tracking-tight">{item.value}</p>
                     </div>
                   </div>
                 ))}
@@ -391,21 +413,24 @@ export default function Dashboard() {
             <h3 className="text-base font-semibold text-content">Province Detection</h3>
           </CardHeader>
           <CardBody>
-            <div className="space-y-4">
+            <div className="space-y-5">
               {[
-                { label: 'With Province', value: withProvinceReads, pct: withProvincePct, color: 'bg-success', text: 'text-success' },
-                { label: 'Without Province', value: withoutProvinceReads, pct: withoutProvincePct, color: 'bg-warning', text: 'text-warning' },
+                { label: 'With Province', value: withProvinceReads, pct: withProvincePct, color: 'bg-success', text: 'text-success', ring: 'ring-success/20' },
+                { label: 'Without Province', value: withoutProvinceReads, pct: withoutProvincePct, color: 'bg-warning', text: 'text-warning', ring: 'ring-warning/20' },
               ].map((stat) => (
                 <div key={stat.label}>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <span className="text-sm text-content-secondary">{stat.label}</span>
-                    <span className={`text-base font-semibold tabular-nums ${stat.text}`}>
-                      {stat.value.toLocaleString()}
-                    </span>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-medium text-content-secondary">{stat.label}</span>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className={`text-lg font-bold tabular-nums ${stat.text}`}>
+                        {stat.value.toLocaleString()}
+                      </span>
+                      <span className="text-xs text-content-tertiary">({stat.pct.toFixed(1)}%)</span>
+                    </div>
                   </div>
-                  <div className="h-2 bg-surface-inset rounded-full overflow-hidden">
+                  <div className="h-2.5 bg-surface-inset rounded-full overflow-hidden">
                     <div
-                      className={`h-full rounded-full ${stat.color} transition-all duration-500`}
+                      className={`h-full rounded-full ${stat.color} transition-all duration-700 progress-shimmer`}
                       style={{ width: `${stat.pct}%` }}
                     />
                   </div>

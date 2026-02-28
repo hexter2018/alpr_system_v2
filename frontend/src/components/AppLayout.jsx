@@ -80,16 +80,19 @@ function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }) {
   const { theme, toggleTheme } = useTheme()
 
   const sidebarContent = (
-    <div className="flex flex-col h-full bg-sidebar">
+    <div className="flex flex-col h-full bg-sidebar bg-gradient-to-b from-sidebar via-sidebar to-black/20">
       {/* Brand */}
-      <div className="flex items-center gap-3 px-4 py-5 border-b border-white/10">
-        <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-accent flex items-center justify-center text-white font-bold text-sm shadow-lg">
-          LP
+      <div className="flex items-center gap-3 px-4 py-5 border-b border-white/[0.08]">
+        <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-blue-500/20 ring-1 ring-white/10">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2" y="6" width="20" height="12" rx="3" />
+            <path d="M7 12h2M15 12h2M11 10v4" />
+          </svg>
         </div>
         {!collapsed && (
           <div className="min-w-0">
-            <h1 className="text-sm font-bold text-sidebar-content truncate">ALPR System</h1>
-            <p className="text-xs text-sidebar-content-secondary truncate">License Plate Recognition</p>
+            <h1 className="text-sm font-bold text-sidebar-content truncate tracking-tight">ALPR System</h1>
+            <p className="text-[11px] text-sidebar-content-secondary truncate">License Plate Recognition</p>
           </div>
         )}
       </div>
@@ -113,17 +116,20 @@ function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }) {
                     to={item.to}
                     onClick={onMobileClose}
                     className={`
-                      flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
+                      flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 relative
                       ${isActive
-                        ? 'bg-sidebar-active text-white shadow-sm'
-                        : 'text-sidebar-content-secondary hover:bg-sidebar-hover hover:text-sidebar-content'
+                        ? 'bg-gradient-to-r from-blue-600/90 to-blue-700/90 text-white shadow-md shadow-blue-900/30 ring-1 ring-white/10'
+                        : 'text-sidebar-content-secondary hover:bg-white/[0.06] hover:text-sidebar-content'
                       }
                       ${collapsed ? 'justify-center' : ''}
                     `}
                     title={collapsed ? item.label : undefined}
                   >
-                    <Icon className="w-5 h-5 flex-shrink-0" />
+                    <Icon className={`w-[18px] h-[18px] flex-shrink-0 ${isActive ? 'drop-shadow-sm' : ''}`} />
                     {!collapsed && <span className="truncate">{item.label}</span>}
+                    {isActive && !collapsed && (
+                      <span className="ml-auto w-1.5 h-1.5 rounded-full bg-white/80" />
+                    )}
                   </NavLink>
                 )
               })}
@@ -133,7 +139,7 @@ function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }) {
       </nav>
 
       {/* Bottom Controls */}
-      <div className="border-t border-white/10 p-3 space-y-2">
+      <div className="border-t border-white/[0.08] p-3 space-y-1">
         {/* Theme Toggle */}
         <button
           onClick={toggleTheme}

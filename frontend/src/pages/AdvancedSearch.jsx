@@ -374,8 +374,11 @@ export default function AdvancedSearch() {
       {/* Search Filters */}
       <Card>
         <CardHeader>
-          <h2 className="text-base font-semibold text-content flex items-center gap-2">
-            <Search className="w-4 h-4 text-accent" /> Search Filters
+          <h2 className="text-base font-bold text-content flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-accent-muted flex items-center justify-center text-accent">
+              <Search className="w-4 h-4" />
+            </div>
+            Search Filters
           </h2>
         </CardHeader>
         <CardBody>

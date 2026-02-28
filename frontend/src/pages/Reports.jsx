@@ -27,19 +27,25 @@ function formatBangkokDateTime(value) {
 function ReportStat({ title, value, variant = 'default', icon }) {
   const variantStyles = {
     default: '',
-    success: 'border-success/20',
-    danger: 'border-danger/20',
+    success: 'border-success/20 hover:border-success/40',
+    danger: 'border-danger/20 hover:border-danger/40',
+  }
+
+  const iconStyles = {
+    default: 'bg-accent-muted text-accent',
+    success: 'bg-success-muted text-success',
+    danger: 'bg-danger-muted text-danger',
   }
 
   return (
-    <Card className={`p-5 ${variantStyles[variant]}`}>
+    <Card className={`p-5 group transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg ${variantStyles[variant]}`}>
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-xs uppercase tracking-wider font-medium text-content-tertiary">{title}</p>
-          <p className="text-3xl font-bold text-content mt-1 tabular-nums">{value}</p>
+          <p className="text-[11px] uppercase tracking-widest font-semibold text-content-tertiary mb-2">{title}</p>
+          <p className="text-3xl font-extrabold text-content mt-1 tabular-nums tracking-tight">{value}</p>
         </div>
         {icon && (
-          <div className="w-10 h-10 rounded-xl bg-accent-muted flex items-center justify-center text-accent">
+          <div className={`w-11 h-11 rounded-xl flex items-center justify-center transition-transform duration-300 group-hover:scale-110 ${iconStyles[variant]}`}>
             {icon}
           </div>
         )}
@@ -240,14 +246,16 @@ export default function Reports() {
                 <h2 className="text-base font-semibold text-content">Top 10 Provinces</h2>
               </CardHeader>
               <CardBody>
-                <div className="space-y-3">
+                <div className="space-y-2.5">
                   {stats.top_provinces.map((p, i) => (
-                    <div key={i} className="flex items-center justify-between">
+                    <div key={i} className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-surface-overlay/50 transition-colors group">
                       <div className="flex items-center gap-3">
-                        <span className="text-xs font-bold text-content-tertiary w-5 text-right tabular-nums">{i + 1}</span>
-                        <span className="text-sm text-content">{p.province || 'Unknown'}</span>
+                        <span className={`text-[11px] font-bold w-6 h-6 rounded-lg flex items-center justify-center tabular-nums ${
+                          i === 0 ? 'bg-accent-muted text-accent' : i === 1 ? 'bg-surface-overlay text-content-secondary' : i === 2 ? 'bg-surface-overlay text-content-secondary' : 'text-content-tertiary'
+                        }`}>{i + 1}</span>
+                        <span className="text-sm font-medium text-content">{p.province || 'Unknown'}</span>
                       </div>
-                      <span className="text-sm font-semibold text-content tabular-nums">{p.count.toLocaleString()}</span>
+                      <span className="text-sm font-bold text-content tabular-nums">{p.count.toLocaleString()}</span>
                     </div>
                   ))}
                 </div>

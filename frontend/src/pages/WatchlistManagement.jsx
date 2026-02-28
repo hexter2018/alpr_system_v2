@@ -420,32 +420,38 @@ export default function WatchlistManagement() {
       />
 
       {/* Tabs */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 p-1 bg-surface-inset/50 rounded-2xl w-fit">
         <button
           onClick={() => setActiveTab('watchlist')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all ${
+          className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200 ${
             activeTab === 'watchlist'
-              ? 'bg-accent-muted text-accent border border-accent/30'
-              : 'bg-surface-raised text-content-secondary border border-border hover:border-accent/20'
+              ? 'bg-surface-raised text-accent border border-accent/20 shadow-sm'
+              : 'text-content-secondary hover:text-content'
           }`}
         >
           <Shield className="w-4 h-4" />
-          Watchlist ({watchlist.length})
+          Watchlist
+          <span className={`px-2 py-0.5 rounded-full text-xs tabular-nums font-bold ${
+            activeTab === 'watchlist' ? 'bg-accent-muted text-accent' : 'bg-surface-overlay text-content-tertiary'
+          }`}>{watchlist.length}</span>
         </button>
         <button
           onClick={() => setActiveTab('alerts')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all ${
+          className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200 ${
             activeTab === 'alerts'
-              ? 'bg-danger-muted text-danger-content border border-danger/30'
-              : 'bg-surface-raised text-content-secondary border border-border hover:border-danger/20'
+              ? 'bg-surface-raised text-danger border border-danger/20 shadow-sm'
+              : 'text-content-secondary hover:text-content'
           }`}
         >
           <Bell className="w-4 h-4" />
-          Active Alerts ({alerts.length})
+          Active Alerts
+          <span className={`px-2 py-0.5 rounded-full text-xs tabular-nums font-bold ${
+            activeTab === 'alerts' ? 'bg-danger-muted text-danger' : 'bg-surface-overlay text-content-tertiary'
+          }`}>{alerts.length}</span>
           {alerts.length > 0 && (
-            <span className="relative flex h-2 w-2">
+            <span className="relative flex h-2.5 w-2.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-danger opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-danger"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-danger"></span>
             </span>
           )}
         </button>

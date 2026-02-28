@@ -242,10 +242,10 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
                   <p className="text-xs font-medium text-content-tertiary mb-2">{img.label}</p>
                   <button
                     onClick={() => openViewer(absImageUrl(img.url), img.label)}
-                    className="relative group w-full rounded-xl overflow-hidden border border-border hover:border-accent/50 transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
+                    className="relative group w-full rounded-xl overflow-hidden border border-border hover:border-accent/40 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-accent/50 hover:shadow-lg hover:-translate-y-0.5"
                   >
                     <img src={absImageUrl(img.url)} alt={img.label} className="w-full h-48 object-contain bg-surface-inset" crossOrigin="anonymous" />
-                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-end justify-center pb-4">
                       <Badge variant="primary" size="sm"><ZoomIn className="w-3 h-3 mr-1" /> View full size</Badge>
                     </div>
                   </button>
@@ -353,9 +353,9 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
             </div>
 
             {/* Action Buttons */}
-            <div className="mt-5 pt-4 border-t border-border">
-              <div className="flex flex-wrap gap-2">
-                <Button variant="primary" disabled={busy} onClick={onConfirm} className="flex-1 min-w-0"
+            <div className="mt-5 pt-5 border-t border-border">
+              <div className="flex flex-wrap gap-2.5">
+                <Button variant="primary" disabled={busy} onClick={onConfirm} className="flex-1 min-w-0 shadow-sm shadow-accent/20"
                   icon={<CheckCircle className="w-4 h-4" />}>
                   Confirm
                   <kbd className="ml-1.5 px-1.5 py-0.5 text-[10px] font-mono bg-white/20 rounded hidden sm:inline-block">Enter</kbd>
@@ -368,7 +368,7 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
                 <Button variant="secondary" onClick={handleNormalize} icon={<Settings2 className="w-4 h-4" />}>
                   Normalize
                 </Button>
-                <Button variant="danger" disabled={busy} onClick={() => setDeleteOpen(true)} icon={<Trash2 className="w-4 h-4" />}>
+                <Button variant="danger" disabled={busy} onClick={() => setDeleteOpen(true)} className="shadow-sm shadow-danger/10" icon={<Trash2 className="w-4 h-4" />}>
                   Delete
                 </Button>
               </div>
