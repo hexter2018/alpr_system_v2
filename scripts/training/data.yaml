@@ -1,0 +1,34 @@
+# ============================================================
+# YOLOv8 Dataset Config — Single-class Vehicle Detector
+# สำหรับ Fine-tune จับรถยนต์ 4 ล้อจากกล้องหน้างานจริง
+# ============================================================
+#
+# โครงสร้างโฟลเดอร์ที่ต้องเตรียม:
+#
+#   dataset/
+#   ├── images/
+#   │   ├── train/          ← ภาพสำหรับเทรน  (80%)
+#   │   ├── val/            ← ภาพสำหรับ validate (15%)
+#   │   └── test/           ← ภาพสำหรับทดสอบ (5%, optional)
+#   └── labels/
+#       ├── train/          ← label .txt ของภาพเทรน (YOLO format)
+#       ├── val/            ← label .txt ของภาพ val
+#       └── test/           ← label .txt ของภาพ test (optional)
+#
+# Format ไฟล์ label (.txt):
+#   <class_id> <x_center> <y_center> <width> <height>
+#   ทุกค่าเป็น normalized (0.0 - 1.0)
+#   ตัวอย่าง: 0 0.512 0.345 0.320 0.480
+#
+# ============================================================
+
+# Path หลัก (เปลี่ยนให้ตรงกับ path จริงของคุณ)
+path: ./dataset          # root path ของ dataset (relative หรือ absolute)
+train: images/train      # path ภาพ train (relative จาก path ด้านบน)
+val: images/val          # path ภาพ val
+test: images/test        # path ภาพ test (optional)
+
+# จำนวน class และชื่อ
+nc: 1                    # จำนวน class (1 class = car เท่านั้น)
+names:
+  0: car                 # class 0 = รถยนต์ 4 ล้อ (รวมเก๋ง, กระบะ, SUV, รถตู้)

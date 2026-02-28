@@ -91,6 +91,19 @@ class CameraStreamManager:
         self.detector = YOLO(detector_model_path, task="detect")
         self.detector_conf = detector_conf
         self.detector_iou = detector_iou
+
+        # ✅ AUTO-DETECT model type:
+        #   - yolov8n.pt (COCO 80-class) → filter to vehicle classes [2,3,5,7]
+        #   - custom single-class model (nc=1, class 0=car) → use [0]
+        model_nc = len(self.detector.names) if hasattr(self.detector, "names") else 80
+        if model_nc == 1:
+            # Fine-tuned single-class vehicle model
+            self._detection_classes = [0]
+            log.info(f"🚗 Custom single-class model (nc=1) → classes=[0] (car)")
+        else:
+            # Pre-trained COCO model → filter to car(2), motorcycle(3), bus(5), truck(7)
+            self._detection_classes = [2, 3, 5, 7]
+            log.info(f"🚗 COCO model (nc={model_nc}) → classes={self._detection_classes}")
         
         # Initialize tracker
         _fps = config.fps or 2.0
@@ -520,7 +533,7 @@ class CameraStreamManager:
                 source=frame,
                 conf=self.detector_conf,
                 iou=self.detector_iou,
-                classes=[2, 3, 5, 7],
+                classes=self._detection_classes,  # ✅ AUTO: [0] for custom model, [2,3,5,7] for COCO
                 verbose=False,
                 device=self.device,  # ✅ FIXED: was hardcoded to 0 (GPU), use self.device (cpu or gpu)
             )
