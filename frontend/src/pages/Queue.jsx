@@ -7,6 +7,7 @@ import {
 import {
   CheckCircle, Edit3, Trash2, RefreshCw, ZoomIn, ZoomOut,
   RotateCcw, X, Keyboard, Clock, ListChecks, Settings2,
+  CalendarClock, Filter, XCircle, ChevronDown, Search,
 } from 'lucide-react'
 
 /* ===== PROVINCES DATA ===== */
@@ -17,6 +18,22 @@ const POPULAR_PROVINCES = [
   { value: 'นนทบุรี', label: 'นนท์' },
   { value: 'ปทุมธานี', label: 'ปทุม' },
   { value: 'ชลบุรี', label: 'ชล' },
+]
+
+const ALL_PROVINCES = [
+  'กรุงเทพมหานคร','กระบี่','กาญจนบุรี','กาฬสินธุ์','กำแพงเพชร',
+  'ขอนแก่น','จันทบุรี','ฉะเชิงเทรา','ชลบุรี','ชัยนาท','ชัยภูมิ','ชุมพร',
+  'เชียงราย','เชียงใหม่','ตรัง','ตราด','ตาก','นครนายก','นครปฐม',
+  'นครพนม','นครราชสีมา','นครศรีธรรมราช','นครสวรรค์','นนทบุรี',
+  'นราธิวาส','น่าน','บึงกาฬ','บุรีรัมย์','ปทุมธานี','ประจวบคีรีขันธ์',
+  'ปราจีนบุรี','ปัตตานี','พระนครศรีอยุธยา','พังงา','พัทลุง','พิจิตร',
+  'พิษณุโลก','เพชรบุรี','เพชรบูรณ์','แพร่','พะเยา','ภูเก็ต',
+  'มหาสารคาม','มุกดาหาร','แม่ฮ่องสอน','ยโสธร','ยะลา','ร้อยเอ็ด',
+  'ระนอง','ระยอง','ราชบุรี','ลพบุรี','ลำปาง','ลำพูน','เลย',
+  'ศรีสะเกษ','สกลนคร','สงขลา','สตูล','สมุทรปราการ','สมุทรสงคราม',
+  'สมุทรสาคร','สระแก้ว','สระบุรี','สิงห์บุรี','สุโขทัย','สุพรรณบุรี',
+  'สุราษฎร์ธานี','สุรินทร์','หนองคาย','หนองบัวลำภู','อ่างทอง',
+  'อุดรธานี','อุทัยธานี','อุตรดิตถ์','อุบลราชธานี','อำนาจเจริญ',
 ]
 
 /* ===== CONFUSABLE CHARACTER FIXES ===== */
@@ -163,6 +180,97 @@ function DeleteConfirmModal({ open, onClose, onConfirm, plate, province, confide
   )
 }
 
+/* ===== PROVINCE COMBOBOX ===== */
+function ProvinceCombobox({ value, onChange, highlight, missing }) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const inputRef = useRef(null)
+  const listRef = useRef(null)
+
+  const filtered = ALL_PROVINCES.filter((p) =>
+    p.startsWith(search) || p.includes(search)
+  )
+
+  useEffect(() => {
+    if (!open) return
+    const handleClickOutside = (e) => {
+      if (inputRef.current && !inputRef.current.closest('.province-combo')?.contains(e.target)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [open])
+
+  useEffect(() => {
+    if (open && listRef.current) {
+      listRef.current.scrollTop = 0
+    }
+  }, [open, search])
+
+  const handleSelect = (prov) => {
+    onChange(prov)
+    setSearch('')
+    setOpen(false)
+  }
+
+  return (
+    <div className="province-combo relative">
+      <label className="block text-sm font-medium text-content-secondary mb-1.5">Province</label>
+      <button
+        type="button"
+        onClick={() => { setOpen((v) => !v); setTimeout(() => inputRef.current?.focus(), 50) }}
+        className={`
+          w-full flex items-center justify-between rounded-xl border bg-surface px-4 py-2.5 text-sm text-content transition-colors
+          ${missing ? 'border-warning' : 'border-border'} ${highlight ? 'ring-2 ring-accent' : ''}
+          hover:border-accent/40 focus:border-accent focus:ring-2 focus:ring-accent/20
+        `}
+      >
+        <span className={`font-semibold truncate ${value ? 'text-content' : 'text-content-tertiary'}`}>
+          {value || 'Select province...'}
+        </span>
+        <ChevronDown className={`w-4 h-4 text-content-tertiary shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {missing && !open && (
+        <p className="mt-1.5 text-xs text-warning">Province not detected - you can confirm or correct it</p>
+      )}
+
+      {open && (
+        <div className="absolute z-30 mt-1 w-full rounded-xl border border-border bg-surface-raised shadow-xl overflow-hidden">
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
+            <Search className="w-4 h-4 text-content-tertiary shrink-0" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Type to search province..."
+              className="w-full bg-transparent text-sm text-content placeholder:text-content-tertiary focus:outline-none"
+              autoComplete="off"
+            />
+          </div>
+          <ul ref={listRef} className="max-h-48 overflow-y-auto py-1">
+            {filtered.length === 0 && (
+              <li className="px-4 py-3 text-sm text-content-tertiary text-center">No matching province</li>
+            )}
+            {filtered.map((prov) => (
+              <li key={prov}>
+                <button
+                  type="button"
+                  onClick={() => handleSelect(prov)}
+                  className={`w-full text-left px-4 py-2 text-sm transition-colors hover:bg-accent/10 ${value === prov ? 'bg-accent/10 text-accent font-semibold' : 'text-content'}`}
+                >
+                  {prov}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ===== VERIFICATION ITEM ===== */
 function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast }) {
   const [plateText, setPlateText] = useState(item.plate_text || '')
@@ -224,15 +332,80 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
   return (
     <>
       <Card className="overflow-hidden">
-        <div className="grid grid-cols-1 xl:grid-cols-[minmax(400px,1fr)_minmax(0,1fr)]">
-          {/* Left: Image Evidence */}
-          <div className="p-5 border-b xl:border-b-0 xl:border-r border-border">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-content">Image Evidence</h3>
+        {/* Top: Plate Text - prominent display */}
+        <div className="px-5 pt-5 pb-4 border-b border-border">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <h3 className="text-sm font-semibold text-content">Plate Text</h3>
               <Badge variant={item.confidence >= 0.9 ? 'success' : item.confidence >= 0.7 ? 'warning' : 'danger'} size="sm">
                 {(item.confidence * 100).toFixed(0)}% confidence
               </Badge>
             </div>
+            <div className="flex items-center gap-2">
+              <Keyboard className="w-3 h-3 text-content-tertiary" />
+              <p className="text-xs text-content-tertiary">
+                Enter = Confirm | Ctrl+Enter = Save Edit | N = Normalize | Delete = Remove
+              </p>
+            </div>
+          </div>
+          <input
+            type="text"
+            value={plateText}
+            onChange={(e) => setPlateText(e.target.value)}
+            placeholder="Enter plate text"
+            className={`
+              w-full rounded-xl border bg-surface-inset px-6 py-4 text-content
+              text-3xl xl:text-4xl font-mono font-bold tracking-[0.15em] text-center
+              transition-colors
+              border-border focus:border-accent focus:ring-2 focus:ring-accent/20 focus:outline-none
+              placeholder:text-content-tertiary placeholder:text-2xl
+              ${highlightField === 'plate' ? 'ring-2 ring-accent' : ''}
+            `}
+          />
+          {/* Quick Fix Buttons - inline below plate text */}
+          <div className="flex flex-wrap items-center gap-3 mt-3">
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-danger" />
+              <span className="text-xs font-medium text-content-tertiary">Confusions</span>
+            </div>
+            {CONFUSION_FIXES.high.map((fix) => (
+              <button key={`${fix.from}-${fix.to}`} type="button" title={fix.tooltip} onClick={() => applyFix(fix.from, fix.to)}
+                className="px-2.5 py-1 text-xs font-medium rounded-lg border border-danger/30 bg-danger-muted text-danger-content hover:bg-danger/20 transition-colors"
+              >
+                {fix.from}{'→'}{fix.to}
+              </button>
+            ))}
+            <div className="w-px h-4 bg-border" />
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-warning" />
+              <span className="text-xs font-medium text-content-tertiary">Fixes</span>
+            </div>
+            {CONFUSION_FIXES.medium.map((fix) => (
+              <button key={`${fix.from}-${fix.to}`} type="button" title={fix.tooltip} onClick={() => applyFix(fix.from, fix.to)}
+                className="px-2.5 py-1 text-xs font-medium rounded-lg border border-warning/30 bg-warning-muted text-warning-content hover:bg-warning/20 transition-colors"
+              >
+                {fix.from}{'→'}{fix.to}
+              </button>
+            ))}
+            {lastChange && (
+              <>
+                <div className="w-px h-4 bg-border" />
+                <Badge variant="default" size="sm">
+                  {lastChange.from ? `${lastChange.from}→${lastChange.to}` : 'Normalized'}
+                </Badge>
+                <button onClick={handleUndo} className="text-accent hover:underline text-xs font-medium flex items-center gap-1">
+                  <RotateCcw className="w-3 h-3" /> Undo
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Bottom: two-column with images and form */}
+        <div className="grid grid-cols-1 xl:grid-cols-2">
+          {/* Left: Image Evidence */}
+          <div className="p-5 border-b xl:border-b-0 xl:border-r border-border">
+            <h3 className="text-sm font-semibold text-content mb-3">Image Evidence</h3>
             <div className="grid grid-cols-2 gap-4">
               {[
                 { url: item.original_url, label: 'Original Image' },
@@ -244,7 +417,7 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
                     onClick={() => openViewer(absImageUrl(img.url), img.label)}
                     className="relative group w-full rounded-xl overflow-hidden border border-border hover:border-accent/40 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-accent/50 hover:shadow-lg hover:-translate-y-0.5"
                   >
-                    <img src={absImageUrl(img.url)} alt={img.label} className="w-full h-48 object-contain bg-surface-inset" crossOrigin="anonymous" />
+                    <img src={absImageUrl(img.url)} alt={img.label} className="w-full h-52 object-contain bg-surface-inset" crossOrigin="anonymous" />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-end justify-center pb-4">
                       <Badge variant="primary" size="sm"><ZoomIn className="w-3 h-3 mr-1" /> View full size</Badge>
                     </div>
@@ -254,74 +427,15 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
             </div>
           </div>
 
-          {/* Right: Form & Actions */}
+          {/* Right: Province, Notes, Actions */}
           <div className="p-5 flex flex-col">
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <h3 className="text-sm font-semibold text-content">OCR Result & Verification</h3>
-                <div className="flex items-center gap-2 mt-1">
-                  <Keyboard className="w-3 h-3 text-content-tertiary" />
-                  <p className="text-xs text-content-tertiary">
-                    Enter = Confirm | Ctrl+Enter = Save Edit | N = Normalize | Delete = Remove
-                  </p>
-                </div>
-              </div>
-            </div>
-
             <div className="space-y-4 flex-1">
-              {/* Plate Input */}
-              <Input
-                label="Plate Text"
-                value={plateText}
-                onChange={(e) => setPlateText(e.target.value)}
-                placeholder="Enter/edit plate text"
-                className={`text-lg font-mono font-bold tracking-wider ${highlightField === 'plate' ? 'ring-2 ring-accent' : ''}`}
-              />
-
-              {/* Quick Fix Buttons */}
-              <div className="space-y-3">
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-danger" />
-                    <span className="text-xs font-medium text-content-tertiary">Common Confusions</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {CONFUSION_FIXES.high.map((fix) => (
-                      <button key={`${fix.from}-${fix.to}`} type="button" title={fix.tooltip} onClick={() => applyFix(fix.from, fix.to)}
-                        className="px-2.5 py-1 text-xs font-medium rounded-lg border border-danger/30 bg-danger-muted text-danger-content hover:bg-danger/20 transition-colors"
-                      >
-                        {fix.from}-{'>'}
-                        {fix.to}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-warning" />
-                    <span className="text-xs font-medium text-content-tertiary">Other Fixes</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {CONFUSION_FIXES.medium.map((fix) => (
-                      <button key={`${fix.from}-${fix.to}`} type="button" title={fix.tooltip} onClick={() => applyFix(fix.from, fix.to)}
-                        className="px-2.5 py-1 text-xs font-medium rounded-lg border border-warning/30 bg-warning-muted text-warning-content hover:bg-warning/20 transition-colors"
-                      >
-                        {fix.from}-{'>'}
-                        {fix.to}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Province */}
-              <Input
-                label="Province"
+              {/* Province Combobox */}
+              <ProvinceCombobox
                 value={province}
-                onChange={(e) => setProvince(e.target.value)}
-                placeholder="Enter province"
-                className={`text-base font-semibold ${provinceMissing ? 'border-warning' : ''} ${highlightField === 'province' ? 'ring-2 ring-accent' : ''}`}
-                hint={provinceMissing ? 'Province not detected - you can confirm or correct it' : undefined}
+                onChange={(v) => { setProvince(v); setHighlightField('province') }}
+                highlight={highlightField === 'province'}
+                missing={provinceMissing}
               />
 
               <div>
@@ -338,18 +452,6 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
               </div>
 
               <Input label="Notes (optional)" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Additional notes" />
-
-              {lastChange && (
-                <div className="flex items-center gap-2 text-xs text-content-tertiary">
-                  <span>Last change:</span>
-                  <Badge variant="default" size="sm">
-                    {lastChange.from ? `${lastChange.from}->${lastChange.to}` : 'Normalized'}
-                  </Badge>
-                  <button onClick={handleUndo} className="text-accent hover:underline font-medium flex items-center gap-1">
-                    <RotateCcw className="w-3 h-3" /> Undo
-                  </button>
-                </div>
-              )}
             </div>
 
             {/* Action Buttons */}
@@ -390,6 +492,91 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
   )
 }
 
+/* ===== TIME RANGE PRESETS ===== */
+const TIME_PRESETS = [
+  { label: 'Last 15 min', minutes: 15 },
+  { label: 'Last 1 hr', minutes: 60 },
+  { label: 'Last 6 hr', minutes: 360 },
+  { label: 'Last 24 hr', minutes: 1440 },
+  { label: 'Last 7 days', minutes: 10080 },
+]
+
+function toLocalDatetime(date) {
+  if (!date) return ''
+  const d = new Date(date)
+  const offset = d.getTimezoneOffset()
+  const local = new Date(d.getTime() - offset * 60000)
+  return local.toISOString().slice(0, 16)
+}
+
+/* ===== TIME RANGE FILTER ===== */
+function TimeRangeFilter({ startDate, endDate, onStartChange, onEndChange, onClear, onPreset }) {
+  const hasFilter = startDate || endDate
+
+  return (
+    <Card className="overflow-hidden">
+      <CardBody className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CalendarClock className="w-4 h-4 text-accent" />
+            <h3 className="text-sm font-semibold text-content">Time Range Filter</h3>
+            {hasFilter && (
+              <Badge variant="primary" size="sm">Active</Badge>
+            )}
+          </div>
+          {hasFilter && (
+            <button
+              onClick={onClear}
+              className="flex items-center gap-1 text-xs font-medium text-content-tertiary hover:text-danger transition-colors"
+            >
+              <XCircle className="w-3.5 h-3.5" />
+              Clear Filter
+            </button>
+          )}
+        </div>
+
+        {/* Quick Presets */}
+        <div>
+          <p className="text-xs font-medium text-content-tertiary mb-2">Quick Select</p>
+          <div className="flex flex-wrap gap-2">
+            {TIME_PRESETS.map((preset) => (
+              <button
+                key={preset.minutes}
+                onClick={() => onPreset(preset.minutes)}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg border border-border bg-surface-raised text-content hover:bg-surface-overlay hover:border-accent/30 transition-colors"
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Custom Range */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-content-tertiary mb-1.5">Start Date & Time</label>
+            <input
+              type="datetime-local"
+              value={toLocalDatetime(startDate)}
+              onChange={(e) => onStartChange(e.target.value ? new Date(e.target.value).toISOString() : '')}
+              className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-surface-raised text-content focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-content-tertiary mb-1.5">End Date & Time</label>
+            <input
+              type="datetime-local"
+              value={toLocalDatetime(endDate)}
+              onChange={(e) => onEndChange(e.target.value ? new Date(e.target.value).toISOString() : '')}
+              className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-surface-raised text-content focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors"
+            />
+          </div>
+        </div>
+      </CardBody>
+    </Card>
+  )
+}
+
 /* ===== MAIN QUEUE PAGE ===== */
 export default function Queue() {
   const [items, setItems] = useState([])
@@ -398,6 +585,9 @@ export default function Queue() {
   const [busyId, setBusyId] = useState(null)
   const [toasts, setToasts] = useState([])
   const [lastRefresh, setLastRefresh] = useState(null)
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [filterOpen, setFilterOpen] = useState(false)
 
   const addToast = useCallback((message, type = 'info') => {
     const id = Date.now()
@@ -409,7 +599,10 @@ export default function Queue() {
     setError('')
     setLoading(true)
     try {
-      const data = await listPending(200)
+      const data = await listPending(200, {
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+      })
       setItems(data)
       setLastRefresh(new Date())
     } catch (e) {
@@ -417,7 +610,7 @@ export default function Queue() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [startDate, endDate])
 
   useEffect(() => {
     refresh()
@@ -452,6 +645,21 @@ export default function Queue() {
     } catch (e) { setError(String(e)) } finally { setBusyId(null) }
   }, [refresh, addToast])
 
+  const handlePreset = useCallback((minutes) => {
+    const now = new Date()
+    const start = new Date(now.getTime() - minutes * 60 * 1000)
+    setStartDate(start.toISOString())
+    setEndDate(now.toISOString())
+    setFilterOpen(true)
+  }, [])
+
+  const handleClearFilter = useCallback(() => {
+    setStartDate('')
+    setEndDate('')
+  }, [])
+
+  const hasTimeFilter = startDate || endDate
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -464,6 +672,14 @@ export default function Queue() {
                 Updated {lastRefresh.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
               </Badge>
             )}
+            <Button
+              variant={hasTimeFilter ? 'primary' : 'secondary'}
+              size="sm"
+              onClick={() => setFilterOpen((v) => !v)}
+              icon={<Filter className="w-4 h-4" />}
+            >
+              {hasTimeFilter ? 'Filtered' : 'Filter'}
+            </Button>
             <Button variant="secondary" size="sm" onClick={refresh} loading={loading}
               icon={!loading ? <RefreshCw className="w-4 h-4" /> : undefined}>
               {loading ? 'Refreshing...' : 'Refresh'}
@@ -471,6 +687,18 @@ export default function Queue() {
           </div>
         }
       />
+
+      {/* Time Range Filter */}
+      {filterOpen && (
+        <TimeRangeFilter
+          startDate={startDate}
+          endDate={endDate}
+          onStartChange={setStartDate}
+          onEndChange={setEndDate}
+          onClear={handleClearFilter}
+          onPreset={handlePreset}
+        />
+      )}
 
       {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-3">

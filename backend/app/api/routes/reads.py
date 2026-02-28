@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from datetime import datetime
@@ -12,15 +13,23 @@ from app.services.verification import verify_read
 router = APIRouter()
 
 @router.get("/reads/pending", response_model=list[ReadOut])
-def list_pending(limit: int = 100, db: Session = Depends(get_db)):
+def list_pending(
+    limit: int = 100,
+    start_date: Optional[datetime] = Query(None, description="Filter reads created on or after this datetime (ISO 8601)"),
+    end_date: Optional[datetime] = Query(None, description="Filter reads created on or before this datetime (ISO 8601)"),
+    db: Session = Depends(get_db),
+):
     q = (
         db.query(models.PlateRead)
         .join(models.Detection, models.PlateRead.detection_id == models.Detection.id)
         .join(models.Capture, models.Detection.capture_id == models.Capture.id)
         .filter(models.PlateRead.status == models.ReadStatus.PENDING)
-        .order_by(desc(models.PlateRead.created_at))
-        .limit(limit)
     )
+    if start_date:
+        q = q.filter(models.PlateRead.created_at >= start_date)
+    if end_date:
+        q = q.filter(models.PlateRead.created_at <= end_date)
+    q = q.order_by(desc(models.PlateRead.created_at)).limit(limit)
     out = []
     for r in q.all():
         det = r.detection
