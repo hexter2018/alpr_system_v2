@@ -18,6 +18,7 @@ from datetime import datetime
 from queue import Queue, Full
 import asyncio
 
+from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.db import models
@@ -252,7 +253,8 @@ class CameraStreamManager:
                 # ─── Frame capture loop ───
                 target_interval = 1.0 / self.config.fps
                 last_capture_time = time.time()
-                
+                last_heartbeat_time = 0.0  # Force immediate heartbeat on connect
+
                 while self.running and cap.isOpened():
                     current_time = time.time()
                     
@@ -280,7 +282,26 @@ class CameraStreamManager:
                     
                     # ✅ Reset failure counter on successful read
                     consecutive_failures = 0
-                    
+
+                    # ✅ Heartbeat: update camera status to ONLINE every 15s
+                    if current_time - last_heartbeat_time >= 15.0:
+                        try:
+                            _db = SessionLocal()
+                            try:
+                                _db.execute(
+                                    sql_text(
+                                        "UPDATE cameras SET status='ONLINE', last_seen=:now "
+                                        "WHERE camera_id=:cid"
+                                    ),
+                                    {"now": datetime.utcnow(), "cid": self.config.camera_id},
+                                )
+                                _db.commit()
+                            finally:
+                                _db.close()
+                        except Exception as _hb_err:
+                            log.debug("Heartbeat update failed: %s", _hb_err)
+                        last_heartbeat_time = current_time
+
                     # Try to add to queue (non-blocking)
                     try:
                         self.raw_frame_queue.put_nowait((frame.copy(), current_time))
