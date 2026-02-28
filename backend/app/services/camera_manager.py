@@ -170,6 +170,15 @@ class CameraStreamManager:
                 db.close()
         except Exception as e:
             log.error(f"Failed to load trigger zone: {e}", exc_info=True)
+            # ✅ Ensure attributes always exist even on failure
+            if not hasattr(self, '_raw_zone_points'):
+                self._raw_zone_points = []
+            if not hasattr(self, '_zone_is_normalized'):
+                self._zone_is_normalized = False
+            if not hasattr(self, '_zone_type'):
+                self._zone_type = 'polygon'
+            if not hasattr(self, 'trigger_zone'):
+                self.trigger_zone = None
 
     def _apply_trigger_zone_with_frame_size(self, frame_w: int, frame_h: int):
         """Build TriggerZone using actual frame dimensions"""
@@ -363,6 +372,17 @@ class CameraStreamManager:
         4. Real-time stats and coordinates
         """
         if not self.trigger_zone:
+            # ✅ Show "NO TRIGGER ZONE" text so operator knows zone is not loaded
+            cv2.putText(
+                frame,
+                "NO TRIGGER ZONE",
+                (10, frame.shape[0] - 15),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0, 165, 255),  # Orange
+                2,
+                cv2.LINE_AA
+            )
             return frame
         
         # Count vehicles in zone
@@ -376,13 +396,19 @@ class CameraStreamManager:
         
         # Draw filled polygon with transparency
         overlay = frame.copy()
-        points = self.trigger_zone.points.astype(np.int32)
+        # ✅ FIXED: reshape to (N, 1, 2) as required by cv2.fillPoly
+        points = self.trigger_zone.points.reshape((-1, 1, 2)).astype(np.int32)
         cv2.fillPoly(overlay, [points], color=zone_color)
         frame_with_overlay = cv2.addWeighted(frame, 0.8, overlay, 0.2, 0)
         
         # Draw zone border
         cv2.polylines(frame_with_overlay, [points], isClosed=True, 
                     color=zone_color, thickness=3)
+        
+        # ✅ Draw yellow corner point markers
+        for pt in points.reshape(-1, 2):
+            cv2.circle(frame_with_overlay, (int(pt[0]), int(pt[1])), radius=6, 
+                      color=(0, 255, 255), thickness=-1)  # Yellow filled
         
         # ✅ Draw debug points for all tracked vehicles
         for track_id, track in self.tracker.tracks.items():

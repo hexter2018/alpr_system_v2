@@ -140,6 +140,15 @@ def update_trigger_zone(
     db.commit()
     db.refresh(camera)
 
+    # ✅ Reload trigger zone in running camera stream immediately
+    try:
+        from app.services.camera_pool import get_camera_pool
+        pool = get_camera_pool()
+        pool.reload_trigger_zone(camera_id)
+        log.info(f"Trigger zone reloaded in stream for {camera_id}")
+    except Exception as e:
+        log.warning(f"Could not reload trigger zone in stream for {camera_id}: {e}")
+
     return CameraOut.model_validate(camera)
 
 

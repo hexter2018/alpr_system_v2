@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add backend/app/main.py backend/app/services/camera_manager.py docker-compose.yml backend/alembic/versions/004_watchlist_updated_at.py)",
+      "Bash(git commit:*)",
+      "Bash(git push -u origin claude/inspiring-meitner)",
+      "Bash(gh pr:*)",
+      "Bash(winget list --name \"GitHub CLI\")",
+      "Bash(git remote get-url origin)",
+      "Bash(git add backend/app/api/routes/cameras.py backend/app/services/camera_manager.py)"
+    ]
+  }
+}

@@ -61,7 +61,6 @@ class TriggerZone:
             points: List of (x, y) coordinates defining the zone
             zone_type: "polygon" or "rectangle"
         """
-        self.points = np.array(points, dtype=np.float32)
         self.zone_type = zone_type
         
         if zone_type == "rectangle" and len(points) != 2:
@@ -71,17 +70,23 @@ class TriggerZone:
         if zone_type == "rectangle":
             x1, y1 = points[0]
             x2, y2 = points[1]
-            self.points = np.array([
+            raw = np.array([
                 [x1, y1],  # top-left
                 [x2, y1],  # top-right
                 [x2, y2],  # bottom-right
                 [x1, y2],  # bottom-left
             ], dtype=np.float32)
+        else:
+            raw = np.array(points, dtype=np.float32)
+        
+        # ✅ CRITICAL FIX: cv2.pointPolygonTest requires shape (N, 1, 2)
+        # Passing (N, 2) causes ALL point tests to silently fail
+        self.points = raw.reshape((-1, 1, 2))
     
     def contains_point(self, point: Point) -> bool:
         """Check if a point is inside the zone"""
-        pt = np.array([[point.x, point.y]], dtype=np.float32)
-        result = cv2.pointPolygonTest(self.points, (point.x, point.y), False)
+        # ✅ FIXED: self.points is already (N, 1, 2) — correct shape for OpenCV
+        result = cv2.pointPolygonTest(self.points, (float(point.x), float(point.y)), False)
         return result >= 0  # >= 0 means inside or on boundary
     
     def get_bottom_center(self, bbox: BBox) -> Point:
@@ -130,6 +135,47 @@ class TriggerZone:
         
         return inside_count / max(total_count, 1)
     
+    def line_crosses_zone(self, p1: Tuple[float, float], p2: Tuple[float, float]) -> bool:
+        """
+        ✅ NEW: Check if line segment p1->p2 crosses the zone boundary.
+        
+        Used as fallback for fast-moving vehicles that may skip over the zone
+        between frames without their bottom-center landing inside.
+        
+        Args:
+            p1: Start point (x, y)
+            p2: End point (x, y)
+        
+        Returns:
+            True if the segment intersects any edge of the polygon
+        """
+        def _segments_intersect(a1, a2, b1, b2) -> bool:
+            """Check if segment a1->a2 intersects segment b1->b2"""
+            def cross(o, a, b):
+                return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+            
+            d1 = cross(b1, b2, a1)
+            d2 = cross(b1, b2, a2)
+            d3 = cross(a1, a2, b1)
+            d4 = cross(a1, a2, b2)
+            
+            if ((d1 > 0 and d2 < 0) or (d1 < 0 and d2 > 0)) and \
+               ((d3 > 0 and d4 < 0) or (d3 < 0 and d4 > 0)):
+                return True
+            return False
+        
+        # Get polygon vertices as flat (N, 2) list
+        pts = self.points.reshape(-1, 2)
+        n = len(pts)
+        
+        for i in range(n):
+            edge_start = (pts[i][0], pts[i][1])
+            edge_end = (pts[(i + 1) % n][0], pts[(i + 1) % n][1])
+            if _segments_intersect(p1, p2, edge_start, edge_end):
+                return True
+        
+        return False
+    
     def draw_on_frame(self, frame: np.ndarray, color: Tuple[int, int, int] = (0, 255, 0), 
                      thickness: int = 2, fill_alpha: float = 0.2) -> np.ndarray:
         """
@@ -141,7 +187,8 @@ class TriggerZone:
             thickness: Line thickness
             fill_alpha: Transparency of fill (0=transparent, 1=opaque)
         """
-        points = self.points.astype(np.int32)
+        # ✅ FIXED: reshape to (N, 1, 2) as int32 for cv2.fillPoly / cv2.polylines
+        points = self.points.reshape((-1, 1, 2)).astype(np.int32)
         
         # Draw filled polygon (semi-transparent)
         if fill_alpha > 0:

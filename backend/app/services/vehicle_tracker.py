@@ -41,6 +41,9 @@ class VehicleTrack:
     # ✅ NEW: Track if vehicle was born inside zone
     born_in_zone: bool = False
     
+    # ✅ NEW: Track previous bottom-center for fast-vehicle line-crossing detection
+    prev_bottom_center: Optional[Tuple[float, float]] = None
+    
     # Best shot selection
     best_shot_frame: Optional[np.ndarray] = None
     best_shot_bbox: Optional[BBox] = None
@@ -58,6 +61,10 @@ class VehicleTrack:
     
     def update(self, bbox: BBox, frame: np.ndarray, confidence: float):
         """Update track with new detection"""
+        # ✅ Save previous bottom-center before appending new bbox
+        if self.bbox_history:
+            prev = self.bbox_history[-1]
+            self.prev_bottom_center = ((prev.x1 + prev.x2) / 2, prev.y2)
         self.bbox_history.append(bbox)
         self.frame_history.append(frame.copy())
         self.confidence_history.append(confidence)
@@ -343,6 +350,17 @@ class VehicleTracker:
             
             # ✅ CHECK: Is vehicle's bottom-center in zone?
             in_zone = zone.contains_bbox(current_bbox, threshold=0.0)
+            
+            # ✅ FALLBACK: Line-crossing check for fast-moving vehicles
+            # Catches vehicles that jump over zone boundary between frames
+            if not in_zone and track.prev_bottom_center is not None:
+                curr_bc = ((current_bbox.x1 + current_bbox.x2) / 2, current_bbox.y2)
+                if zone.line_crosses_zone(track.prev_bottom_center, curr_bc):
+                    in_zone = True
+                    log.debug(
+                        f"Track {track.track_id} caught by line-crossing check "
+                        f"prev={track.prev_bottom_center} curr={curr_bc}"
+                    )
             
             # ✅ DEBUG: Log zone checks for young tracks
             if track.age < 2.0:  # First 2 seconds
