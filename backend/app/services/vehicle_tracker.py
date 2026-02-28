@@ -146,10 +146,11 @@ class VehicleTracker:
     def __init__(
         self,
         max_disappeared: int = 30,          # Frames before removing lost track
-        max_distance: float = 100.0,        # Max centroid distance for matching
+        max_distance: float = 250.0,        # ✅ INCREASED: 100→250px for 2fps (vehicle moves ~500px/frame at 10km/h)
         min_frames_in_zone: int = 3,        # ✅ REDUCED: from 5 to 3 frames
         min_frames_out_of_zone: int = 5,    # ✅ REDUCED: from 10 to 5 frames
         fps: float = 2.0,                   # ✅ NEW: actual camera FPS for timing
+        zone_capture_cooldown_sec: float = 8.0,  # ✅ NEW: min seconds between zone captures
     ):
         self.next_track_id = 0
         self.tracks: Dict[int, VehicleTrack] = {}
@@ -159,6 +160,11 @@ class VehicleTracker:
         self.min_frames_in_zone = min_frames_in_zone
         self.min_frames_out_of_zone = min_frames_out_of_zone
         self.fps = max(fps, 0.1)            # ✅ Prevent division by zero
+        self.zone_capture_cooldown_sec = zone_capture_cooldown_sec
+
+        # ✅ Zone-level capture cooldown — prevents duplicate captures from re-detected tracks
+        # (same physical vehicle lost+re-tracked in rapid succession)
+        self._last_zone_capture_time: float = 0.0
 
         # ✅ Pending tracks ready for OCR (collected before cleanup so cleanup can't race-delete)
         self._pending_ready_tracks: List[VehicleTrack] = []
@@ -326,15 +332,26 @@ class VehicleTracker:
             if (track.state == VehicleState.IN_ZONE
                     and track.frames_out_of_zone >= self.min_frames_out_of_zone
                     and not track.processing_started):
-                track.state = VehicleState.PROCESSING
-                track.zone_exit_time = time.time()
-                track.processing_started = True
-                self.debug_stats["captured"] += 1
-                self._pending_ready_tracks.append(track)
-                log.info(
-                    f"📸 Track {track.track_id} PROCESSING "
-                    f"(auto: no detections, frames_out={track.frames_out_of_zone})"
-                )
+                now = time.time()
+                cooldown_elapsed = now - self._last_zone_capture_time
+                if cooldown_elapsed >= self.zone_capture_cooldown_sec:
+                    track.state = VehicleState.PROCESSING
+                    track.zone_exit_time = now
+                    track.processing_started = True
+                    self._last_zone_capture_time = now
+                    self.debug_stats["captured"] += 1
+                    self._pending_ready_tracks.append(track)
+                    log.info(
+                        f"📸 Track {track.track_id} PROCESSING "
+                        f"(auto: no detections, frames_out={track.frames_out_of_zone})"
+                    )
+                else:
+                    track.state = VehicleState.EXITED
+                    track.processing_started = True  # prevent re-trigger
+                    log.info(
+                        f"🚫 Track {track.track_id} skipped auto-capture "
+                        f"(cooldown {self.zone_capture_cooldown_sec - cooldown_elapsed:.1f}s remaining)"
+                    )
     
     def _update_state_machine(self, zone: Optional[TriggerZone]):
         """
@@ -402,17 +419,27 @@ class VehicleTracker:
                     track.frames_out_of_zone = 0
                 else:
                     track.frames_out_of_zone += 1
-                    
-                    # ✅ RELAXED: Trigger capture after fewer frames out
+
+                    # ✅ Trigger capture after min_frames_out_of_zone frames outside zone
                     if track.frames_out_of_zone >= self.min_frames_out_of_zone:
-                        # Vehicle has exited - trigger best shot processing
-                        track.state = VehicleState.PROCESSING
-                        track.zone_exit_time = time.time()
-                        self.debug_stats["captured"] += 1
-                        log.info(
-                            f"📸 Track {track.track_id} EXITING -> PROCESSING "
-                            f"(time_in_zone={(track.zone_exit_time - track.zone_entry_time):.1f}s)"
-                        )
+                        now = time.time()
+                        cooldown_elapsed = now - self._last_zone_capture_time
+                        if cooldown_elapsed >= self.zone_capture_cooldown_sec:
+                            # ✅ 1 CAPTURE PER VEHICLE: cooldown passed → allowed
+                            track.state = VehicleState.PROCESSING
+                            track.zone_exit_time = now
+                            self._last_zone_capture_time = now
+                            self.debug_stats["captured"] += 1
+                            log.info(
+                                f"📸 Track {track.track_id} EXITING -> PROCESSING "
+                                f"(time_in_zone={(track.zone_exit_time - track.zone_entry_time):.1f}s)"
+                            )
+                        else:
+                            # ✅ COOLDOWN ACTIVE: skip duplicate capture, discard track
+                            track.state = VehicleState.EXITED
+                            log.info(
+                                f"🚫 Track {track.track_id} skipped (cooldown {self.zone_capture_cooldown_sec - cooldown_elapsed:.1f}s remaining)"
+                            )
             
             elif track.state == VehicleState.PROCESSING:
                 # Waiting for OCR result
@@ -433,17 +460,22 @@ class VehicleTracker:
         for track_id, track in self.tracks.items():
             # Remove if disappeared for too long
             if track.time_since_last_seen > max_disappeared_sec:
-                # ✅ Force capture for IN_ZONE tracks before deletion
+                # ✅ Force capture for IN_ZONE tracks before deletion (with cooldown check)
                 if track.state == VehicleState.IN_ZONE and not track.processing_started:
-                    track.state = VehicleState.PROCESSING
-                    track.zone_exit_time = time.time()
-                    track.processing_started = True
-                    self.debug_stats["captured"] += 1
-                    self._pending_ready_tracks.append(track)
-                    log.info(
-                        f"📸 Track {track_id} FORCED PROCESSING (cleanup, "
-                        f"gone={track.time_since_last_seen:.1f}s)"
-                    )
+                    now = time.time()
+                    if now - self._last_zone_capture_time >= self.zone_capture_cooldown_sec:
+                        track.state = VehicleState.PROCESSING
+                        track.zone_exit_time = now
+                        track.processing_started = True
+                        self._last_zone_capture_time = now
+                        self.debug_stats["captured"] += 1
+                        self._pending_ready_tracks.append(track)
+                        log.info(
+                            f"📸 Track {track_id} FORCED PROCESSING (cleanup, "
+                            f"gone={track.time_since_last_seen:.1f}s)"
+                        )
+                    else:
+                        track.processing_started = True  # prevent re-trigger on cleanup retry
                 to_remove.append(track_id)
 
             # Remove processed tracks after 5 seconds
