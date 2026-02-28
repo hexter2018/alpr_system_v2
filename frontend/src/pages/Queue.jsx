@@ -7,6 +7,7 @@ import {
 import {
   CheckCircle, Edit3, Trash2, RefreshCw, ZoomIn, ZoomOut,
   RotateCcw, X, Keyboard, Clock, ListChecks, Settings2,
+  CalendarClock, Filter, XCircle,
 } from 'lucide-react'
 
 /* ===== PROVINCES DATA ===== */
@@ -390,6 +391,91 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
   )
 }
 
+/* ===== TIME RANGE PRESETS ===== */
+const TIME_PRESETS = [
+  { label: 'Last 15 min', minutes: 15 },
+  { label: 'Last 1 hr', minutes: 60 },
+  { label: 'Last 6 hr', minutes: 360 },
+  { label: 'Last 24 hr', minutes: 1440 },
+  { label: 'Last 7 days', minutes: 10080 },
+]
+
+function toLocalDatetime(date) {
+  if (!date) return ''
+  const d = new Date(date)
+  const offset = d.getTimezoneOffset()
+  const local = new Date(d.getTime() - offset * 60000)
+  return local.toISOString().slice(0, 16)
+}
+
+/* ===== TIME RANGE FILTER ===== */
+function TimeRangeFilter({ startDate, endDate, onStartChange, onEndChange, onClear, onPreset }) {
+  const hasFilter = startDate || endDate
+
+  return (
+    <Card className="overflow-hidden">
+      <CardBody className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CalendarClock className="w-4 h-4 text-accent" />
+            <h3 className="text-sm font-semibold text-content">Time Range Filter</h3>
+            {hasFilter && (
+              <Badge variant="primary" size="sm">Active</Badge>
+            )}
+          </div>
+          {hasFilter && (
+            <button
+              onClick={onClear}
+              className="flex items-center gap-1 text-xs font-medium text-content-tertiary hover:text-danger transition-colors"
+            >
+              <XCircle className="w-3.5 h-3.5" />
+              Clear Filter
+            </button>
+          )}
+        </div>
+
+        {/* Quick Presets */}
+        <div>
+          <p className="text-xs font-medium text-content-tertiary mb-2">Quick Select</p>
+          <div className="flex flex-wrap gap-2">
+            {TIME_PRESETS.map((preset) => (
+              <button
+                key={preset.minutes}
+                onClick={() => onPreset(preset.minutes)}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg border border-border bg-surface-raised text-content hover:bg-surface-overlay hover:border-accent/30 transition-colors"
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Custom Range */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-content-tertiary mb-1.5">Start Date & Time</label>
+            <input
+              type="datetime-local"
+              value={toLocalDatetime(startDate)}
+              onChange={(e) => onStartChange(e.target.value ? new Date(e.target.value).toISOString() : '')}
+              className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-surface-raised text-content focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-content-tertiary mb-1.5">End Date & Time</label>
+            <input
+              type="datetime-local"
+              value={toLocalDatetime(endDate)}
+              onChange={(e) => onEndChange(e.target.value ? new Date(e.target.value).toISOString() : '')}
+              className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-surface-raised text-content focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors"
+            />
+          </div>
+        </div>
+      </CardBody>
+    </Card>
+  )
+}
+
 /* ===== MAIN QUEUE PAGE ===== */
 export default function Queue() {
   const [items, setItems] = useState([])
@@ -398,6 +484,9 @@ export default function Queue() {
   const [busyId, setBusyId] = useState(null)
   const [toasts, setToasts] = useState([])
   const [lastRefresh, setLastRefresh] = useState(null)
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [filterOpen, setFilterOpen] = useState(false)
 
   const addToast = useCallback((message, type = 'info') => {
     const id = Date.now()
@@ -409,7 +498,10 @@ export default function Queue() {
     setError('')
     setLoading(true)
     try {
-      const data = await listPending(200)
+      const data = await listPending(200, {
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+      })
       setItems(data)
       setLastRefresh(new Date())
     } catch (e) {
@@ -417,7 +509,7 @@ export default function Queue() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [startDate, endDate])
 
   useEffect(() => {
     refresh()
@@ -452,6 +544,21 @@ export default function Queue() {
     } catch (e) { setError(String(e)) } finally { setBusyId(null) }
   }, [refresh, addToast])
 
+  const handlePreset = useCallback((minutes) => {
+    const now = new Date()
+    const start = new Date(now.getTime() - minutes * 60 * 1000)
+    setStartDate(start.toISOString())
+    setEndDate(now.toISOString())
+    setFilterOpen(true)
+  }, [])
+
+  const handleClearFilter = useCallback(() => {
+    setStartDate('')
+    setEndDate('')
+  }, [])
+
+  const hasTimeFilter = startDate || endDate
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -464,6 +571,14 @@ export default function Queue() {
                 Updated {lastRefresh.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
               </Badge>
             )}
+            <Button
+              variant={hasTimeFilter ? 'primary' : 'secondary'}
+              size="sm"
+              onClick={() => setFilterOpen((v) => !v)}
+              icon={<Filter className="w-4 h-4" />}
+            >
+              {hasTimeFilter ? 'Filtered' : 'Filter'}
+            </Button>
             <Button variant="secondary" size="sm" onClick={refresh} loading={loading}
               icon={!loading ? <RefreshCw className="w-4 h-4" /> : undefined}>
               {loading ? 'Refreshing...' : 'Refresh'}
@@ -471,6 +586,18 @@ export default function Queue() {
           </div>
         }
       />
+
+      {/* Time Range Filter */}
+      {filterOpen && (
+        <TimeRangeFilter
+          startDate={startDate}
+          endDate={endDate}
+          onStartChange={setStartDate}
+          onEndChange={setEndDate}
+          onClear={handleClearFilter}
+          onPreset={handlePreset}
+        />
+      )}
 
       {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-3">

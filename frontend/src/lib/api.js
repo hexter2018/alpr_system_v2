@@ -61,8 +61,11 @@ export async function uploadBatch(files) {
   return res.json();
 }
 
-export async function listPending(limit=100) {
-  const res = await apiFetch(`${API_BASE}/api/reads/pending?limit=${limit}`);
+export async function listPending(limit=100, { startDate, endDate } = {}) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (startDate) params.set("start_date", startDate);
+  if (endDate) params.set("end_date", endDate);
+  const res = await apiFetch(`${API_BASE}/api/reads/pending?${params.toString()}`);
   if (!res.ok) throw new Error("failed to load queue");
   return res.json();
 }
