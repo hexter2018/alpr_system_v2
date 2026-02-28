@@ -1,6 +1,34 @@
 # backend/app/main.py
 # ✅ FIXED: เพิ่ม CORS support สำหรับ WebSocket และ Streaming
 
+import logging
+import logging.config
+
+# ✅ Configure logging so INFO messages from app.services.* appear in docker logs
+logging.config.dictConfig({
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {
+            "format": "%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+        }
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "default",
+            "stream": "ext://sys.stdout",
+        }
+    },
+    "root": {"level": "INFO", "handlers": ["console"]},
+    "loggers": {
+        "uvicorn": {"level": "INFO", "propagate": True},
+        "uvicorn.access": {"level": "WARNING", "propagate": True},  # Reduce access log noise
+        "app": {"level": "INFO", "propagate": True},
+    },
+})
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
