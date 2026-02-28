@@ -158,10 +158,12 @@ class CameraStreamManager:
                             )
                     else:
                         log.warning(f"No trigger zone points for {self.config.camera_id}")
+                        self.trigger_zone = None
                         self._raw_zone_points = []
                         self._zone_is_normalized = False
                 else:
                     log.warning(f"No trigger zone configured for {self.config.camera_id}")
+                    self.trigger_zone = None
                     self._raw_zone_points = []
                     self._zone_is_normalized = False
             finally:

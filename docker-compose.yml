@@ -59,6 +59,9 @@ services:
       CORS_ORIGINS: http://localhost:5173,http://10.32.70.136,http://10.32.70.136:5173
       CUDA_VISIBLE_DEVICES: "0"
       NVIDIA_VISIBLE_DEVICES: "0"
+      # Vehicle detection model (COCO yolov8n for classes 2,3,5,7 = car/moto/bus/truck)
+      # Place yolov8n.pt in ./models/ or it will be auto-downloaded on first start
+      VEHICLE_MODEL_PATH: /models/yolov8n.pt
     volumes:
       - ./storage:/storage
       - ./models:/models

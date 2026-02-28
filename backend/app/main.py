@@ -48,11 +48,20 @@ async def lifespan(app: FastAPI):
     print("[STARTUP] Initializing Camera Pool...")
     
     storage_dir = Path(settings.storage_dir)
-    model_path = os.getenv("MODEL_PATH", "/models/best.pt")
-    
+
+    # VEHICLE_MODEL_PATH: model used by the backend for vehicle/plate detection in the trigger zone.
+    # Defaults to /models/yolov8n.pt (COCO vehicle classes 2,3,5,7).
+    # Falls back to auto-download "yolov8n.pt" from ultralytics hub if file not found.
+    vehicle_model_path = os.getenv("VEHICLE_MODEL_PATH", "/models/yolov8n.pt")
+    if not os.path.exists(vehicle_model_path):
+        vehicle_model_path = "yolov8n.pt"  # ultralytics will auto-download
+        print(f"[STARTUP] {os.getenv('VEHICLE_MODEL_PATH', '/models/yolov8n.pt')} not found — will auto-download yolov8n.pt")
+    else:
+        print(f"[STARTUP] Using vehicle model: {vehicle_model_path}")
+
     pool = get_camera_pool(
         storage_dir=storage_dir,
-        detector_model_path=model_path,
+        detector_model_path=vehicle_model_path,
         detector_conf=float(os.getenv("DETECTOR_CONF", "0.35")),
         detector_iou=float(os.getenv("DETECTOR_IOU", "0.45"))
     )
