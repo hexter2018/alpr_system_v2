@@ -32,7 +32,7 @@ _THAI_ALLOWLIST = "กขฃคฅฆงจฉชซฌญฎฏฐฑฒณด�
 _THAI_ONLY_ALLOWLIST = "กขฃคฅฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรฤลฦวศษสหฬอฮะาำิีึืุูเแโใไั่้๊๋์ฯ"
 _THAI_CONFUSION_MAP = {
     # ── กลุ่ม ผ/ข/ฆ/ม/พ ────────────────────────────────────────────────────────
-    "ผ": ("ข", "พ", "ฆ", "ฟ"),  # เพิ่ม ฟ (ผ ↔ ฟ มักสับกัน)
+    "ผ": ("ข", "พ", "ฆ", "ฟ", "ฝ"),  # ✨ เพิ่ม ฝ (ผ ↔ ฝ — case ผธ→ฝธ)
     "ข": ("ฆ", "ผ", "ม", "ช"),  # ✨ เพิ่ม ช (ช→ข มีแล้ว แต่ ข→ช ขาด)
     "ฆ": ("ข", "ม", "ผ"),
     "ม": ("ข", "ฆ", "น"),       # ✨ FIX: เพิ่ม น — Bug case 2 (กน→กม)
@@ -89,6 +89,8 @@ _THAI_CONFUSION_PENALTY_REDUCTION = {
     ("ฆ", "ผ"): 0.08,
     ("ข", "ช"): 0.06,   # ✨ NEW: ข↔ช
     ("ช", "ข"): 0.06,
+    ("ผ", "ฝ"): 0.07,   # ✨ NEW: ผ↔ฝ — case ผธ→ฝธ
+    ("ฝ", "ผ"): 0.07,
     # ── น / ม ── สับสนบ่อยในป้ายที่มืดหรือคุณภาพต่ำ ──────────────────────────
     ("น", "ม"): 0.07,   # ↑ จาก 0.05 — case 2
     ("ม", "น"): 0.07,   # ✨ เพิ่มคู่ reverse (เดิม ม→น ขาด)
@@ -456,6 +458,44 @@ class PlateOCR:
                 )),
                 "score": base_conf + valid_bonus + alt_bonus + alt_format - penalty - alt_rare_penalty,
             })
+
+        # ✨ NEW: ตัด digit ส่วนเกินออก เมื่อ OCR อ่านเลขซ้ำ (เช่น 6กธ55688 → 6กธ5688)
+        # เกิดขึ้นเมื่อตัวเลขที่ติดกันถูกอ่านซ้ำ ทำให้ digit zone มีเลขมากกว่า 4 ตัว
+        m_trim = re.match(r"^(\d?[ก-ฮ]{1,2})(\d{5,})$", normalized)
+        if m_trim:
+            pfx, digs = m_trim.groups()
+            for n_digits, trim_name in ((4, "trim_digits_4"), (3, "trim_digits_3")):
+                trimmed = pfx + digs[-n_digits:]
+                trim_valid = is_valid_plate(trimmed)
+                trim_bonus = 0.22 if trim_valid else 0.0
+                trim_format = self._plate_format_adjustment(trimmed)
+                trim_rare = _RARE_PLATE_CHAR_PENALTY * sum(
+                    1 for ch in trimmed if ch in _RARE_IN_PLATES
+                )
+                candidates.append({
+                    "name": trim_name,
+                    "text": trimmed,
+                    "confidence": max(0.0, min(
+                        base_conf + 0.25 + trim_bonus + trim_format - trim_rare, 1.0
+                    )),
+                    "score": base_conf + 0.25 + trim_bonus + trim_format - trim_rare,
+                })
+                # สร้าง confusion candidates ของ trimmed ด้วย เพื่อรับ Thai-char swap
+                for alt_text, swaps, reduction in self._expand_confusion_candidates(trimmed):
+                    penalty = max(0.01, (0.06 * swaps) - reduction)
+                    alt_bonus = 0.18 if is_valid_plate(alt_text) else 0.0
+                    alt_format = self._plate_format_adjustment(alt_text)
+                    alt_rare_penalty = _RARE_PLATE_CHAR_PENALTY * sum(
+                        1 for ch in alt_text if ch in _RARE_IN_PLATES
+                    )
+                    candidates.append({
+                        "name": f"trim_{n_digits}_confusion_swap_{swaps}",
+                        "text": alt_text,
+                        "confidence": max(0.0, min(
+                            base_conf + 0.25 + alt_bonus + alt_format - penalty - alt_rare_penalty, 1.0
+                        )),
+                        "score": base_conf + 0.25 + alt_bonus + alt_format - penalty - alt_rare_penalty,
+                    })
 
         if re.match(r"^[ก-ฮ]{1,2}\d{4}$", normalized):
             prefixed = f"1{normalized}"
@@ -891,7 +931,11 @@ class PlateOCR:
         return norm
 
     def _expand_confusion_candidates(self, text: str) -> Iterable[Tuple[str, int, float]]:
+        # รองรับทั้งป้าย Thai-leading (กข1234) และ digit-leading (1กข1234)
         match = re.match(r"^([ก-ฮ]{1,2})(\d+)$", text)
+        if not match:
+            # digit-leading: เลข 1 ตัว + อักษรไทย 1-2 ตัว + ตัวเลข เช่น 6กธ5688
+            match = re.match(r"^(\d[ก-ฮ]{1,2})(\d+)$", text)
         if not match:
             return []
 

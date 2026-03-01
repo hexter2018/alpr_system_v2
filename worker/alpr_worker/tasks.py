@@ -252,7 +252,13 @@ def process_capture(capture_id: int, image_path: str):
 
 
         # 2.5) Deduplication — ตรวจว่าป้ายนี้จาก camera เดียวกันถูกอ่านไปแล้วในช่วง DEDUP_WINDOW_SEC
-        if plate_text_norm:
+        # ใช้ pg_advisory_xact_lock เพื่อป้องกัน race condition กรณีที่ workers หลาย process
+        # อ่านป้ายเดิมพร้อมกัน (lock จะถูกปล่อยอัตโนมัติเมื่อ transaction commit/rollback)
+        if plate_text_norm and camera_id:
+            lock_key = int(hashlib.md5(
+                f"{camera_id}:{plate_text_norm}".encode()
+            ).hexdigest(), 16) % (2 ** 62)
+            db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
             dup = _find_recent_duplicate(db, camera_id, plate_text_norm)
             if dup and dup["confidence"] >= conf - DEDUP_MIN_CONF_DELTA:
                 # มี read ที่ดีกว่าหรือดีพอ ๆ กันอยู่แล้ว → ไม่ insert ซ้ำ
