@@ -31,68 +31,97 @@ _THAI_DIGIT_MAP = str.maketrans("๐๑๒๓๔๕๖๗๘๙", "0123456789")
 _THAI_ALLOWLIST = "กขฃคฅฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรฤลฦวศษสหฬอฮะาำิีึืุูเแโใไั่้๊๋์ฯ0123456789"
 _THAI_ONLY_ALLOWLIST = "กขฃคฅฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรฤลฦวศษสหฬอฮะาำิีึืุูเแโใไั่้๊๋์ฯ"
 _THAI_CONFUSION_MAP = {
-    "ผ": ("ข", "พ", "ฆ"),
-    "ข": ("ฆ", "ผ", "ม"),
-    "ฆ": ("ข", "ม", "ผ"), 
-    "ม": ("ข", "ฆ"),
-    "พ": ("ผ",),
+    # ── กลุ่ม ผ/ข/ฆ/ม/พ ────────────────────────────────────────────────────────
+    "ผ": ("ข", "พ", "ฆ", "ฟ", "ฝ"),  # ✨ เพิ่ม ฝ (ผ ↔ ฝ — case ผธ→ฝธ)
+    "ข": ("ฆ", "ผ", "ม", "ช"),  # ✨ เพิ่ม ช (ช→ข มีแล้ว แต่ ข→ช ขาด)
+    "ฆ": ("ข", "ม", "ผ"),
+    "ม": ("ข", "ฆ", "น"),       # ✨ FIX: เพิ่ม น — Bug case 2 (กน→กม)
+    "พ": ("ผ", "ฮ"),  # ✨ เพิ่ม ฮ (พ ↔ ฮ — case วฮ→วพ)
     "ฝ": ("ฟ", "ผ"),
-    "ฟ": ("ฝ",),
+    "ฟ": ("ฝ", "ผ"),            # เพิ่ม ผ (ฟ ↔ ผ)
+    # ── กลุ่ม บ/ป ───────────────────────────────────────────────────────────────
     "บ": ("ป",),
     "ป": ("บ",),
+    # ── กลุ่ม ด/ต ───────────────────────────────────────────────────────────────
     "ด": ("ต",),
     "ต": ("ด",),
+    # ── กลุ่ม ช/ซ/ฃ/ส/ศ/ษ ──────────────────────────────────────────────────────
     "ช": ("ซ", "ฃ", "ษ", "ศ", "ข"),
     "ซ": ("ช",),
     "ฃ": ("ช",),
     "ส": ("ศ", "ษ"),
     "ศ": ("ส", "ษ", "ช"),
     "ษ": ("ส", "ศ", "ช"),
+    # ── กลุ่ม ค/ฅ/ถ/ก ──────────────────────────────────────────────────────────
     "ค": ("ฅ", "ถ"),
     "ฅ": ("ค",),
     "ถ": ("ค", "ก"),
     "ก": ("ถ",),
+    # ── กลุ่ม ท/ธ ───────────────────────────────────────────────────────────────
     "ท": ("ธ",),
     "ธ": ("ท",),
+    # ── กลุ่ม ร/ฤ/ล/ย ──────────────────────────────────────────────────────────
     "ร": ("ฤ", "ล"),
     "ฤ": ("ร", "ล"),
-    "ล": ("ร", "ฤ"),
+    "ล": ("ร", "ฤ", "ย"),       # ✨ เพิ่ม ย (ย→ล มีแล้ว แต่ ล→ย ขาด)
+    "ย": ("ล",),
+    # ── กลุ่ม น/ม/ณ/ฌ ──────────────────────────────────────────────────────────
     "น": ("ม",),
     "ณ": ("ฌ",),
     "ฌ": ("ณ",),
+    # ── กลุ่ม ฎ/ฏ/ภ ────────────────────────────────────────────────────────────
     "ฎ": ("ฏ", "ภ"),
     "ฏ": ("ฎ",),
     "ภ": ("ฎ",),
-    "ย": ("ล",),
+    # ── กลุ่ม ฬ/ฮ/พ ─────────────────────────────────────────────────────────────
     "ฬ": ("ฮ",),
-    "ฮ": ("ฬ",),
-    # หมายเหตุ: "ซ": ("ช",) ถูก define แล้วที่บรรทัดก่อนหน้า ไม่ต้องซ้ำ
+    "ฮ": ("ฬ", "พ"),  # ✨ เพิ่ม พ (ฮ ↔ พ — case วฮ→วพ)
 }
 _THAI_CONFUSION_PENALTY_REDUCTION = {
-    ("ข", "ฆ"): 0.04,
-    ("ฆ", "ข"): 0.04,
-    ("ข", "ม"): 0.03,
-    ("ม", "ข"): 0.03,
-    ("ฆ", "ม"): 0.03,
-    ("ม", "ฆ"): 0.03,
+    # ── ข / ฆ / ม / ผ ── หน้าตาใกล้กันมากในฟอนต์ป้ายทะเบียน ──────────────────
+    ("ข", "ฆ"): 0.07,   # ↑ จาก 0.04 — ข↔ฆ สับสนบ่อย (case 3)
+    ("ฆ", "ข"): 0.07,
+    ("ข", "ม"): 0.05,   # ↑ จาก 0.03
+    ("ม", "ข"): 0.05,
+    ("ฆ", "ม"): 0.05,   # ↑ จาก 0.03
+    ("ม", "ฆ"): 0.05,
     ("ผ", "ฆ"): 0.08,
     ("ฆ", "ผ"): 0.08,
-    ("ร", "ธ"): 0.05,
-    ("ธ", "ร"): 0.05,
-    ("น", "ม"): 0.05,
-    ("ม", "น"): 0.05,
+    ("ข", "ช"): 0.06,   # ✨ NEW: ข↔ช
+    ("ช", "ข"): 0.06,
+    ("ผ", "ฝ"): 0.07,   # ✨ NEW: ผ↔ฝ — case ผธ→ฝธ
+    ("ฝ", "ผ"): 0.07,
+    # ── น / ม ── สับสนบ่อยในป้ายที่มืดหรือคุณภาพต่ำ ──────────────────────────
+    ("น", "ม"): 0.07,   # ↑ จาก 0.05 — case 2
+    ("ม", "น"): 0.07,   # ✨ เพิ่มคู่ reverse (เดิม ม→น ขาด)
+    # ── ร / ฤ ── ✨ NEW: ขาดไปทั้งคู่ ทำให้ penalty สูงเกิน (case 1) ─────────
+    ("ร", "ฤ"): 0.08,
+    ("ฤ", "ร"): 0.08,
+    ("ร", "ล"): 0.05,
+    ("ล", "ร"): 0.05,
+    # ── ท / ธ (เดิมใช้ชื่อ ร/ธ — น่าจะตั้งใจเป็น ท/ธ) ─────────────────────────
+    ("ท", "ธ"): 0.05,
+    ("ธ", "ท"): 0.05,
+    # ── ณ / ฌ ────────────────────────────────────────────────────────────────────
     ("ฌ", "ณ"): 0.05,
     ("ณ", "ฌ"): 0.05,
+    # ── ต / ด ────────────────────────────────────────────────────────────────────
     ("ต", "ด"): 0.05,
     ("ด", "ต"): 0.05,
+    # ── ถ / ก / ค ────────────────────────────────────────────────────────────────
     ("ถ", "ก"): 0.05,
     ("ก", "ถ"): 0.05,
     ("ถ", "ค"): 0.05,
     ("ค", "ถ"): 0.05,
+    # ── ฎ / ภ ────────────────────────────────────────────────────────────────────
     ("ฎ", "ภ"): 0.05,
     ("ภ", "ฎ"): 0.05,
+    # ── ช / ษ ────────────────────────────────────────────────────────────────────
     ("ช", "ษ"): 0.04,
     ("ษ", "ช"): 0.04,
+    # ── ฮ / พ ── ✨ NEW: ฮ หน้าตาคล้าย พ ในบางฟอนต์/แสงน้อย ────────────────────
+    ("ฮ", "พ"): 0.06,
+    ("พ", "ฮ"): 0.06,
 }
 # Thai chars ที่ OCR มักอ่านผิดเป็น digit ในส่วน digit zone ของป้าย
 # ใช้เฉพาะตำแหน่งที่คาดว่าเป็นตัวเลข (ท้ายป้าย) เพื่อไม่ให้กระทบส่วน prefix ไทย
@@ -106,7 +135,13 @@ _THAI_IN_DIGIT_ZONE: dict[str, str] = {
     "ง": "9",   # ง คล้าย 9
 }
 
-_CONFUSABLE_CHARS = set("ขฆมผปบดตซชศษรธนฌณถกคฎภ")
+# ตัวอักษรไทยที่ปรากฏในป้ายทะเบียนจริงน้อยมาก
+# ถ้า OCR อ่านได้ตัวใดตัวหนึ่งในกลุ่มนี้ ให้ลด score เล็กน้อย
+# เพื่อให้ตัวอักษรที่พบบ่อยในป้าย (เช่น ร แทน ฤ) มีโอกาสชนะมากขึ้น
+_RARE_IN_PLATES = frozenset("ฃฅฉฌฎฏฐฑฒณฤฦฝฬฮ")
+_RARE_PLATE_CHAR_PENALTY = 0.07  # ลด score ต่อ 1 ตัวอักษรหายาก
+
+_CONFUSABLE_CHARS = set("ขฆมผปบดตซชศษรธนฌณถกคฎภยล")
 _DIGIT_PREFIX_CONFUSION_MAP = {
     "0": ("ก", "ด", "อ"),
     "1": ("ด", "ก"),
@@ -395,43 +430,109 @@ class PlateOCR:
         valid_bonus = 0.25 if is_valid_plate(normalized) else 0.0
         format_adjust = self._plate_format_adjustment(normalized)
 
+        # ลด score ถ้า raw OCR result มีตัวอักษรที่หายากในป้ายทะเบียนจริง
+        # เช่น ฤ ฬ ฎ ฏ — ทำให้ confusion swap ที่ใช้ตัวอักษรทั่วไปมีโอกาสชนะมากขึ้น
+        rare_penalty = _RARE_PLATE_CHAR_PENALTY * sum(
+            1 for ch in normalized if ch in _RARE_IN_PLATES
+        )
+
         candidates = [{
             "name": "top_line",
             "text": normalized,
-            "confidence": max(0.0, min(base_conf + valid_bonus + format_adjust, 1.0)),
-            "score": base_conf + valid_bonus + format_adjust,
+            "confidence": max(0.0, min(base_conf + valid_bonus + format_adjust - rare_penalty, 1.0)),
+            "score": base_conf + valid_bonus + format_adjust - rare_penalty,
         }]
 
         for alt_text, swaps, reduction in self._expand_confusion_candidates(normalized):
             penalty = max(0.01, (0.06 * swaps) - reduction)
-            alt_bonus = 0.1 if is_valid_plate(alt_text) else 0.0
+            # ✨ เพิ่ม alt_bonus จาก 0.1 → 0.18 สำหรับ swap ที่เป็น valid plate
+            # เพื่อให้ confusion candidates มีโอกาสชนะ raw OCR result ที่อาจผิด
+            alt_bonus = 0.18 if is_valid_plate(alt_text) else 0.0
             alt_format = self._plate_format_adjustment(alt_text)
+            # ลด rare_penalty ของ alt ด้วย ถ้า swap ใช้ตัวอักษรหายากน้อยกว่า OCR
+            alt_rare_penalty = _RARE_PLATE_CHAR_PENALTY * sum(
+                1 for ch in alt_text if ch in _RARE_IN_PLATES
+            )
             candidates.append({
                 "name": f"confusion_swap_{swaps}",
                 "text": alt_text,
-                "confidence": max(0.0, min(base_conf + valid_bonus + alt_bonus + alt_format - penalty, 1.0)),
-                "score": base_conf + valid_bonus + alt_bonus + alt_format - penalty,
+                "confidence": max(0.0, min(
+                    base_conf + valid_bonus + alt_bonus + alt_format - penalty - alt_rare_penalty, 1.0
+                )),
+                "score": base_conf + valid_bonus + alt_bonus + alt_format - penalty - alt_rare_penalty,
             })
+
+        # ✨ NEW: ตัด digit ส่วนเกินออก เมื่อ OCR อ่านเลขซ้ำ (เช่น 6กธ55688 → 6กธ5688)
+        # เกิดขึ้นเมื่อตัวเลขที่ติดกันถูกอ่านซ้ำ ทำให้ digit zone มีเลขมากกว่า 4 ตัว
+        m_trim = re.match(r"^(\d?[ก-ฮ]{1,2})(\d{5,})$", normalized)
+        if m_trim:
+            pfx, digs = m_trim.groups()
+            for n_digits, trim_name in ((4, "trim_digits_4"), (3, "trim_digits_3")):
+                trimmed = pfx + digs[-n_digits:]
+                trim_valid = is_valid_plate(trimmed)
+                trim_bonus = 0.22 if trim_valid else 0.0
+                trim_format = self._plate_format_adjustment(trimmed)
+                trim_rare = _RARE_PLATE_CHAR_PENALTY * sum(
+                    1 for ch in trimmed if ch in _RARE_IN_PLATES
+                )
+                candidates.append({
+                    "name": trim_name,
+                    "text": trimmed,
+                    "confidence": max(0.0, min(
+                        base_conf + 0.25 + trim_bonus + trim_format - trim_rare, 1.0
+                    )),
+                    "score": base_conf + 0.25 + trim_bonus + trim_format - trim_rare,
+                })
+                # สร้าง confusion candidates ของ trimmed ด้วย เพื่อรับ Thai-char swap
+                for alt_text, swaps, reduction in self._expand_confusion_candidates(trimmed):
+                    penalty = max(0.01, (0.06 * swaps) - reduction)
+                    alt_bonus = 0.18 if is_valid_plate(alt_text) else 0.0
+                    alt_format = self._plate_format_adjustment(alt_text)
+                    alt_rare_penalty = _RARE_PLATE_CHAR_PENALTY * sum(
+                        1 for ch in alt_text if ch in _RARE_IN_PLATES
+                    )
+                    candidates.append({
+                        "name": f"trim_{n_digits}_confusion_swap_{swaps}",
+                        "text": alt_text,
+                        "confidence": max(0.0, min(
+                            base_conf + 0.25 + alt_bonus + alt_format - penalty - alt_rare_penalty, 1.0
+                        )),
+                        "score": base_conf + 0.25 + alt_bonus + alt_format - penalty - alt_rare_penalty,
+                    })
 
         if re.match(r"^[ก-ฮ]{1,2}\d{4}$", normalized):
             prefixed = f"1{normalized}"
-            candidates.append({
-                "name": "prefixed_digit",
-                "text": prefixed,
-                "confidence": max(0.0, min(base_conf + 0.1, 1.0)),
-                "score": base_conf + (0.22 if is_valid_plate(prefixed) else 0.02),
-            })
+            if is_valid_plate(prefixed):
+                # ✨ FIX: เดิม score = base+0.22 ทำให้แพ้ raw "มก6633" (base+0.33)
+                # ใส่ valid_bonus + pref_format ให้เทียบเท่า raw + tiny tiebreaker
+                pref_format = self._plate_format_adjustment(prefixed)  # 0.08 for digit-leading
+                candidates.append({
+                    "name": "prefixed_digit",
+                    "text": prefixed,
+                    "confidence": max(0.0, min(base_conf + 0.25 + pref_format + 0.02, 1.0)),
+                    "score": base_conf + 0.25 + pref_format + 0.02,  # base+0.35 > raw base+0.33
+                })
+            else:
+                candidates.append({
+                    "name": "prefixed_digit",
+                    "text": prefixed,
+                    "confidence": max(0.0, min(base_conf + 0.1, 1.0)),
+                    "score": base_conf + 0.02,
+                })
 
         if normalized and not normalized[0].isdigit():
             leading_digit = self._find_leading_digit(tokens, top_tokens)
             if leading_digit:
                 prefixed = f"{leading_digit}{normalized}"
                 if is_valid_plate(prefixed):
+                    # ✨ FIX: เดิม score = base+0.18 แพ้ raw (base+0.33)
+                    # มี token evidence ชัดเจน → ให้ bonus สูงกว่า prefixed_digit
+                    pref_format = self._plate_format_adjustment(prefixed)
                     candidates.append({
                         "name": "leading_digit_token",
                         "text": prefixed,
-                        "confidence": max(0.0, min(base_conf + 0.12, 1.0)),
-                        "score": base_conf + 0.18,
+                        "confidence": max(0.0, min(base_conf + 0.25 + pref_format + 0.07, 1.0)),
+                        "score": base_conf + 0.25 + pref_format + 0.07,  # base+0.40 — token evidence
                     })
 
         for alt_text, swaps in self._expand_digit_prefix_candidates(normalized):
@@ -847,7 +948,11 @@ class PlateOCR:
         return norm
 
     def _expand_confusion_candidates(self, text: str) -> Iterable[Tuple[str, int, float]]:
+        # รองรับทั้งป้าย Thai-leading (กข1234) และ digit-leading (1กข1234)
         match = re.match(r"^([ก-ฮ]{1,2})(\d+)$", text)
+        if not match:
+            # digit-leading: เลข 1 ตัว + อักษรไทย 1-2 ตัว + ตัวเลข เช่น 6กธ5688
+            match = re.match(r"^(\d[ก-ฮ]{1,2})(\d+)$", text)
         if not match:
             return []
 
