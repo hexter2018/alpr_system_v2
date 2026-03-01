@@ -36,7 +36,7 @@ _THAI_CONFUSION_MAP = {
     "ข": ("ฆ", "ผ", "ม", "ช"),  # ✨ เพิ่ม ช (ช→ข มีแล้ว แต่ ข→ช ขาด)
     "ฆ": ("ข", "ม", "ผ"),
     "ม": ("ข", "ฆ", "น"),       # ✨ FIX: เพิ่ม น — Bug case 2 (กน→กม)
-    "พ": ("ผ",),
+    "พ": ("ผ", "ฮ"),  # ✨ เพิ่ม ฮ (พ ↔ ฮ — case วฮ→วพ)
     "ฝ": ("ฟ", "ผ"),
     "ฟ": ("ฝ", "ผ"),            # เพิ่ม ผ (ฟ ↔ ผ)
     # ── กลุ่ม บ/ป ───────────────────────────────────────────────────────────────
@@ -73,9 +73,9 @@ _THAI_CONFUSION_MAP = {
     "ฎ": ("ฏ", "ภ"),
     "ฏ": ("ฎ",),
     "ภ": ("ฎ",),
-    # ── กลุ่ม ฬ/ฮ ───────────────────────────────────────────────────────────────
+    # ── กลุ่ม ฬ/ฮ/พ ─────────────────────────────────────────────────────────────
     "ฬ": ("ฮ",),
-    "ฮ": ("ฬ",),
+    "ฮ": ("ฬ", "พ"),  # ✨ เพิ่ม พ (ฮ ↔ พ — case วฮ→วพ)
 }
 _THAI_CONFUSION_PENALTY_REDUCTION = {
     # ── ข / ฆ / ม / ผ ── หน้าตาใกล้กันมากในฟอนต์ป้ายทะเบียน ──────────────────
@@ -119,6 +119,9 @@ _THAI_CONFUSION_PENALTY_REDUCTION = {
     # ── ช / ษ ────────────────────────────────────────────────────────────────────
     ("ช", "ษ"): 0.04,
     ("ษ", "ช"): 0.04,
+    # ── ฮ / พ ── ✨ NEW: ฮ หน้าตาคล้าย พ ในบางฟอนต์/แสงน้อย ────────────────────
+    ("ฮ", "พ"): 0.06,
+    ("พ", "ฮ"): 0.06,
 }
 # Thai chars ที่ OCR มักอ่านผิดเป็น digit ในส่วน digit zone ของป้าย
 # ใช้เฉพาะตำแหน่งที่คาดว่าเป็นตัวเลข (ท้ายป้าย) เพื่อไม่ให้กระทบส่วน prefix ไทย
@@ -499,23 +502,37 @@ class PlateOCR:
 
         if re.match(r"^[ก-ฮ]{1,2}\d{4}$", normalized):
             prefixed = f"1{normalized}"
-            candidates.append({
-                "name": "prefixed_digit",
-                "text": prefixed,
-                "confidence": max(0.0, min(base_conf + 0.1, 1.0)),
-                "score": base_conf + (0.22 if is_valid_plate(prefixed) else 0.02),
-            })
+            if is_valid_plate(prefixed):
+                # ✨ FIX: เดิม score = base+0.22 ทำให้แพ้ raw "มก6633" (base+0.33)
+                # ใส่ valid_bonus + pref_format ให้เทียบเท่า raw + tiny tiebreaker
+                pref_format = self._plate_format_adjustment(prefixed)  # 0.08 for digit-leading
+                candidates.append({
+                    "name": "prefixed_digit",
+                    "text": prefixed,
+                    "confidence": max(0.0, min(base_conf + 0.25 + pref_format + 0.02, 1.0)),
+                    "score": base_conf + 0.25 + pref_format + 0.02,  # base+0.35 > raw base+0.33
+                })
+            else:
+                candidates.append({
+                    "name": "prefixed_digit",
+                    "text": prefixed,
+                    "confidence": max(0.0, min(base_conf + 0.1, 1.0)),
+                    "score": base_conf + 0.02,
+                })
 
         if normalized and not normalized[0].isdigit():
             leading_digit = self._find_leading_digit(tokens, top_tokens)
             if leading_digit:
                 prefixed = f"{leading_digit}{normalized}"
                 if is_valid_plate(prefixed):
+                    # ✨ FIX: เดิม score = base+0.18 แพ้ raw (base+0.33)
+                    # มี token evidence ชัดเจน → ให้ bonus สูงกว่า prefixed_digit
+                    pref_format = self._plate_format_adjustment(prefixed)
                     candidates.append({
                         "name": "leading_digit_token",
                         "text": prefixed,
-                        "confidence": max(0.0, min(base_conf + 0.12, 1.0)),
-                        "score": base_conf + 0.18,
+                        "confidence": max(0.0, min(base_conf + 0.25 + pref_format + 0.07, 1.0)),
+                        "score": base_conf + 0.25 + pref_format + 0.07,  # base+0.40 — token evidence
                     })
 
         for alt_text, swaps in self._expand_digit_prefix_candidates(normalized):
