@@ -30,6 +30,9 @@ class PlateDetector:
         self.iou = float(os.getenv("DETECTOR_IOU", "0.45"))
         self.imgsz = int(os.getenv("DETECTOR_IMGSZ", "640"))
         self.class_id = int(os.getenv("DETECTOR_CLASS_ID", "0"))
+        # Padding ratios for crop box — prevents cutting vowels/chars at edge
+        self.pad_x = float(os.getenv("DETECTOR_CROP_PAD_X", "0.07"))  # 7% horizontal
+        self.pad_y = float(os.getenv("DETECTOR_CROP_PAD_Y", "0.10"))  # 10% vertical (for top/bottom vowels)
 
         if not self.model_path:
             # Try to find model automatically
@@ -88,10 +91,16 @@ class PlateDetector:
             raise RuntimeError(f"Cannot read image: {image_path}")
 
         h, w = bgr.shape[:2]
-        x1 = max(0, min(x1, w - 1))
-        x2 = max(0, min(x2, w - 1))
-        y1 = max(0, min(y1, h - 1))
-        y2 = max(0, min(y2, h - 1))
+
+        # Apply padding to avoid clipping top/bottom vowels and edge characters
+        bw = x2 - x1
+        bh = y2 - y1
+        pad_x = int(bw * self.pad_x)
+        pad_y = int(bh * self.pad_y)
+        x1 = max(0, x1 - pad_x)
+        x2 = min(w - 1, x2 + pad_x)
+        y1 = max(0, y1 - pad_y)
+        y2 = min(h - 1, y2 + pad_y)
 
         if x2 <= x1 or y2 <= y1:
             raise RuntimeError(f"Invalid crop box: {(x1, y1, x2, y2)}")

@@ -7,6 +7,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List
+from datetime import timedelta
 from sqlalchemy import text, create_engine
 from sqlalchemy.orm import sessionmaker
 from datetime import timezone
@@ -39,6 +40,10 @@ STORAGE_DIR = Path(os.getenv("STORAGE_DIR", "./storage"))
 MASTER_CONF_THRESHOLD = float(os.getenv("MASTER_CONF_THRESHOLD", "0.95"))
 FEEDBACK_EXPORT_LIMIT = int(os.getenv("FEEDBACK_EXPORT_LIMIT", "200"))
 TRAINING_DIR = Path(os.getenv("TRAINING_DIR", str(STORAGE_DIR / "training")))
+
+# Deduplication: ป้องกัน plate เดิมถูก insert ซ้ำในช่วงเวลาสั้น ๆ (จาก RTSP หลายเฟรม)
+DEDUP_WINDOW_SEC = int(os.getenv("DEDUP_WINDOW_SEC", "30"))          # วินาที
+DEDUP_MIN_CONF_DELTA = float(os.getenv("DEDUP_MIN_CONF_DELTA", "0.05"))  # ถ้า conf ใหม่สูงกว่าเก่าแค่นี้ถึงจะข้าม
 
 
 def _parse_storage_aliases() -> list[tuple[Path, Path]]:
@@ -126,6 +131,44 @@ def norm_plate_text(s: str) -> str:
     return s
 
 
+def _find_recent_duplicate(
+    db,
+    camera_id,
+    plate_text_norm: str,
+    within_sec: int = DEDUP_WINDOW_SEC,
+) -> Optional[Dict[str, Any]]:
+    """
+    ตรวจสอบว่ามีผล plate_read ที่มี plate_text_norm เดิมจาก camera เดิม
+    ภายใน within_sec วินาทีที่ผ่านมาหรือไม่
+
+    คืนค่า dict {"read_id": int, "confidence": float} ถ้าพบ ไม่พบคืน None
+    """
+    if not plate_text_norm or not camera_id:
+        return None
+    since = datetime.now(timezone.utc) - timedelta(seconds=within_sec)
+    row = db.execute(
+        text("""
+            SELECT pr.id, pr.confidence
+            FROM plate_reads pr
+            JOIN detections d  ON d.id  = pr.detection_id
+            JOIN captures  c  ON c.id  = d.capture_id
+            WHERE c.camera_id       = :camera_id
+              AND pr.plate_text_norm = :plate_text_norm
+              AND pr.created_at     >= :since
+            ORDER BY pr.confidence DESC
+            LIMIT 1
+        """),
+        {
+            "camera_id": camera_id,
+            "plate_text_norm": plate_text_norm,
+            "since": since,
+        },
+    ).first()
+    if row:
+        return {"read_id": int(row[0]), "confidence": float(row[1])}
+    return None
+
+
 def resolve_image_path(image_path: str) -> Optional[Path]:
     candidate = Path(image_path)
     if candidate.exists():
@@ -207,6 +250,26 @@ def process_capture(capture_id: int, image_path: str):
                 raw.get("candidates"),
             )
 
+
+        # 2.5) Deduplication — ตรวจว่าป้ายนี้จาก camera เดียวกันถูกอ่านไปแล้วในช่วง DEDUP_WINDOW_SEC
+        if plate_text_norm:
+            dup = _find_recent_duplicate(db, camera_id, plate_text_norm)
+            if dup and dup["confidence"] >= conf - DEDUP_MIN_CONF_DELTA:
+                # มี read ที่ดีกว่าหรือดีพอ ๆ กันอยู่แล้ว → ไม่ insert ซ้ำ
+                log.info(
+                    "Dedup skip: capture_id=%s plate=%s already read_id=%s conf=%.3f (new=%.3f)",
+                    capture_id, plate_text_norm, dup["read_id"], dup["confidence"], conf,
+                )
+                return {
+                    "ok": True,
+                    "deduplicated": True,
+                    "capture_id": int(capture_id),
+                    "existing_read_id": dup["read_id"],
+                    "plate_text": plate_text,
+                    "plate_text_norm": plate_text_norm,
+                    "province": province,
+                    "confidence": conf,
+                }
 
         # 3) INSERT detections (เก็บข้อมูล detection/crop/meta ที่นี่)
         # *** IMPORTANT: ต้องให้ตรงกับ schema ของ table detections ของคุณ ***
