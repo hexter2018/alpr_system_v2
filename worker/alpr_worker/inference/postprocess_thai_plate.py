@@ -12,9 +12,21 @@ log = logging.getLogger(__name__)
 
 _THAI_DIGIT_MAP = str.maketrans("๐๑๒๓๔๕๖๗๘๙", "0123456789")
 _PLATE_CLEAN_RE = re.compile(r"[^0-9ก-ฮ]")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Plate Patterns — ครอบคลุมรูปแบบป้ายทะเบียนไทยทั่วไป
+#   กข 1234    → ^[ก-ฮ]{2}\d{3,4}$       (ป้ายจังหวัดทั่วไป)
+#   1กข 1234   → ^\d[ก-ฮ]{2}\d{3,4}$     (ป้าย กทม. ชุดใหม่)
+#   กข 123     → ^[ก-ฮ]{2}\d{1,4}$       (ป้ายเก่า / พิเศษ บางจังหวัด)
+#   กข1234     → normalized form (no space)
+#   ก 1234     → ^[ก-ฮ]{1}\d{3,4}$       (ป้ายรถบรรทุก/รถพ่วง)
+# ─────────────────────────────────────────────────────────────────────────────
 _PLATE_PATTERNS = [
-    re.compile(r"^\d[ก-ฮ]{2}\d{3,4}$"),
-    re.compile(r"^[ก-ฮ]{2}\d{3,4}$"),
+    re.compile(r"^\d[ก-ฮ]{2}\d{3,4}$"),   # 1กข 1234 — กทม. ใหม่
+    re.compile(r"^[ก-ฮ]{2}\d{3,4}$"),      # กข 1234  — จังหวัดทั่วไป
+    re.compile(r"^[ก-ฮ]{1}\d{3,4}$"),      # ก 1234   — รถบรรทุก/พ่วง
+    re.compile(r"^\d[ก-ฮ]{1}\d{3,4}$"),    # 1ก 1234  — variant
+    re.compile(r"^[ก-ฮ]{2}\d{1,2}$"),      # กข 12    — ป้ายทดสอบ/ชั่วคราว
 ]
 
 _CONFUSABLE_PAIRS = {
@@ -76,6 +88,20 @@ def plate_pattern_match(text: str) -> bool:
 
 def plate_pattern_bonus(text: str) -> float:
     return 0.18 if plate_pattern_match(text) else -0.55
+
+
+def fuzzy_province_fix(text: str, threshold: int = 60) -> str:
+    """
+    Province Fuzzy Matching — ถ้า OCR อ่านชื่อจังหวัดได้ใกล้เคียงเกิน threshold%
+    ให้ปัดเป็นชื่อจังหวัดนั้นอัตโนมัติ (ใช้ threshold ต่ำกว่าค่า default ของ match_province
+    เพื่อรับ OCR ที่อ่านบางตัวผิด เช่น ชลบุ/ชลบรี → ชลบุรี)
+    """
+    if not text:
+        return ""
+    matched, score = match_province(text, threshold=threshold)
+    if matched and score >= threshold:
+        return matched
+    return ""
 
 
 def confusion_aware_distance(a: str, b: str) -> float:

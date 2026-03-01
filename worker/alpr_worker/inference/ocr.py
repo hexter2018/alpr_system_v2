@@ -16,11 +16,13 @@ import torch
 
 from .provinces import match_province, normalize_province, province_candidates
 from .postprocess_thai_plate import (
+    fuzzy_province_fix,
     load_province_prior,
     normalize_plate_text,
     rerank_plate_candidates,
     resolve_province,
 )
+from .textnorm import apply_ocr_latin_fix
 from .validate import is_valid_plate
 
 log = logging.getLogger(__name__)
@@ -64,8 +66,7 @@ _THAI_CONFUSION_MAP = {
     "ย": ("ล",),
     "ฬ": ("ฮ",),
     "ฮ": ("ฬ",),
-    "ซ": ("ช",),
-
+    # หมายเหตุ: "ซ": ("ช",) ถูก define แล้วที่บรรทัดก่อนหน้า ไม่ต้องซ้ำ
 }
 _THAI_CONFUSION_PENALTY_REDUCTION = {
     ("ข", "ฆ"): 0.04,
@@ -93,6 +94,18 @@ _THAI_CONFUSION_PENALTY_REDUCTION = {
     ("ช", "ษ"): 0.04,
     ("ษ", "ช"): 0.04,
 }
+# Thai chars ที่ OCR มักอ่านผิดเป็น digit ในส่วน digit zone ของป้าย
+# ใช้เฉพาะตำแหน่งที่คาดว่าเป็นตัวเลข (ท้ายป้าย) เพื่อไม่ให้กระทบส่วน prefix ไทย
+_THAI_IN_DIGIT_ZONE: dict[str, str] = {
+    "อ": "0",   # อ กลมคล้าย 0 — พบบ่อยที่สุด
+    "เ": "1",   # เ เส้นตรงคล้าย 1
+    "ด": "1",   # ด คล้าย 1 ในบางฟอนต์ (ตรงกับ _DIGIT_PREFIX_CONFUSION_MAP["0/1"])
+    "ก": "6",   # ก คล้าย 6 ในบางกรณี
+    "บ": "6",   # บ คล้าย 6
+    "ว": "9",   # ว บางครั้งอ่านเป็น 9
+    "ง": "9",   # ง คล้าย 9
+}
+
 _CONFUSABLE_CHARS = set("ขฆมผปบดตซชศษรธนฌณถกคฎภ")
 _DIGIT_PREFIX_CONFUSION_MAP = {
     "0": ("ก", "ด", "อ"),
@@ -108,6 +121,8 @@ _DEFAULT_VARIANT_NAMES = (
     "clahe",
     "adaptive",
     "otsu",
+    "gamma_bright",
+    "bilateral_sharpen",
     "upscale_x2",
     "upscale_adaptive_x2",
     "upscale_otsu_x2",
@@ -253,6 +268,15 @@ class PlateOCR:
             },
         )
 
+    @staticmethod
+    def _apply_gamma(gray: np.ndarray, gamma: float) -> np.ndarray:
+        """Gamma correction — γ<1 brightens dark images, γ>1 darkens bright ones."""
+        lut = np.array([
+            min(255, int((i / 255.0) ** gamma * 255))
+            for i in range(256)
+        ], dtype=np.uint8)
+        return lut[gray]
+
     def _build_variants(self, image: np.ndarray) -> List[Tuple[str, np.ndarray]]:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         clahe = cv2.createCLAHE(clipLimit=2.8, tileGridSize=(8, 8)).apply(gray)
@@ -261,6 +285,18 @@ class PlateOCR:
         up2 = cv2.resize(clahe, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
         up2_adaptive = cv2.resize(adaptive, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_NEAREST)
         up2_otsu = cv2.resize(otsu, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_NEAREST)
+
+        # γ=0.5 — brightens dark / backlit plates so chars stand out
+        gamma_bright = self._apply_gamma(gray, gamma=0.5)
+        gamma_clahe = cv2.createCLAHE(clipLimit=3.5, tileGridSize=(4, 4)).apply(gamma_bright)
+
+        # Bilateral filter removes noise while keeping edges sharp, then unsharp-mask
+        bilateral = cv2.bilateralFilter(gray, d=9, sigmaColor=75, sigmaSpace=75)
+        bilateral_clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8)).apply(bilateral)
+        bilateral_sharpen = cv2.filter2D(
+            bilateral_clahe, -1,
+            np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32),
+        )
 
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         lower_green = np.array([35, 40, 40])
@@ -275,6 +311,8 @@ class PlateOCR:
             ("clahe", clahe),
             ("adaptive", adaptive),
             ("otsu", otsu),
+            ("gamma_bright", gamma_clahe),          # ✨ NEW: dark/backlit plates
+            ("bilateral_sharpen", bilateral_sharpen),  # ✨ NEW: noisy/reflective plates
             ("green_mask", green_inv),
             ("upscale_x2", up2),
             ("upscale_adaptive_x2", up2_adaptive),
@@ -461,6 +499,10 @@ class PlateOCR:
             for text in ["".join(texts)] + texts:
                 province, score = match_province(text, threshold=roi_threshold)
                 province = normalize_province(province or text, threshold=roi_threshold)
+                # Fuzzy fallback: ถ้า match_province ไม่ได้ ลองใช้ threshold ต่ำลง (60%)
+                if not province:
+                    province = fuzzy_province_fix(text, threshold=60)
+                    score = 60.0 if province else 0.0
                 if province and score > best["score"]:
                     best = {"province": province, "score": float(score), "variant": name, "texts": texts}
 
@@ -774,11 +816,33 @@ class PlateOCR:
     def _normalize_text(self, text: str) -> str:
         norm = (text or "").translate(_THAI_DIGIT_MAP)
         norm = re.sub(r"[\s\-_.]", "", norm)
+        # แปลง Latin confusables (O→0, B→8, ฯลฯ) ก่อน strip เพื่อไม่ให้ตัวเลขหาย
+        norm = apply_ocr_latin_fix(norm)
         norm = re.sub(r"[^0-9A-Za-zก-๙]", "", norm)
         return norm
 
+    @staticmethod
+    def _fix_digit_zone_thai(text: str) -> str:
+        """
+        แปลง Thai chars ที่ติดมาในส่วน digit zone ของป้าย → digit ที่ถูกต้อง
+        ทำงานแบบ position-aware: แยก prefix (ตัวไทย/digit นำหน้า) ออกก่อน
+        แล้วแก้เฉพาะส่วนหลัง (ที่ควรเป็นตัวเลขล้วน)
+
+        เช่น: ฝมอ175 → ฝม0175  (อ ในตำแหน่ง digit → 0)
+              ฝมเ175 → ฝม1175  (เ ในตำแหน่ง digit → 1)
+        """
+        # รูปแบบป้าย: (optional digit)(1-2 Thai)(digits + Thai mixed)
+        m = re.match(r"^(\d?[ก-ฮ]{1,2})([ก-ฮ0-9]+)$", text)
+        if not m:
+            return text
+        prefix, digit_zone = m.groups()
+        fixed = "".join(_THAI_IN_DIGIT_ZONE.get(ch, ch) for ch in digit_zone)
+        return prefix + fixed
+
     def _normalize_plate(self, text: str) -> str:
         norm = self._normalize_text(text)
+        # แก้ Thai chars ที่หลุดเข้ามาในส่วน digit zone ก่อน strip
+        norm = self._fix_digit_zone_thai(norm)
         norm = re.sub(r"[^0-9ก-๙]", "", norm)
         return norm
 
