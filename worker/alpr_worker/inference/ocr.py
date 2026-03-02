@@ -445,9 +445,11 @@ class PlateOCR:
 
         for alt_text, swaps, reduction in self._expand_confusion_candidates(normalized):
             penalty = max(0.01, (0.06 * swaps) - reduction)
-            # ✨ เพิ่ม alt_bonus จาก 0.1 → 0.18 สำหรับ swap ที่เป็น valid plate
+            # ✨ เพิ่ม alt_bonus จาก 0.18 → 0.30 สำหรับ swap ที่เป็น valid plate
             # เพื่อให้ confusion candidates มีโอกาสชนะ raw OCR result ที่อาจผิด
-            alt_bonus = 0.18 if is_valid_plate(alt_text) else 0.0
+            # NOTE: avg_conf ถูก cap ที่ 1.0 ใน aggregation ทำให้ต้องใช้ bonus สูงพอ
+            # เพื่อให้ score_ratio gap มีนัยสำคัญในขั้น reranking
+            alt_bonus = 0.30 if is_valid_plate(alt_text) else 0.0
             alt_format = self._plate_format_adjustment(alt_text)
             # ลด rare_penalty ของ alt ด้วย ถ้า swap ใช้ตัวอักษรหายากน้อยกว่า OCR
             alt_rare_penalty = _RARE_PLATE_CHAR_PENALTY * sum(

@@ -38,8 +38,8 @@ _CONFUSABLE_PAIRS = {
     ("ม", "ฆ"),
     ("ผ", "ฆ"),
     ("ฆ", "ผ"),
-    ("ร", "ธ"),
-    ("ธ", "ร"),
+    ("ท", "ธ"),
+    ("ธ", "ท"),
     ("น", "ม"),
     ("ม", "น"),
     ("ฌ", "ณ"),
@@ -184,8 +184,8 @@ def rerank_plate_candidates(
             consensus_ratio = float(cand.get("consensus_ratio", 0.0))
             count_ratio = float(cand.get("count", 0)) / variant_count
             score_ratio = float(cand.get("score", 0.0)) / max_score
-            base_score = (0.45 * avg_conf) + (consensus_weight * consensus_ratio) + (0.2 * count_ratio)
-            final = base_score + (0.15 * score_ratio) + (pattern_weight * (1.0 if plate_pattern_match(text) else -1.0))
+            base_score = (0.35 * avg_conf) + (consensus_weight * consensus_ratio) + (0.2 * count_ratio)
+            final = base_score + (0.25 * score_ratio) + (pattern_weight * (1.0 if plate_pattern_match(text) else -1.0))
             final += _confusable_bonus(text, peers)
             scored.append({
                 "text": text,
