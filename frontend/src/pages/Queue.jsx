@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState, useRef } from 'react'
+import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react'
 import { absImageUrl, deleteRead, listPending, verifyRead } from '../lib/api.js'
 import { useTheme } from '../lib/ThemeContext.jsx'
 import {
@@ -15,9 +15,29 @@ import {
   Spinner,
   SkeletonCard,
 } from '../components/UIComponents.jsx'
-import { RefreshCw, ListChecks, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { RefreshCw, ListChecks, ArrowUpDown, ArrowUp, ArrowDown, ChevronDown, Search, X, Check } from 'lucide-react'
 
-/* ===== PROVINCES DATA ===== */
+/* ===== ALL 77 THAI PROVINCES ===== */
+const ALL_PROVINCES = [
+  "กรุงเทพมหานคร","กระบี่","กาญจนบุรี","กาฬสินธุ์","กำแพงเพชร","ขอนแก่น","จันทบุรี","ฉะเชิงเทรา","ชลบุรี","ชัยนาท",
+  "ชัยภูมิ","ชุมพร","เชียงราย","เชียงใหม่","ตรัง","ตราด","ตาก","นครนายก","นครปฐม","นครพนม","นครราชสีมา",
+  "นครศรีธรรมราช","นครสวรรค์","นนทบุรี","นราธิวาส","น่าน","บึงกาฬ","บุรีรัมย์","ปทุมธานี","ประจวบคีรีขันธ์",
+  "ปราจีนบุรี","ปัตตานี","พระนครศรีอยุธยา","พะเยา","พังงา","พัทลุง","พิจิตร","พิษณุโลก","เพชรบุรี","เพชรบูรณ์",
+  "แพร่","ภูเก็ต","มหาสารคาม","มุกดาหาร","แม่ฮ่องสอน","ยะลา","ยโสธร","ร้อยเอ็ด","ระนอง","ระยอง","ราชบุรี",
+  "ลพบุรี","ลำปาง","ลำพูน","เลย","ศรีสะเกษ","สกลนคร","สงขลา","สตูล","สมุทรปราการ","สมุทรสงคราม","สมุทรสาคร",
+  "สระแก้ว","สระบุรี","สิงห์บุรี","สุโขทัย","สุพรรณบุรี","สุราษฎร์ธานี","สุรินทร์","หนองคาย","หนองบัวลำภู","อ่างทอง",
+  "อำนาจเจริญ","อุดรธานี","อุตรดิตถ์","อุทัยธานี","อุบลราชธานี",
+]
+
+/* Province aliases for quick search */
+const PROVINCE_ALIASES = {
+  "กทม": "กรุงเทพมหานคร", "กรุงเทพ": "กรุงเทพมหานคร", "bkk": "กรุงเทพมหานคร",
+  "โคราช": "นครราชสีมา", "อยุธยา": "พระนครศรีอยุธยา", "ปากน้ำ": "สมุทรปราการ",
+  "อุบล": "อุบลราชธานี", "อุดร": "อุดรธานี", "สุราษ": "สุราษฎร์ธานี",
+  "ชล": "ชลบุรี", "นน": "นนทบุรี",
+}
+
+/* ===== POPULAR PROVINCES ===== */
 const POPULAR_PROVINCES = [
   { value: 'กรุงเทพมหานคร', label: 'กทม' },
   { value: 'สมุทรปราการ', label: 'ปราการ' },
@@ -26,6 +46,193 @@ const POPULAR_PROVINCES = [
   { value: 'ปทุมธานี', label: 'ปทุม' },
   { value: 'ชลบุรี', label: 'ชล' },
 ]
+
+/* ===== SEARCHABLE PROVINCE DROPDOWN ===== */
+function ProvinceDropdown({ value, onChange, light, highlightField }) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const containerRef = useRef(null)
+  const inputRef = useRef(null)
+  const listRef = useRef(null)
+  const [highlightedIdx, setHighlightedIdx] = useState(0)
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return ALL_PROVINCES
+    const q = search.trim().toLowerCase()
+    // check alias first
+    const aliasMatch = PROVINCE_ALIASES[q]
+    if (aliasMatch) return [aliasMatch]
+    // filter: match from the beginning of province name OR contains the search text
+    return ALL_PROVINCES.filter(p => {
+      const pLower = p.toLowerCase()
+      return pLower.startsWith(q) || pLower.includes(q)
+    })
+  }, [search])
+
+  // Reset highlighted index when filtered list changes
+  useEffect(() => {
+    setHighlightedIdx(0)
+  }, [filtered])
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return
+    const handler = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false)
+        setSearch('')
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  // Scroll highlighted item into view
+  useEffect(() => {
+    if (!open || !listRef.current) return
+    const el = listRef.current.children[highlightedIdx]
+    if (el) el.scrollIntoView({ block: 'nearest' })
+  }, [highlightedIdx, open])
+
+  const selectProvince = (prov) => {
+    onChange(prov)
+    setOpen(false)
+    setSearch('')
+  }
+
+  const handleKeyDown = (e) => {
+    if (!open) {
+      if (e.key === 'ArrowDown' || e.key === 'Enter') {
+        e.preventDefault()
+        setOpen(true)
+      }
+      return
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setHighlightedIdx(prev => Math.min(prev + 1, filtered.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setHighlightedIdx(prev => Math.max(prev - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (filtered[highlightedIdx]) selectProvince(filtered[highlightedIdx])
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      setOpen(false)
+      setSearch('')
+    }
+  }
+
+  const provinceMissing = !value.trim()
+
+  return (
+    <div ref={containerRef} className="relative">
+      <label className={`block text-sm font-medium mb-1.5 ${light ? 'text-slate-700' : 'text-slate-300'}`}>
+        Province
+      </label>
+
+      {/* Trigger button */}
+      <button
+        type="button"
+        onClick={() => {
+          setOpen(!open)
+          if (!open) setTimeout(() => inputRef.current?.focus(), 50)
+        }}
+        className={`
+          w-full flex items-center justify-between rounded-lg border px-3 py-2 text-sm text-left transition-colors
+          ${highlightField === 'province' ? 'ring-1 ring-blue-500' : ''}
+          ${provinceMissing
+            ? light
+              ? 'border-amber-400 bg-amber-50'
+              : 'border-amber-500/30 bg-amber-500/5'
+            : ''
+          }
+          ${light
+            ? `bg-white text-slate-900 ${!provinceMissing ? 'border-slate-300' : ''} hover:border-slate-400`
+            : `bg-slate-950/80 text-slate-100 ${!provinceMissing ? 'border-white/[0.1]' : ''} hover:border-white/[0.2]`
+          }
+        `}
+      >
+        <span className={value ? '' : light ? 'text-slate-400' : 'text-slate-500'}>
+          {value || 'Select province...'}
+        </span>
+        <ChevronDown className={`h-4 w-4 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''} ${light ? 'text-slate-400' : 'text-slate-500'}`} />
+      </button>
+
+      {provinceMissing && (
+        <p className="mt-1 text-xs text-amber-500 flex items-center gap-1">
+          Province not detected -- please review
+        </p>
+      )}
+
+      {/* Dropdown panel */}
+      {open && (
+        <div className={`absolute z-50 mt-1 w-full rounded-lg border shadow-xl overflow-hidden ${
+          light
+            ? 'border-slate-200 bg-white shadow-slate-200/50'
+            : 'border-white/[0.1] bg-slate-900 shadow-black/40'
+        }`}>
+          {/* Search input */}
+          <div className={`flex items-center gap-2 px-3 py-2 border-b ${light ? 'border-slate-100' : 'border-white/[0.06]'}`}>
+            <Search className={`h-3.5 w-3.5 flex-shrink-0 ${light ? 'text-slate-400' : 'text-slate-500'}`} />
+            <input
+              ref={inputRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Search province..."
+              className={`w-full bg-transparent text-sm outline-none placeholder:text-slate-500 ${
+                light ? 'text-slate-900' : 'text-slate-100'
+              }`}
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className={`flex-shrink-0 ${light ? 'text-slate-400 hover:text-slate-600' : 'text-slate-500 hover:text-slate-300'}`}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Province list */}
+          <ul
+            ref={listRef}
+            className="max-h-56 overflow-y-auto py-1"
+            role="listbox"
+          >
+            {filtered.length === 0 ? (
+              <li className={`px-3 py-2 text-sm ${light ? 'text-slate-400' : 'text-slate-500'}`}>
+                No matching province
+              </li>
+            ) : (
+              filtered.map((prov, idx) => (
+                <li
+                  key={prov}
+                  role="option"
+                  aria-selected={prov === value}
+                  onClick={() => selectProvince(prov)}
+                  onMouseEnter={() => setHighlightedIdx(idx)}
+                  className={`flex items-center justify-between px-3 py-1.5 text-sm cursor-pointer transition-colors ${
+                    idx === highlightedIdx
+                      ? light ? 'bg-blue-50 text-blue-700' : 'bg-blue-600/20 text-blue-300'
+                      : light ? 'text-slate-700 hover:bg-slate-50' : 'text-slate-300 hover:bg-white/[0.04]'
+                  } ${prov === value ? 'font-medium' : ''}`}
+                >
+                  <span>{prov}</span>
+                  {prov === value && <Check className="h-3.5 w-3.5 flex-shrink-0 text-blue-500" />}
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
 
 /* ===== CONFUSABLE CHARACTER FIXES ===== */
 const CONFUSION_FIXES = {
@@ -263,6 +470,11 @@ function VerificationItem({
   const [lastChange, setLastChange] = useState(null)
   const [highlightField, setHighlightField] = useState(null)
 
+  /* Track original values to detect edits */
+  const originalPlate = item.plate_text || ''
+  const originalProvince = item.province || ''
+  const isEdited = plateText !== originalPlate || province !== originalProvince
+
   const provinceMissing = !province.trim()
 
   useEffect(() => {
@@ -281,7 +493,7 @@ function VerificationItem({
         onCorrect(plateText, province, note)
       } else if (e.key === 'Enter' && !e.ctrlKey && !isTyping) {
         e.preventDefault()
-        onConfirm()
+        if (!isEdited) onConfirm()
       } else if (e.key === 'Delete' && !isTyping) {
         e.preventDefault()
         setDeleteOpen(true)
@@ -290,7 +502,7 @@ function VerificationItem({
         handleNormalize()
       }
     },
-    [busy, plateText, province, note, onConfirm, onCorrect]
+    [busy, plateText, province, note, isEdited, onConfirm, onCorrect]
   )
 
   useEffect(() => {
@@ -486,18 +698,15 @@ function VerificationItem({
                   </div>
                 </div>
 
-                {/* Province */}
-                <Input
-                  label="Province"
+                {/* Province Searchable Dropdown */}
+                <ProvinceDropdown
                   value={province}
-                  onChange={(e) => setProvince(e.target.value)}
-                  placeholder="Enter province"
-                  className={`${
-                    provinceMissing
-                      ? light ? 'border-amber-400 bg-amber-50' : 'border-amber-500/30 bg-amber-500/5'
-                      : ''
-                  } ${highlightField === 'province' ? 'ring-1 ring-blue-500' : ''}`}
-                  hint={provinceMissing ? 'Province not detected -- please review' : undefined}
+                  onChange={(val) => {
+                    setProvince(val)
+                    setHighlightField('province')
+                  }}
+                  light={light}
+                  highlightField={highlightField}
                 />
 
                 {/* Province Quick Select */}
@@ -515,14 +724,34 @@ function VerificationItem({
                           setHighlightField('province')
                         }}
                         className={`px-2.5 py-1 text-xs font-medium rounded-md border transition-colors ${
-                          light
-                            ? 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-                            : 'border-white/[0.08] bg-white/[0.03] text-slate-300 hover:bg-white/[0.08] hover:text-white'
+                          province === prov.value
+                            ? light
+                              ? 'border-blue-300 bg-blue-50 text-blue-700'
+                              : 'border-blue-500/40 bg-blue-500/20 text-blue-300'
+                            : light
+                              ? 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                              : 'border-white/[0.08] bg-white/[0.03] text-slate-300 hover:bg-white/[0.08] hover:text-white'
                         }`}
                       >
                         {prov.label}
                       </button>
                     ))}
+                    {province && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProvince('')
+                          setHighlightField('province')
+                        }}
+                        className={`px-2.5 py-1 text-xs font-medium rounded-md border transition-colors ${
+                          light
+                            ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100'
+                            : 'border-red-500/20 bg-red-500/10 text-red-400 hover:bg-red-500/20'
+                        }`}
+                      >
+                        Clear
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -555,26 +784,54 @@ function VerificationItem({
 
               {/* Action Buttons */}
               <div className={`mt-5 pt-4 border-t ${light ? 'border-slate-100' : 'border-white/[0.06]'}`}>
+                {/* Edited indicator */}
+                {isEdited && (
+                  <div className={`mb-3 flex items-center gap-2 rounded-lg px-3 py-2 text-xs ${
+                    light
+                      ? 'bg-amber-50 border border-amber-200 text-amber-700'
+                      : 'bg-amber-500/10 border border-amber-500/20 text-amber-400'
+                  }`}>
+                    <svg className="h-3.5 w-3.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.168 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                    </svg>
+                    Fields have been edited. Use <strong className="font-semibold">Save Edit</strong> (Ctrl+Enter) to save changes.
+                  </div>
+                )}
+
                 <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    disabled={busy}
-                    onClick={onConfirm}
-                    className="flex-1"
-                  >
-                    Confirm
-                    <kbd className="ml-1.5 px-1 py-0.5 text-[10px] font-mono bg-blue-700/50 rounded text-blue-200">
-                      Enter
-                    </kbd>
-                  </Button>
+                  {/* Confirm button - disabled when fields have been edited */}
+                  <div className="flex-1 relative group">
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      disabled={busy || isEdited}
+                      onClick={onConfirm}
+                      className="w-full"
+                    >
+                      Confirm
+                      <kbd className={`ml-1.5 px-1 py-0.5 text-[10px] font-mono rounded ${
+                        isEdited
+                          ? 'bg-blue-800/30 text-blue-400'
+                          : 'bg-blue-700/50 text-blue-200'
+                      }`}>
+                        Enter
+                      </kbd>
+                    </Button>
+                    {isEdited && (
+                      <div className={`absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded px-2 py-1 text-[10px] font-medium opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none ${
+                        light ? 'bg-slate-800 text-white' : 'bg-white text-slate-900'
+                      }`}>
+                        Use Save Edit when fields are modified
+                      </div>
+                    )}
+                  </div>
 
                   <Button
                     variant="secondary"
                     size="sm"
                     disabled={busy}
                     onClick={() => onCorrect(plateText, province, note)}
-                    className="flex-1"
+                    className={`flex-1 ${isEdited ? light ? 'ring-2 ring-blue-400 ring-offset-1 ring-offset-white' : 'ring-2 ring-blue-500 ring-offset-1 ring-offset-slate-900' : ''}`}
                   >
                     Save Edit
                     <kbd className={`ml-1.5 px-1 py-0.5 text-[10px] font-mono rounded ${
