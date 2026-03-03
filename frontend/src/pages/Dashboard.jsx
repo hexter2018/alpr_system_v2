@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useState, useRef, useCallback } from 'react'
 import createGlobe from 'cobe'
 import { getKPI } from '../lib/api.js'
 import { 
@@ -10,21 +10,24 @@ import {
   Zap,
   Target,
   Cpu,
-  Radio,
+  Camera,
   Shield,
-  AlertCircle
+  AlertCircle,
+  ChevronRight,
+  BarChart3,
+  ArrowUpRight,
+  ArrowDownRight
 } from 'lucide-react'
 
 /* ===== INTERACTIVE 3D GLOBE ===== */
-function Globe() {
+function Globe({ className }) {
   const canvasRef = useRef(null)
   const pointerInteracting = useRef(null)
   const pointerInteractionMovement = useRef(0)
-  const phiRef = useRef(0)
 
   useEffect(() => {
-    let width = 0
     let phi = 0
+    let width = 0
     
     const onResize = () => {
       if (canvasRef.current) {
@@ -40,38 +43,35 @@ function Globe() {
       width: width * 2,
       height: width * 2,
       phi: 0,
-      theta: 0.3,
+      theta: 0.25,
       dark: 1,
-      diffuse: 3,
-      mapSamples: 16000,
-      mapBrightness: 1.2,
-      baseColor: [0.1, 0.1, 0.1],
-      markerColor: [0.1, 0.8, 0.5], // emerald glow
-      glowColor: [0.04, 0.2, 0.15],
+      diffuse: 1.2,
+      mapSamples: 20000,
+      mapBrightness: 6,
+      baseColor: [0.05, 0.05, 0.05],
+      markerColor: [0.3, 0.85, 0.7],
+      glowColor: [0.1, 0.3, 0.25],
       markers: [
-        // ALPR nodes - simulating worldwide detection points
-        { location: [13.7563, 100.5018], size: 0.08 }, // Bangkok
-        { location: [18.7883, 98.9853], size: 0.06 },  // Chiang Mai
-        { location: [7.8804, 98.3923], size: 0.05 },   // Phuket
-        { location: [14.8818, 102.0178], size: 0.04 }, // Nakhon Ratchasima
-        { location: [16.4419, 102.8360], size: 0.05 }, // Khon Kaen
-        { location: [6.8765, 101.2344], size: 0.04 },  // Hat Yai
-        { location: [12.9236, 100.8825], size: 0.05 }, // Pattaya
-        { location: [9.1382, 99.3217], size: 0.04 },   // Surat Thani
-        // Additional nodes for visual effect
-        { location: [35.6762, 139.6503], size: 0.03 }, // Tokyo
-        { location: [22.3193, 114.1694], size: 0.03 }, // Hong Kong
-        { location: [1.3521, 103.8198], size: 0.04 },  // Singapore
-        { location: [3.1390, 101.6869], size: 0.03 },  // Kuala Lumpur
+        { location: [13.7563, 100.5018], size: 0.1 },
+        { location: [18.7883, 98.9853], size: 0.07 },
+        { location: [7.8804, 98.3923], size: 0.06 },
+        { location: [14.8818, 102.0178], size: 0.05 },
+        { location: [16.4419, 102.8360], size: 0.06 },
+        { location: [6.8765, 101.2344], size: 0.05 },
+        { location: [12.9236, 100.8825], size: 0.06 },
+        { location: [9.1382, 99.3217], size: 0.05 },
+        { location: [35.6762, 139.6503], size: 0.04 },
+        { location: [22.3193, 114.1694], size: 0.04 },
+        { location: [1.3521, 103.8198], size: 0.05 },
+        { location: [3.1390, 101.6869], size: 0.04 },
       ],
       onRender: (state) => {
         if (!pointerInteracting.current) {
-          phi += 0.003
+          phi += 0.002
         }
         state.phi = phi + pointerInteractionMovement.current
         state.width = width * 2
         state.height = width * 2
-        phiRef.current = phi
       }
     })
 
@@ -79,7 +79,7 @@ function Globe() {
       if (canvasRef.current) {
         canvasRef.current.style.opacity = '1'
       }
-    })
+    }, 100)
 
     return () => {
       globe.destroy()
@@ -88,72 +88,46 @@ function Globe() {
   }, [])
 
   return (
-    <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
-      {/* Gradient overlay for depth */}
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/80 z-10 pointer-events-none" />
-      <div className="absolute inset-0 bg-gradient-to-t from-transparent via-transparent to-black/60 z-10 pointer-events-none" />
-      
-      {/* Radial glow behind globe */}
-      <div className="absolute w-[800px] h-[800px] rounded-full bg-emerald-500/5 blur-3xl" />
-      
-      <canvas
-        ref={canvasRef}
-        onPointerDown={(e) => {
-          pointerInteracting.current = e.clientX - pointerInteractionMovement.current
-          canvasRef.current.style.cursor = 'grabbing'
-        }}
-        onPointerUp={() => {
-          pointerInteracting.current = null
-          canvasRef.current.style.cursor = 'grab'
-        }}
-        onPointerOut={() => {
-          pointerInteracting.current = null
-          canvasRef.current.style.cursor = 'grab'
-        }}
-        onMouseMove={(e) => {
-          if (pointerInteracting.current !== null) {
-            const delta = e.clientX - pointerInteracting.current
-            pointerInteractionMovement.current = delta / 200
-          }
-        }}
-        onTouchMove={(e) => {
-          if (pointerInteracting.current !== null && e.touches[0]) {
-            const delta = e.touches[0].clientX - pointerInteracting.current
-            pointerInteractionMovement.current = delta / 200
-          }
-        }}
-        style={{
-          width: 700,
-          height: 700,
-          maxWidth: '100%',
-          aspectRatio: '1',
-          cursor: 'grab',
-          contain: 'layout paint size',
-          opacity: 0,
-          transition: 'opacity 1s ease'
-        }}
-      />
-    </div>
+    <canvas
+      ref={canvasRef}
+      onPointerDown={(e) => {
+        pointerInteracting.current = e.clientX - pointerInteractionMovement.current
+        if (canvasRef.current) canvasRef.current.style.cursor = 'grabbing'
+      }}
+      onPointerUp={() => {
+        pointerInteracting.current = null
+        if (canvasRef.current) canvasRef.current.style.cursor = 'grab'
+      }}
+      onPointerOut={() => {
+        pointerInteracting.current = null
+        if (canvasRef.current) canvasRef.current.style.cursor = 'grab'
+      }}
+      onMouseMove={(e) => {
+        if (pointerInteracting.current !== null) {
+          const delta = e.clientX - pointerInteracting.current
+          pointerInteractionMovement.current = delta / 200
+        }
+      }}
+      className={className}
+      style={{
+        width: '100%',
+        height: '100%',
+        cursor: 'grab',
+        contain: 'layout paint size',
+        opacity: 0,
+        transition: 'opacity 0.8s ease'
+      }}
+    />
   )
 }
 
-/* ===== GLASSMORPHISM CARD ===== */
-function GlassCard({ children, className = '', glow = false, glowColor = 'emerald' }) {
-  const glowColors = {
-    emerald: 'shadow-[0_0_30px_rgba(16,185,129,0.15)]',
-    cyan: 'shadow-[0_0_30px_rgba(6,182,212,0.15)]',
-    amber: 'shadow-[0_0_30px_rgba(245,158,11,0.15)]',
-    rose: 'shadow-[0_0_30px_rgba(244,63,94,0.15)]'
-  }
-  
+/* ===== BENTO CARD ===== */
+function BentoCard({ children, className = '', hover = true }) {
   return (
     <div className={`
-      relative overflow-hidden rounded-2xl
-      bg-white/[0.03] backdrop-blur-xl
-      border border-white/[0.08]
-      ${glow ? glowColors[glowColor] : ''}
-      transition-all duration-300
-      hover:bg-white/[0.05] hover:border-white/[0.12]
+      relative overflow-hidden rounded-xl
+      bg-[#0a0a0a] border border-[#1a1a1a]
+      ${hover ? 'transition-all duration-300 hover:border-[#2a2a2a] hover:bg-[#0f0f0f]' : ''}
       ${className}
     `}>
       {children}
@@ -161,180 +135,160 @@ function GlassCard({ children, className = '', glow = false, glowColor = 'emeral
   )
 }
 
-/* ===== STAT CARD WITH GLASSMORPHISM ===== */
-function StatCard({ icon: Icon, title, value, subtitle, trend, accentColor = 'emerald' }) {
-  const accents = {
-    emerald: { 
-      iconBg: 'bg-emerald-500/20', 
-      iconColor: 'text-emerald-400',
-      glow: 'shadow-[0_0_15px_rgba(16,185,129,0.2)]'
-    },
-    cyan: { 
-      iconBg: 'bg-cyan-500/20', 
-      iconColor: 'text-cyan-400',
-      glow: 'shadow-[0_0_15px_rgba(6,182,212,0.2)]'
-    },
-    amber: { 
-      iconBg: 'bg-amber-500/20', 
-      iconColor: 'text-amber-400',
-      glow: 'shadow-[0_0_15px_rgba(245,158,11,0.2)]'
-    },
-    teal: { 
-      iconBg: 'bg-teal-500/20', 
-      iconColor: 'text-teal-400',
-      glow: 'shadow-[0_0_15px_rgba(20,184,166,0.2)]'
-    }
+/* ===== STAT NUMBER ===== */
+function StatNumber({ value, size = 'lg', color = 'white' }) {
+  const sizeClasses = {
+    sm: 'text-lg font-semibold',
+    md: 'text-2xl font-bold',
+    lg: 'text-3xl font-bold',
+    xl: 'text-4xl font-bold tracking-tight'
   }
   
-  const accent = accents[accentColor]
+  const colorClasses = {
+    white: 'text-white',
+    emerald: 'text-emerald-400',
+    cyan: 'text-cyan-400',
+    amber: 'text-amber-400',
+    rose: 'text-rose-400'
+  }
   
   return (
-    <GlassCard className="p-5" glow glowColor={accentColor}>
-      <div className="flex items-start justify-between">
-        <div className={`p-2.5 rounded-xl ${accent.iconBg} ${accent.glow}`}>
-          <Icon className={`w-5 h-5 ${accent.iconColor}`} />
-        </div>
-        {trend && (
-          <div className={`flex items-center gap-1 text-xs font-medium ${trend.positive ? 'text-emerald-400' : 'text-rose-400'}`}>
-            <TrendingUp className={`w-3 h-3 ${!trend.positive && 'rotate-180'}`} />
-            {trend.value}
-          </div>
-        )}
-      </div>
-      <div className="mt-4">
-        <div className="text-xs uppercase tracking-wider text-slate-500 font-medium">
-          {title}
-        </div>
-        <div className="flex items-baseline gap-2 mt-1">
-          <span className="text-3xl font-bold text-white tracking-tight">
-            {value}
-          </span>
-          {subtitle && (
-            <span className="text-sm text-slate-400">{subtitle}</span>
-          )}
-        </div>
-      </div>
-    </GlassCard>
+    <span className={`${sizeClasses[size]} ${colorClasses[color]} tabular-nums`}>
+      {value}
+    </span>
   )
 }
 
-/* ===== ACCURACY GAUGE ===== */
-function AccuracyGauge({ percentage }) {
-  const radius = 60
-  const stroke = 8
-  const normalizedRadius = radius - stroke / 2
-  const circumference = normalizedRadius * 2 * Math.PI
-  const strokeDashoffset = circumference - (percentage / 100) * circumference
+/* ===== TREND INDICATOR ===== */
+function TrendIndicator({ value, positive }) {
+  return (
+    <div className={`inline-flex items-center gap-0.5 text-xs font-medium ${positive ? 'text-emerald-400' : 'text-rose-400'}`}>
+      {positive ? (
+        <ArrowUpRight className="w-3 h-3" />
+      ) : (
+        <ArrowDownRight className="w-3 h-3" />
+      )}
+      <span>{value}</span>
+    </div>
+  )
+}
 
-  const getColor = (pct) => {
-    if (pct >= 95) return '#10b981'
-    if (pct >= 90) return '#34d399'
-    if (pct >= 80) return '#f59e0b'
-    if (pct >= 70) return '#fb923c'
-    return '#ef4444'
+/* ===== PROGRESS BAR ===== */
+function ProgressBar({ value, max, color = 'emerald', showLabel = true }) {
+  const percentage = max > 0 ? (value / max) * 100 : 0
+  
+  const colorClasses = {
+    emerald: 'bg-emerald-500',
+    cyan: 'bg-cyan-500',
+    amber: 'bg-amber-500',
+    rose: 'bg-rose-500'
+  }
+  
+  return (
+    <div className="space-y-1.5">
+      {showLabel && (
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-neutral-500">{value.toLocaleString()}</span>
+          <span className="text-neutral-400">{percentage.toFixed(0)}%</span>
+        </div>
+      )}
+      <div className="h-1.5 w-full rounded-full bg-neutral-800/50 overflow-hidden">
+        <div 
+          className={`h-full rounded-full ${colorClasses[color]} transition-all duration-700 ease-out`}
+          style={{ width: `${Math.min(percentage, 100)}%` }}
+        />
+      </div>
+    </div>
+  )
+}
+
+/* ===== CIRCULAR GAUGE ===== */
+function CircularGauge({ value, size = 120, strokeWidth = 8 }) {
+  const radius = (size - strokeWidth) / 2
+  const circumference = radius * 2 * Math.PI
+  const strokeDashoffset = circumference - (value / 100) * circumference
+
+  const getColor = (val) => {
+    if (val >= 95) return '#10b981'
+    if (val >= 85) return '#34d399'
+    if (val >= 70) return '#fbbf24'
+    return '#f87171'
   }
 
   return (
-    <div className="flex flex-col items-center justify-center">
-      <div className="relative">
-        <svg height={radius * 2} width={radius * 2} className="transform -rotate-90">
-          <circle
-            stroke="rgba(255,255,255,0.05)"
-            fill="transparent"
-            strokeWidth={stroke}
-            r={normalizedRadius}
-            cx={radius}
-            cy={radius}
-          />
-          <circle
-            stroke={getColor(percentage)}
-            fill="transparent"
-            strokeWidth={stroke}
-            strokeDasharray={circumference + ' ' + circumference}
-            style={{ 
-              strokeDashoffset,
-              transition: 'stroke-dashoffset 1s cubic-bezier(0.4, 0, 0.2, 1)',
-              filter: `drop-shadow(0 0 10px ${getColor(percentage)}40)`
-            }}
-            r={normalizedRadius}
-            cx={radius}
-            cy={radius}
-            strokeLinecap="round"
-          />
-        </svg>
-        
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <div className="text-3xl font-bold text-white" style={{ textShadow: `0 0 20px ${getColor(percentage)}40` }}>
-            {percentage.toFixed(1)}%
-          </div>
-          <div className="text-[10px] uppercase tracking-wider text-slate-500 mt-0.5">Accuracy</div>
-        </div>
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="transform -rotate-90">
+        <circle
+          stroke="#1a1a1a"
+          fill="transparent"
+          strokeWidth={strokeWidth}
+          r={radius}
+          cx={size / 2}
+          cy={size / 2}
+        />
+        <circle
+          stroke={getColor(value)}
+          fill="transparent"
+          strokeWidth={strokeWidth}
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          strokeLinecap="round"
+          r={radius}
+          cx={size / 2}
+          cy={size / 2}
+          style={{ 
+            transition: 'stroke-dashoffset 1s ease-out',
+            filter: `drop-shadow(0 0 8px ${getColor(value)}50)`
+          }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-2xl font-bold text-white">{value.toFixed(1)}%</span>
+        <span className="text-[10px] text-neutral-500 uppercase tracking-wider">Accuracy</span>
       </div>
     </div>
   )
 }
 
-/* ===== CONFIDENCE DISTRIBUTION ===== */
-function ConfidenceDistribution({ high, medium, low }) {
-  const total = high + medium + low || 1
-  const highPct = (high / total) * 100
-  const medPct = (medium / total) * 100
-  const lowPct = (low / total) * 100
-
-  const bars = [
-    { label: 'High', sublabel: '>=90%', value: high, pct: highPct, color: 'bg-emerald-500', glow: 'shadow-[0_0_10px_rgba(16,185,129,0.3)]' },
-    { label: 'Medium', sublabel: '70-90%', value: medium, pct: medPct, color: 'bg-amber-500', glow: 'shadow-[0_0_10px_rgba(245,158,11,0.3)]' },
-    { label: 'Low', sublabel: '<70%', value: low, pct: lowPct, color: 'bg-rose-500', glow: 'shadow-[0_0_10px_rgba(244,63,94,0.3)]' }
-  ]
-
+/* ===== MINI SPARKLINE ===== */
+function MiniSparkline({ data = [], color = '#10b981' }) {
+  if (data.length === 0) return null
+  
+  const max = Math.max(...data)
+  const min = Math.min(...data)
+  const range = max - min || 1
+  const width = 60
+  const height = 24
+  
+  const points = data.map((val, i) => {
+    const x = (i / (data.length - 1)) * width
+    const y = height - ((val - min) / range) * height
+    return `${x},${y}`
+  }).join(' ')
+  
   return (
-    <div className="space-y-4">
-      {bars.map(bar => (
-        <div key={bar.label}>
-          <div className="flex items-center justify-between mb-1.5">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-slate-300">{bar.label}</span>
-              <span className="text-xs text-slate-500">{bar.sublabel}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-white">{bar.value.toLocaleString()}</span>
-              <span className="text-xs text-slate-500">({bar.pct.toFixed(0)}%)</span>
-            </div>
-          </div>
-          <div className="h-2 w-full rounded-full bg-white/5 overflow-hidden">
-            <div 
-              className={`h-full ${bar.color} ${bar.glow} transition-all duration-700 ease-out rounded-full`}
-              style={{ width: `${bar.pct}%` }}
-            />
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-/* ===== METRIC ROW ===== */
-function MetricRow({ icon: Icon, label, value, valueColor = 'text-white' }) {
-  return (
-    <div className="flex items-center justify-between py-2.5 border-b border-white/5 last:border-0">
-      <div className="flex items-center gap-2.5">
-        <Icon className="w-4 h-4 text-slate-500" />
-        <span className="text-sm text-slate-400">{label}</span>
-      </div>
-      <span className={`text-sm font-semibold ${valueColor}`}>{value}</span>
-    </div>
+    <svg width={width} height={height} className="opacity-60">
+      <polyline
+        fill="none"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        points={points}
+      />
+    </svg>
   )
 }
 
 /* ===== LIVE INDICATOR ===== */
-function LiveIndicator() {
+function LiveBadge() {
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-      <span className="relative flex h-2 w-2">
-        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+    <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+      <span className="relative flex h-1.5 w-1.5">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
       </span>
-      <span className="text-xs font-medium text-emerald-400 uppercase tracking-wider">Live</span>
+      <span className="text-[10px] font-medium text-emerald-400 uppercase tracking-wider">Live</span>
     </div>
   )
 }
@@ -345,10 +299,10 @@ function LoadingState() {
     <div className="min-h-screen bg-black flex items-center justify-center">
       <div className="flex flex-col items-center gap-4">
         <div className="relative">
-          <div className="w-12 h-12 border-2 border-emerald-500/20 rounded-full" />
-          <div className="absolute inset-0 w-12 h-12 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+          <div className="w-10 h-10 border border-neutral-800 rounded-full" />
+          <div className="absolute inset-0 w-10 h-10 border border-emerald-500 border-t-transparent rounded-full animate-spin" />
         </div>
-        <p className="text-slate-400 text-sm">Loading Dashboard...</p>
+        <p className="text-neutral-500 text-sm">Loading dashboard...</p>
       </div>
     </div>
   )
@@ -358,17 +312,17 @@ function LoadingState() {
 function ErrorState({ error }) {
   return (
     <div className="min-h-screen bg-black flex items-center justify-center p-4">
-      <GlassCard className="p-6 max-w-md border-rose-500/20" glow glowColor="rose">
+      <BentoCard className="p-6 max-w-md border-rose-500/20">
         <div className="flex items-start gap-3">
-          <div className="p-2 rounded-lg bg-rose-500/20">
+          <div className="p-2 rounded-lg bg-rose-500/10">
             <AlertCircle className="w-5 h-5 text-rose-400" />
           </div>
           <div>
             <h3 className="text-sm font-medium text-rose-300">Connection Error</h3>
-            <p className="text-xs text-slate-400 mt-1">{error}</p>
+            <p className="text-xs text-neutral-500 mt-1">{error}</p>
           </div>
         </div>
-      </GlassCard>
+      </BentoCard>
     </div>
   )
 }
@@ -404,217 +358,248 @@ export default function Dashboard() {
   const accuracy = kpi.alpr_total + kpi.mlpr_total > 0
     ? (kpi.alpr_total / (kpi.alpr_total + kpi.mlpr_total)) * 100
     : 0
+    
+  const verifiedRate = kpi.total_reads > 0 
+    ? ((kpi.verified / kpi.total_reads) * 100).toFixed(1) 
+    : 0
+
+  // Simulated sparkline data based on real metrics
+  const generateSparkline = (base, variance = 0.1) => {
+    return Array.from({ length: 12 }, () => base * (1 + (Math.random() - 0.5) * variance))
+  }
 
   return (
-    <div className="min-h-screen bg-black relative overflow-hidden">
-      {/* 3D Globe Background */}
-      <Globe />
+    <div className="min-h-screen bg-black relative">
+      {/* Globe Background */}
+      <div className="fixed inset-0 flex items-center justify-center pointer-events-none">
+        <div className="relative w-[800px] h-[800px] opacity-40">
+          <div className="absolute inset-0 bg-gradient-to-b from-black via-transparent to-black z-10" />
+          <div className="absolute inset-0 bg-gradient-to-r from-black via-transparent to-black z-10" />
+          <Globe className="pointer-events-auto" />
+        </div>
+      </div>
       
-      {/* Content Overlay */}
-      <div className="relative z-20 p-4 md:p-6 lg:p-8">
+      {/* Content */}
+      <div className="relative z-10 p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">
+            <h1 className="text-xl md:text-2xl font-semibold text-white tracking-tight">
               ALPR Command Center
             </h1>
-            <p className="text-sm text-slate-500 mt-1">
-              Real-time License Plate Recognition Analytics
+            <p className="text-sm text-neutral-500 mt-0.5">
+              Real-time license plate recognition analytics
             </p>
           </div>
-          <LiveIndicator />
-        </div>
+          <LiveBadge />
+        </header>
 
-        {/* Bento Grid Layout */}
-        <div className="grid grid-cols-12 gap-4 auto-rows-min">
+        {/* Bento Grid */}
+        <div className="grid grid-cols-12 gap-3 md:gap-4">
           
-          {/* Main KPI Cards - Top Row */}
-          <div className="col-span-12 md:col-span-6 lg:col-span-3">
-            <StatCard 
-              icon={Activity}
-              title="Total Scans"
-              value={kpi.total_reads.toLocaleString()}
-              subtitle="reads"
-              trend={{ value: "+12.5%", positive: true }}
-              accentColor="emerald"
-            />
-          </div>
-          
-          <div className="col-span-12 md:col-span-6 lg:col-span-3">
-            <StatCard 
-              icon={CheckCircle2}
-              title="Verified"
-              value={kpi.verified.toLocaleString()}
-              subtitle={`${kpi.total_reads > 0 ? ((kpi.verified / kpi.total_reads) * 100).toFixed(1) : 0}%`}
-              trend={{ value: "+8.3%", positive: true }}
-              accentColor="cyan"
-            />
-          </div>
-          
-          <div className="col-span-12 md:col-span-6 lg:col-span-3">
-            <StatCard 
-              icon={Clock}
-              title="Pending Queue"
-              value={kpi.pending.toLocaleString()}
-              subtitle="awaiting"
-              accentColor="amber"
-            />
-          </div>
-          
-          <div className="col-span-12 md:col-span-6 lg:col-span-3">
-            <StatCard 
-              icon={Database}
-              title="Master Database"
-              value={kpi.master_total.toLocaleString()}
-              subtitle="plates"
-              trend={{ value: "+156", positive: true }}
-              accentColor="teal"
-            />
-          </div>
+          {/* Total Scans - Large Card */}
+          <BentoCard className="col-span-12 md:col-span-6 lg:col-span-3 p-5">
+            <div className="flex items-start justify-between mb-4">
+              <div className="p-2 rounded-lg bg-emerald-500/10">
+                <Activity className="w-4 h-4 text-emerald-400" />
+              </div>
+              <TrendIndicator value="+12.5%" positive />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs text-neutral-500 uppercase tracking-wider">Total Scans</p>
+              <div className="flex items-end justify-between">
+                <StatNumber value={kpi.total_reads.toLocaleString()} size="xl" />
+                <MiniSparkline data={generateSparkline(kpi.total_reads / 100)} color="#10b981" />
+              </div>
+            </div>
+          </BentoCard>
 
-          {/* Accuracy Card - Larger */}
-          <div className="col-span-12 lg:col-span-4">
-            <GlassCard className="p-6 h-full" glow glowColor="emerald">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h3 className="text-sm font-medium text-white">AI Accuracy</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">ALPR vs MLPR Comparison</p>
+          {/* Verified */}
+          <BentoCard className="col-span-6 md:col-span-3 lg:col-span-2 p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <CheckCircle2 className="w-4 h-4 text-cyan-400" />
+              <span className="text-xs text-neutral-500 uppercase tracking-wider">Verified</span>
+            </div>
+            <StatNumber value={kpi.verified.toLocaleString()} size="lg" />
+            <p className="text-xs text-cyan-400 mt-1">{verifiedRate}% rate</p>
+          </BentoCard>
+
+          {/* Pending */}
+          <BentoCard className="col-span-6 md:col-span-3 lg:col-span-2 p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Clock className="w-4 h-4 text-amber-400" />
+              <span className="text-xs text-neutral-500 uppercase tracking-wider">Pending</span>
+            </div>
+            <StatNumber value={kpi.pending.toLocaleString()} size="lg" />
+            <p className="text-xs text-amber-400 mt-1">In queue</p>
+          </BentoCard>
+
+          {/* Master DB */}
+          <BentoCard className="col-span-12 md:col-span-6 lg:col-span-5 p-5">
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Database className="w-4 h-4 text-teal-400" />
+                  <span className="text-xs text-neutral-500 uppercase tracking-wider">Master Database</span>
                 </div>
-                <div className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-                  accuracy >= 90 
-                    ? 'bg-emerald-500/20 text-emerald-400' 
-                    : accuracy >= 75 
-                      ? 'bg-amber-500/20 text-amber-400' 
-                      : 'bg-rose-500/20 text-rose-400'
-                }`}>
-                  {accuracy >= 90 ? 'Excellent' : accuracy >= 75 ? 'Good' : 'Needs Review'}
-                </div>
+                <StatNumber value={kpi.master_total.toLocaleString()} size="xl" />
               </div>
-              
-              <div className="flex items-center justify-center py-4">
-                <AccuracyGauge percentage={accuracy} />
+              <div className="text-right">
+                <p className="text-xs text-neutral-500 mb-1">Auto-Master</p>
+                <p className="text-sm font-semibold text-teal-400">{kpi.auto_master.toLocaleString()}</p>
               </div>
-              
-              <div className="grid grid-cols-2 gap-3 mt-6">
-                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                  <div className="text-xs text-emerald-400 uppercase tracking-wider mb-1">ALPR</div>
-                  <div className="text-xl font-bold text-white">{kpi.alpr_total.toLocaleString()}</div>
-                  <div className="text-[10px] text-slate-500">Correct from start</div>
-                </div>
-                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20">
-                  <div className="text-xs text-rose-400 uppercase tracking-wider mb-1">MLPR</div>
-                  <div className="text-xl font-bold text-white">{kpi.mlpr_total.toLocaleString()}</div>
-                  <div className="text-[10px] text-slate-500">Human corrected</div>
-                </div>
+            </div>
+            <ProgressBar value={kpi.auto_master} max={kpi.master_total} color="cyan" />
+          </BentoCard>
+
+          {/* AI Accuracy - Featured Card */}
+          <BentoCard className="col-span-12 lg:col-span-4 p-6 bg-gradient-to-br from-[#0a0a0a] to-[#0f1210]">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="text-sm font-medium text-white">AI Accuracy</h3>
+                <p className="text-xs text-neutral-500 mt-0.5">ALPR vs MLPR comparison</p>
               </div>
-            </GlassCard>
-          </div>
+              <div className={`px-2 py-1 rounded-md text-[10px] font-medium uppercase tracking-wider ${
+                accuracy >= 90 
+                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                  : accuracy >= 75 
+                    ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' 
+                    : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+              }`}>
+                {accuracy >= 90 ? 'Excellent' : accuracy >= 75 ? 'Good' : 'Review'}
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-center py-4">
+              <CircularGauge value={accuracy} size={140} strokeWidth={10} />
+            </div>
+            
+            <div className="grid grid-cols-2 gap-3 mt-6">
+              <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+                <p className="text-[10px] text-emerald-400 uppercase tracking-wider mb-1">ALPR</p>
+                <p className="text-lg font-semibold text-white">{kpi.alpr_total.toLocaleString()}</p>
+                <p className="text-[10px] text-neutral-600">Correct reads</p>
+              </div>
+              <div className="p-3 rounded-lg bg-rose-500/5 border border-rose-500/10">
+                <p className="text-[10px] text-rose-400 uppercase tracking-wider mb-1">MLPR</p>
+                <p className="text-lg font-semibold text-white">{kpi.mlpr_total.toLocaleString()}</p>
+                <p className="text-[10px] text-neutral-600">Corrected</p>
+              </div>
+            </div>
+          </BentoCard>
 
           {/* Confidence Distribution */}
-          <div className="col-span-12 lg:col-span-4">
-            <GlassCard className="p-6 h-full" glow glowColor="cyan">
-              <div className="mb-6">
+          <BentoCard className="col-span-12 md:col-span-6 lg:col-span-4 p-6">
+            <div className="flex items-center justify-between mb-5">
+              <div>
                 <h3 className="text-sm font-medium text-white">Confidence Distribution</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Recognition confidence scores</p>
+                <p className="text-xs text-neutral-500 mt-0.5">Recognition score breakdown</p>
               </div>
-              
-              <ConfidenceDistribution
-                high={Math.floor(kpi.total_reads * 0.65)}
-                medium={Math.floor(kpi.total_reads * 0.25)}
-                low={Math.floor(kpi.total_reads * 0.1)}
-              />
-              
-              <div className="mt-6 pt-4 border-t border-white/5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-500">Auto-Master Entries</span>
-                  <span className="text-sm font-semibold text-teal-400">{kpi.auto_master.toLocaleString()}</span>
+              <BarChart3 className="w-4 h-4 text-neutral-600" />
+            </div>
+            
+            <div className="space-y-4">
+              {[
+                { label: 'High', sublabel: '>=90%', value: Math.floor(kpi.total_reads * 0.65), color: 'emerald' },
+                { label: 'Medium', sublabel: '70-90%', value: Math.floor(kpi.total_reads * 0.25), color: 'amber' },
+                { label: 'Low', sublabel: '<70%', value: Math.floor(kpi.total_reads * 0.1), color: 'rose' }
+              ].map((item) => (
+                <div key={item.label}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-neutral-300">{item.label}</span>
+                      <span className="text-[10px] text-neutral-600">{item.sublabel}</span>
+                    </div>
+                    <span className="text-sm font-medium text-white">{item.value.toLocaleString()}</span>
+                  </div>
+                  <ProgressBar value={item.value} max={kpi.total_reads} color={item.color} showLabel={false} />
                 </div>
-              </div>
-            </GlassCard>
-          </div>
+              ))}
+            </div>
+          </BentoCard>
 
-          {/* Performance Metrics */}
-          <div className="col-span-12 lg:col-span-4">
-            <GlassCard className="p-6 h-full" glow glowColor="amber">
-              <div className="mb-6">
+          {/* System Metrics */}
+          <BentoCard className="col-span-12 md:col-span-6 lg:col-span-4 p-6">
+            <div className="flex items-center justify-between mb-5">
+              <div>
                 <h3 className="text-sm font-medium text-white">System Performance</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Real-time metrics</p>
+                <p className="text-xs text-neutral-500 mt-0.5">Real-time metrics</p>
               </div>
-              
-              <div className="space-y-1">
-                <MetricRow icon={Zap} label="Avg. Processing" value="0.8s" valueColor="text-emerald-400" />
-                <MetricRow icon={Target} label="Throughput" value="~125/min" valueColor="text-cyan-400" />
-                <MetricRow icon={Shield} label="Uptime" value="99.8%" valueColor="text-emerald-400" />
-                <MetricRow icon={Cpu} label="GPU Utilization" value="67%" valueColor="text-amber-400" />
-                <MetricRow icon={Radio} label="Active Cameras" value="12" valueColor="text-white" />
-              </div>
-              
-              <div className="mt-6 p-3 rounded-xl bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 border border-emerald-500/20">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-emerald-500/20">
-                    <Activity className="w-4 h-4 text-emerald-400" />
+              <Cpu className="w-4 h-4 text-neutral-600" />
+            </div>
+            
+            <div className="space-y-3">
+              {[
+                { icon: Zap, label: 'Avg. Processing', value: '0.8s', color: 'text-emerald-400' },
+                { icon: Target, label: 'Throughput', value: '~125/min', color: 'text-cyan-400' },
+                { icon: Shield, label: 'System Uptime', value: '99.8%', color: 'text-emerald-400' },
+                { icon: Camera, label: 'Active Cameras', value: '12', color: 'text-white' },
+              ].map((metric) => (
+                <div key={metric.label} className="flex items-center justify-between py-2 border-b border-neutral-800/50 last:border-0">
+                  <div className="flex items-center gap-2.5">
+                    <metric.icon className="w-4 h-4 text-neutral-600" />
+                    <span className="text-sm text-neutral-400">{metric.label}</span>
                   </div>
-                  <div>
-                    <div className="text-xs text-slate-500">Today's Scans</div>
-                    <div className="text-lg font-bold text-white">{Math.floor(kpi.total_reads * 0.15).toLocaleString()}</div>
-                  </div>
+                  <span className={`text-sm font-medium ${metric.color}`}>{metric.value}</span>
+                </div>
+              ))}
+            </div>
+            
+            <div className="mt-5 p-3 rounded-lg bg-gradient-to-r from-emerald-500/5 to-cyan-500/5 border border-emerald-500/10">
+              <div className="flex items-center gap-3">
+                <Activity className="w-4 h-4 text-emerald-400" />
+                <div>
+                  <p className="text-[10px] text-neutral-500 uppercase tracking-wider">Today's Scans</p>
+                  <p className="text-lg font-semibold text-white">{Math.floor(kpi.total_reads * 0.15).toLocaleString()}</p>
                 </div>
               </div>
-            </GlassCard>
-          </div>
+            </div>
+          </BentoCard>
 
-          {/* Activity Stats - Bottom Row */}
-          <div className="col-span-12 md:col-span-6 lg:col-span-3">
-            <GlassCard className="p-5">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="p-2 rounded-lg bg-emerald-500/20">
-                  <Activity className="w-4 h-4 text-emerald-400" />
-                </div>
-                <span className="text-xs text-slate-500 uppercase tracking-wider">Today</span>
+          {/* Bottom Stats Row */}
+          <BentoCard className="col-span-6 lg:col-span-3 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="p-1.5 rounded-md bg-emerald-500/10">
+                <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
               </div>
-              <div className="text-2xl font-bold text-white">{Math.floor(kpi.total_reads * 0.15).toLocaleString()}</div>
-              <div className="text-xs text-emerald-400 mt-1">+12.5% from yesterday</div>
-            </GlassCard>
-          </div>
-          
-          <div className="col-span-12 md:col-span-6 lg:col-span-3">
-            <GlassCard className="p-5">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="p-2 rounded-lg bg-cyan-500/20">
-                  <TrendingUp className="w-4 h-4 text-cyan-400" />
-                </div>
-                <span className="text-xs text-slate-500 uppercase tracking-wider">Last 7 Days</span>
+              <span className="text-[10px] text-neutral-500 uppercase tracking-wider">Last 7 Days</span>
+            </div>
+            <StatNumber value={Math.floor(kpi.total_reads * 0.78).toLocaleString()} size="md" />
+            <p className="text-[10px] text-emerald-400 mt-1">+8.2% vs last week</p>
+          </BentoCard>
+
+          <BentoCard className="col-span-6 lg:col-span-3 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="p-1.5 rounded-md bg-teal-500/10">
+                <Database className="w-3.5 h-3.5 text-teal-400" />
               </div>
-              <div className="text-2xl font-bold text-white">{Math.floor(kpi.total_reads * 0.78).toLocaleString()}</div>
-              <div className="text-xs text-cyan-400 mt-1">+8.2% from last week</div>
-            </GlassCard>
-          </div>
-          
-          <div className="col-span-12 md:col-span-6 lg:col-span-3">
-            <GlassCard className="p-5">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="p-2 rounded-lg bg-teal-500/20">
-                  <Database className="w-4 h-4 text-teal-400" />
-                </div>
-                <span className="text-xs text-slate-500 uppercase tracking-wider">Province Detected</span>
+              <span className="text-[10px] text-neutral-500 uppercase tracking-wider">Province Match</span>
+            </div>
+            <StatNumber value={Math.floor(kpi.total_reads * 0.82).toLocaleString()} size="md" />
+            <p className="text-[10px] text-teal-400 mt-1">82% detection rate</p>
+          </BentoCard>
+
+          <BentoCard className="col-span-6 lg:col-span-3 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="p-1.5 rounded-md bg-cyan-500/10">
+                <Clock className="w-3.5 h-3.5 text-cyan-400" />
               </div>
-              <div className="text-2xl font-bold text-white">{Math.floor(kpi.total_reads * 0.82).toLocaleString()}</div>
-              <div className="text-xs text-teal-400 mt-1">82% detection rate</div>
-            </GlassCard>
-          </div>
-          
-          <div className="col-span-12 md:col-span-6 lg:col-span-3">
-            <GlassCard className="p-5">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="p-2 rounded-lg bg-amber-500/20">
-                  <Clock className="w-4 h-4 text-amber-400" />
-                </div>
-                <span className="text-xs text-slate-500 uppercase tracking-wider">Avg Response</span>
+              <span className="text-[10px] text-neutral-500 uppercase tracking-wider">Response Time</span>
+            </div>
+            <StatNumber value="0.8s" size="md" />
+            <p className="text-[10px] text-cyan-400 mt-1">-5.3% faster</p>
+          </BentoCard>
+
+          <BentoCard className="col-span-6 lg:col-span-3 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="p-1.5 rounded-md bg-violet-500/10">
+                <Cpu className="w-3.5 h-3.5 text-violet-400" />
               </div>
-              <div className="text-2xl font-bold text-white">0.8s</div>
-              <div className="text-xs text-amber-400 mt-1">-5.3% faster</div>
-            </GlassCard>
-          </div>
+              <span className="text-[10px] text-neutral-500 uppercase tracking-wider">GPU Load</span>
+            </div>
+            <StatNumber value="67%" size="md" />
+            <p className="text-[10px] text-violet-400 mt-1">Optimal range</p>
+          </BentoCard>
 
         </div>
       </div>
