@@ -3,15 +3,91 @@ import time
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends
+import psutil
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 
 from app.db.session import get_db
 from app.db import models
+from app.services.queue import celery
 
 router = APIRouter()
 
 _start_time = time.time()
+
+
+def _get_celery_cluster_status() -> dict:
+    """Return Celery worker and queue metrics with safe fallbacks."""
+    default_status = {
+        "queue_status": "offline",
+        "active_workers": 0,
+        "queue_length": 0,
+    }
+
+    try:
+        inspector = celery.control.inspect(timeout=1.0)
+        ping_result = inspector.ping() or {}
+        active_workers = len(ping_result)
+
+        queue_length = 0
+        try:
+            redis_client = celery.connection_for_read().default_channel.client
+            queue_name = celery.conf.task_default_queue or "celery"
+            queue_length = int(redis_client.llen(queue_name) or 0)
+        except Exception:
+            queue_length = 0
+
+        return {
+            "queue_status": "online" if active_workers > 0 else "offline",
+            "active_workers": active_workers,
+            "queue_length": queue_length,
+        }
+    except Exception:
+        return default_status
+
+
+def _get_system_resource_metrics() -> dict:
+    """Return CPU, memory, and disk usage with safe defaults."""
+    try:
+        cpu_percent = float(psutil.cpu_percent(interval=0.1))
+        memory_info = psutil.virtual_memory()
+        disk_info = psutil.disk_usage("/")
+
+        return {
+            "cpu_percent": cpu_percent,
+            "memory_total": int(memory_info.total),
+            "memory_available": int(memory_info.available),
+            "memory_percent": float(memory_info.percent),
+            "disk_percent": float(disk_info.percent),
+        }
+    except Exception:
+        return {
+            "cpu_percent": 0.0,
+            "memory_total": 0,
+            "memory_available": 0,
+            "memory_percent": 0.0,
+            "disk_percent": 0.0,
+        }
+
+
+@router.get("/monitor/system")
+def monitor_system_status():
+    """Celery queue and host resource status for dashboard cards."""
+    queue_metrics = _get_celery_cluster_status()
+    system_metrics = _get_system_resource_metrics()
+
+    return {
+        "queue_status": queue_metrics["queue_status"],
+        "active_workers": queue_metrics["active_workers"],
+        "queue_length": queue_metrics["queue_length"],
+        "system_resources": {
+            "cpu_percent": system_metrics["cpu_percent"],
+            "memory_percent": system_metrics["memory_percent"],
+            "disk_percent": system_metrics["disk_percent"],
+            "memory_total": system_metrics["memory_total"],
+            "memory_available": system_metrics["memory_available"],
+        },
+    }
 
 
 @router.get("/monitor/health")
@@ -21,6 +97,9 @@ def monitor_health(db: Session = Depends(get_db)):
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     one_hour_ago = now - timedelta(hours=1)
     uptime_seconds = time.time() - _start_time
+
+    queue_metrics = _get_celery_cluster_status()
+    system_metrics = _get_system_resource_metrics()
 
     # ── Database stats ──
     total_captures = db.query(func.count(models.Capture.id)).scalar() or 0
@@ -143,4 +222,14 @@ def monitor_health(db: Session = Depends(get_db)):
         "confidence_distribution": confidence_buckets,
         "hourly_throughput": hourly,
         "cameras": cameras,
+        "queue_status": queue_metrics["queue_status"],
+        "active_workers": queue_metrics["active_workers"],
+        "queue_length": queue_metrics["queue_length"],
+        "system_resources": {
+            "cpu_percent": system_metrics["cpu_percent"],
+            "memory_percent": system_metrics["memory_percent"],
+            "disk_percent": system_metrics["disk_percent"],
+            "memory_total": system_metrics["memory_total"],
+            "memory_available": system_metrics["memory_available"],
+        },
     }
