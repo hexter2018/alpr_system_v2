@@ -65,7 +65,6 @@ services:
       - alpr-network
     restart: unless-stopped
   # ==================== Celery Workers ====================
-  # GPU Worker - สามารถ scale ได้ด้วย --scale worker-gpu-1=3
   worker-gpu-1:
     build:
       context: ./worker
@@ -203,6 +202,7 @@ services:
       -Q training --concurrency=1 -l info
       --pidfile=/tmp/celery_trainer.pid
     environment:
+      - TZ=Asia/Bangkok
       - REDIS_URL=redis://redis:6379/0
       - DATABASE_URL=postgresql+psycopg2://alpr:alpr@postgres:5432/alpr
       - STORAGE_DIR=/storage
@@ -219,8 +219,8 @@ services:
       - CUDA_VISIBLE_DEVICES=${TRAINER_GPU:-0}
     volumes:
       - ./mlops:/app/mlops:ro        # source code (read-only)
-      - model_data:/models           # shared models dir กับ production worker
-      - storage_data:/storage        # training data
+      - ./models:/models           # shared models dir กับ production worker
+      - ./storage:/storage        # training data
       - trainer_data:/data           # celerybeat schedule
     depends_on:
       - redis
@@ -250,6 +250,7 @@ services:
       -l info
       --schedule=/data/celerybeat-schedule
     environment:
+      - TZ=Asia/Bangkok
       - REDIS_URL=redis://redis:6379/0
       - DATABASE_URL=postgresql+psycopg2://alpr:alpr@postgres:5432/alpr
       - RETRAIN_THRESHOLD=1000
@@ -266,8 +267,6 @@ volumes:
   pgdata:
   redisdata:
   trainer_data:
-  model_data:
-  storage_data:
 
 networks:
   alpr-network:
