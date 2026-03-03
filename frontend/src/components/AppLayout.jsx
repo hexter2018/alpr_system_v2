@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { NavLink, Outlet } from 'react-router-dom'
 import {
   LayoutDashboard,
   Upload,
@@ -20,16 +20,7 @@ const navItems = [
   { to: '/reports', label: 'Reports', icon: FileBarChart },
 ]
 
-const pageTitles = {
-  '/': 'Dashboard',
-  '/upload': 'Upload',
-  '/queue': 'Verification Queue',
-  '/master': 'Master Database',
-  '/reports': 'Reports',
-}
-
 export default function AppLayout() {
-  const location = useLocation()
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 1024) return true
     try {
@@ -60,8 +51,6 @@ export default function AppLayout() {
     mq.addEventListener('change', handler)
     return () => mq.removeEventListener('change', handler)
   }, [])
-
-  const pageTitle = pageTitles[location.pathname] || 'Thai ALPR'
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-950">
@@ -131,17 +120,6 @@ export default function AppLayout() {
 
       {/* ── Main Content ── */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Top bar */}
-        <header className="flex items-center justify-between border-b border-white/[0.06] bg-slate-950 px-6 py-3 flex-shrink-0">
-          <h1 className="text-sm font-semibold text-white">{pageTitle}</h1>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-400">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Online
-            </span>
-          </div>
-        </header>
-
         {/* Page body */}
         <main className="flex-1 overflow-y-auto p-6">
           <Outlet />
