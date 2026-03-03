@@ -6,16 +6,16 @@
 
 @layer base {
   :root {
-    color-scheme: dark;
+    color-scheme: light;
   }
 
   body {
-    @apply bg-black text-neutral-100 antialiased;
+    @apply bg-gray-50 text-gray-900 antialiased;
   }
   
   :focus-visible {
     outline: none;
-    @apply ring-2 ring-emerald-400 ring-offset-2 ring-offset-black;
+    @apply ring-2 ring-violet-400 ring-offset-2 ring-offset-white;
   }
 }
 

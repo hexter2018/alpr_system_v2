@@ -1,294 +1,445 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react'
-import createGlobe from 'cobe'
+import React, { useEffect, useState } from 'react'
 import { getKPI } from '../lib/api.js'
 import { 
   Activity,
   Database,
   CheckCircle2,
   Clock,
-  TrendingUp,
-  Zap,
-  Target,
-  Cpu,
   Camera,
   Shield,
   AlertCircle,
   ChevronRight,
+  Sparkles,
   BarChart3,
-  ArrowUpRight,
-  ArrowDownRight
+  Settings,
+  Bell,
+  Search,
+  Home,
+  Layers,
+  FolderOpen,
+  BookOpen,
+  Users,
+  HelpCircle,
+  Plus,
+  Download,
+  Star,
+  Cpu,
+  Zap,
+  Target,
+  Eye
 } from 'lucide-react'
 
-/* ===== INTERACTIVE 3D GLOBE ===== */
-function Globe({ className }) {
-  const canvasRef = useRef(null)
-  const pointerInteracting = useRef(null)
-  const pointerInteractionMovement = useRef(0)
-
-  useEffect(() => {
-    let phi = 0
-    let width = 0
-    
-    const onResize = () => {
-      if (canvasRef.current) {
-        width = canvasRef.current.offsetWidth
-      }
-    }
-    
-    window.addEventListener('resize', onResize)
-    onResize()
-
-    const globe = createGlobe(canvasRef.current, {
-      devicePixelRatio: 2,
-      width: width * 2,
-      height: width * 2,
-      phi: 0,
-      theta: 0.25,
-      dark: 1,
-      diffuse: 1.2,
-      mapSamples: 20000,
-      mapBrightness: 6,
-      baseColor: [0.05, 0.05, 0.05],
-      markerColor: [0.3, 0.85, 0.7],
-      glowColor: [0.1, 0.3, 0.25],
-      markers: [
-        { location: [13.7563, 100.5018], size: 0.1 },
-        { location: [18.7883, 98.9853], size: 0.07 },
-        { location: [7.8804, 98.3923], size: 0.06 },
-        { location: [14.8818, 102.0178], size: 0.05 },
-        { location: [16.4419, 102.8360], size: 0.06 },
-        { location: [6.8765, 101.2344], size: 0.05 },
-        { location: [12.9236, 100.8825], size: 0.06 },
-        { location: [9.1382, 99.3217], size: 0.05 },
-        { location: [35.6762, 139.6503], size: 0.04 },
-        { location: [22.3193, 114.1694], size: 0.04 },
-        { location: [1.3521, 103.8198], size: 0.05 },
-        { location: [3.1390, 101.6869], size: 0.04 },
-      ],
-      onRender: (state) => {
-        if (!pointerInteracting.current) {
-          phi += 0.002
-        }
-        state.phi = phi + pointerInteractionMovement.current
-        state.width = width * 2
-        state.height = width * 2
-      }
-    })
-
-    setTimeout(() => {
-      if (canvasRef.current) {
-        canvasRef.current.style.opacity = '1'
-      }
-    }, 100)
-
-    return () => {
-      globe.destroy()
-      window.removeEventListener('resize', onResize)
-    }
-  }, [])
+/* ===== SIDEBAR NAVIGATION ===== */
+function Sidebar() {
+  const navItems = [
+    { icon: Home, label: 'Home', active: true },
+    { icon: Layers, label: 'Cameras', count: 12 },
+    { icon: FolderOpen, label: 'Records' },
+    { icon: Database, label: 'Master DB', count: 4 },
+    { icon: BookOpen, label: 'Reports' },
+    { icon: Users, label: 'Team' },
+    { icon: HelpCircle, label: 'Support' },
+  ]
 
   return (
-    <canvas
-      ref={canvasRef}
-      onPointerDown={(e) => {
-        pointerInteracting.current = e.clientX - pointerInteractionMovement.current
-        if (canvasRef.current) canvasRef.current.style.cursor = 'grabbing'
-      }}
-      onPointerUp={() => {
-        pointerInteracting.current = null
-        if (canvasRef.current) canvasRef.current.style.cursor = 'grab'
-      }}
-      onPointerOut={() => {
-        pointerInteracting.current = null
-        if (canvasRef.current) canvasRef.current.style.cursor = 'grab'
-      }}
-      onMouseMove={(e) => {
-        if (pointerInteracting.current !== null) {
-          const delta = e.clientX - pointerInteracting.current
-          pointerInteractionMovement.current = delta / 200
-        }
-      }}
-      className={className}
-      style={{
-        width: '100%',
-        height: '100%',
-        cursor: 'grab',
-        contain: 'layout paint size',
-        opacity: 0,
-        transition: 'opacity 0.8s ease'
-      }}
-    />
-  )
-}
-
-/* ===== BENTO CARD ===== */
-function BentoCard({ children, className = '', hover = true }) {
-  return (
-    <div className={`
-      relative overflow-hidden rounded-xl
-      bg-[#0a0a0a] border border-[#1a1a1a]
-      ${hover ? 'transition-all duration-300 hover:border-[#2a2a2a] hover:bg-[#0f0f0f]' : ''}
-      ${className}
-    `}>
-      {children}
-    </div>
-  )
-}
-
-/* ===== STAT NUMBER ===== */
-function StatNumber({ value, size = 'lg', color = 'white' }) {
-  const sizeClasses = {
-    sm: 'text-lg font-semibold',
-    md: 'text-2xl font-bold',
-    lg: 'text-3xl font-bold',
-    xl: 'text-4xl font-bold tracking-tight'
-  }
-  
-  const colorClasses = {
-    white: 'text-white',
-    emerald: 'text-emerald-400',
-    cyan: 'text-cyan-400',
-    amber: 'text-amber-400',
-    rose: 'text-rose-400'
-  }
-  
-  return (
-    <span className={`${sizeClasses[size]} ${colorClasses[color]} tabular-nums`}>
-      {value}
-    </span>
-  )
-}
-
-/* ===== TREND INDICATOR ===== */
-function TrendIndicator({ value, positive }) {
-  return (
-    <div className={`inline-flex items-center gap-0.5 text-xs font-medium ${positive ? 'text-emerald-400' : 'text-rose-400'}`}>
-      {positive ? (
-        <ArrowUpRight className="w-3 h-3" />
-      ) : (
-        <ArrowDownRight className="w-3 h-3" />
-      )}
-      <span>{value}</span>
-    </div>
-  )
-}
-
-/* ===== PROGRESS BAR ===== */
-function ProgressBar({ value, max, color = 'emerald', showLabel = true }) {
-  const percentage = max > 0 ? (value / max) * 100 : 0
-  
-  const colorClasses = {
-    emerald: 'bg-emerald-500',
-    cyan: 'bg-cyan-500',
-    amber: 'bg-amber-500',
-    rose: 'bg-rose-500'
-  }
-  
-  return (
-    <div className="space-y-1.5">
-      {showLabel && (
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-neutral-500">{value.toLocaleString()}</span>
-          <span className="text-neutral-400">{percentage.toFixed(0)}%</span>
+    <aside className="hidden lg:flex flex-col w-64 bg-white border-r border-gray-100 h-screen sticky top-0">
+      {/* Logo */}
+      <div className="flex items-center gap-3 px-6 py-5 border-b border-gray-100">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
+          <Camera className="w-5 h-5 text-white" />
         </div>
+        <div>
+          <h1 className="font-semibold text-gray-900">ALPR System</h1>
+          <p className="text-xs text-gray-400">License Recognition</p>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="px-4 py-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input 
+            type="text"
+            placeholder="Search..."
+            className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm text-gray-600 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-300 transition-all"
+          />
+        </div>
+      </div>
+
+      {/* Navigation */}
+      <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
+        {navItems.map((item) => (
+          <button
+            key={item.label}
+            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+              item.active 
+                ? 'bg-violet-50 text-violet-700' 
+                : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <item.icon className={`w-5 h-5 ${item.active ? 'text-violet-600' : 'text-gray-400'}`} />
+              <span>{item.label}</span>
+            </div>
+            {item.count && (
+              <span className={`px-2 py-0.5 rounded-lg text-xs font-medium ${
+                item.active ? 'bg-violet-200 text-violet-700' : 'bg-gray-100 text-gray-500'
+              }`}>
+                {item.count}
+              </span>
+            )}
+          </button>
+        ))}
+      </nav>
+
+      {/* Settings */}
+      <div className="p-3 border-t border-gray-100">
+        <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-all">
+          <Settings className="w-5 h-5 text-gray-400" />
+          <span>Settings</span>
+        </button>
+      </div>
+
+      {/* User */}
+      <div className="p-4 border-t border-gray-100">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center text-white font-medium">
+            A
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-gray-900 truncate">Admin User</p>
+            <p className="text-xs text-gray-400 truncate">Pro Plan</p>
+          </div>
+        </div>
+      </div>
+    </aside>
+  )
+}
+
+/* ===== TOP HEADER ===== */
+function Header() {
+  const tabs = ['Home', 'Cameras', 'Records', 'Reports', 'Analytics']
+
+  return (
+    <header className="bg-white border-b border-gray-100 sticky top-0 z-20">
+      <div className="flex items-center justify-between px-6 py-4">
+        {/* Mobile Logo */}
+        <div className="flex lg:hidden items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
+            <Camera className="w-4 h-4 text-white" />
+          </div>
+          <h1 className="font-semibold text-gray-900">ALPR System</h1>
+        </div>
+
+        {/* Tabs - Desktop */}
+        <nav className="hidden lg:flex items-center gap-1 bg-gray-50 rounded-xl p-1">
+          {tabs.map((tab, i) => (
+            <button
+              key={tab}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                i === 0 
+                  ? 'bg-white text-gray-900 shadow-sm' 
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {tab}
+            </button>
+          ))}
+        </nav>
+
+        {/* Actions */}
+        <div className="flex items-center gap-3">
+          <button className="hidden sm:flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-all">
+            <Download className="w-4 h-4" />
+            <span>Export</span>
+          </button>
+          <button className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-600 to-purple-600 rounded-xl text-sm font-medium text-white shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 transition-all">
+            <Plus className="w-4 h-4" />
+            <span>New Scan</span>
+          </button>
+          <button className="relative p-2 text-gray-400 hover:text-gray-600 transition-colors">
+            <Bell className="w-5 h-5" />
+            <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
+          </button>
+          <div className="hidden lg:block w-9 h-9 rounded-full bg-gradient-to-br from-violet-400 to-purple-500" />
+        </div>
+      </div>
+    </header>
+  )
+}
+
+/* ===== HERO BANNER ===== */
+function HeroBanner({ kpi }) {
+  const accuracy = kpi.alpr_total + kpi.mlpr_total > 0
+    ? ((kpi.alpr_total / (kpi.alpr_total + kpi.mlpr_total)) * 100).toFixed(1)
+    : 0
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-violet-600 via-purple-600 to-blue-500 p-6 md:p-8">
+      {/* Decorative Elements */}
+      <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+      <div className="absolute bottom-0 right-20 w-40 h-40 bg-white/10 rounded-full blur-2xl translate-y-1/2" />
+      <div className="absolute top-1/2 right-12 -translate-y-1/2 hidden md:block">
+        <div className="relative">
+          <div className="w-32 h-32 lg:w-40 lg:h-40 rounded-full border-4 border-white/20 flex items-center justify-center">
+            <div className="w-24 h-24 lg:w-32 lg:h-32 rounded-full border-4 border-white/30 flex items-center justify-center">
+              <div className="w-16 h-16 lg:w-24 lg:h-24 rounded-full bg-white/20 flex items-center justify-center">
+                <Sparkles className="w-8 h-8 lg:w-10 lg:h-10 text-white" />
+              </div>
+            </div>
+          </div>
+          <div className="absolute -top-2 -right-2 w-4 h-4 bg-white rounded-full animate-pulse" />
+          <div className="absolute bottom-4 -left-4 w-3 h-3 bg-white/60 rounded-full" />
+        </div>
+      </div>
+
+      <div className="relative z-10">
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/20 backdrop-blur-sm rounded-full text-xs font-medium text-white mb-4">
+          <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
+          Live Monitoring
+        </span>
+        
+        <h2 className="text-2xl md:text-3xl font-bold text-white mb-2">
+          Welcome to ALPR Command Center
+        </h2>
+        <p className="text-white/70 text-sm md:text-base max-w-lg mb-6">
+          Real-time license plate recognition with {accuracy}% AI accuracy. Monitor all cameras and manage your vehicle database efficiently.
+        </p>
+
+        <div className="flex flex-wrap gap-3">
+          <button className="px-5 py-2.5 bg-white rounded-xl text-sm font-semibold text-violet-700 hover:bg-white/90 transition-all">
+            View Analytics
+          </button>
+          <button className="px-5 py-2.5 bg-white/20 backdrop-blur-sm rounded-xl text-sm font-semibold text-white border border-white/20 hover:bg-white/30 transition-all">
+            Camera Setup
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ===== STAT CARD ===== */
+function StatCard({ icon: Icon, iconBg, label, value, subtext, starred }) {
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-lg hover:shadow-gray-100/50 transition-all group">
+      <div className="flex items-start justify-between mb-4">
+        <div className={`w-12 h-12 rounded-xl ${iconBg} flex items-center justify-center`}>
+          <Icon className="w-6 h-6 text-white" />
+        </div>
+        {starred !== undefined && (
+          <button className="text-gray-300 hover:text-yellow-400 transition-colors">
+            <Star className={`w-5 h-5 ${starred ? 'fill-yellow-400 text-yellow-400' : ''}`} />
+          </button>
+        )}
+      </div>
+      <h3 className="text-2xl font-bold text-gray-900 mb-1">{value}</h3>
+      <p className="text-sm text-gray-500">{label}</p>
+      {subtext && (
+        <p className="text-xs text-gray-400 mt-2">{subtext}</p>
       )}
-      <div className="h-1.5 w-full rounded-full bg-neutral-800/50 overflow-hidden">
-        <div 
-          className={`h-full rounded-full ${colorClasses[color]} transition-all duration-700 ease-out`}
-          style={{ width: `${Math.min(percentage, 100)}%` }}
-        />
+      <button className="w-full mt-4 py-2.5 bg-gray-50 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100 transition-all group-hover:bg-violet-50 group-hover:text-violet-600">
+        View Details
+      </button>
+    </div>
+  )
+}
+
+/* ===== QUICK STATS ROW ===== */
+function QuickStats({ kpi }) {
+  const stats = [
+    { 
+      icon: Activity, 
+      iconBg: 'bg-gradient-to-br from-violet-500 to-purple-600',
+      label: 'Total Scans',
+      value: kpi.total_reads.toLocaleString(),
+      subtext: 'All time reads',
+      starred: true
+    },
+    { 
+      icon: CheckCircle2, 
+      iconBg: 'bg-gradient-to-br from-emerald-500 to-teal-600',
+      label: 'Verified',
+      value: kpi.verified.toLocaleString(),
+      subtext: 'Confirmed plates',
+      starred: false
+    },
+    { 
+      icon: Clock, 
+      iconBg: 'bg-gradient-to-br from-amber-500 to-orange-600',
+      label: 'Pending',
+      value: kpi.pending.toLocaleString(),
+      subtext: 'Awaiting review',
+      starred: false
+    },
+  ]
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold text-gray-900">Quick Stats</h3>
+        <button className="text-sm font-medium text-violet-600 hover:text-violet-700 transition-colors flex items-center gap-1">
+          View All
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {stats.map((stat) => (
+          <StatCard key={stat.label} {...stat} />
+        ))}
       </div>
     </div>
   )
 }
 
-/* ===== CIRCULAR GAUGE ===== */
-function CircularGauge({ value, size = 120, strokeWidth = 8 }) {
-  const radius = (size - strokeWidth) / 2
-  const circumference = radius * 2 * Math.PI
-  const strokeDashoffset = circumference - (value / 100) * circumference
-
-  const getColor = (val) => {
-    if (val >= 95) return '#10b981'
-    if (val >= 85) return '#34d399'
-    if (val >= 70) return '#fbbf24'
-    return '#f87171'
-  }
+/* ===== DATABASE SECTION ===== */
+function DatabaseSection({ kpi }) {
+  const accuracy = kpi.alpr_total + kpi.mlpr_total > 0
+    ? ((kpi.alpr_total / (kpi.alpr_total + kpi.mlpr_total)) * 100).toFixed(1)
+    : 0
 
   return (
-    <div className="relative" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="transform -rotate-90">
-        <circle
-          stroke="#1a1a1a"
-          fill="transparent"
-          strokeWidth={strokeWidth}
-          r={radius}
-          cx={size / 2}
-          cy={size / 2}
-        />
-        <circle
-          stroke={getColor(value)}
-          fill="transparent"
-          strokeWidth={strokeWidth}
-          strokeDasharray={circumference}
-          strokeDashoffset={strokeDashoffset}
-          strokeLinecap="round"
-          r={radius}
-          cx={size / 2}
-          cy={size / 2}
-          style={{ 
-            transition: 'stroke-dashoffset 1s ease-out',
-            filter: `drop-shadow(0 0 8px ${getColor(value)}50)`
-          }}
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-2xl font-bold text-white">{value.toFixed(1)}%</span>
-        <span className="text-[10px] text-neutral-500 uppercase tracking-wider">Accuracy</span>
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* Master Database Card */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-semibold text-gray-900">Master Database</h3>
+          <button className="text-sm font-medium text-violet-600 hover:text-violet-700 transition-colors flex items-center gap-1">
+            View All
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="flex items-center gap-6 mb-6">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center">
+            <Database className="w-8 h-8 text-white" />
+          </div>
+          <div>
+            <p className="text-3xl font-bold text-gray-900">{kpi.master_total.toLocaleString()}</p>
+            <p className="text-sm text-gray-500">Total Records</p>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-teal-100 flex items-center justify-center">
+                <Zap className="w-4 h-4 text-teal-600" />
+              </div>
+              <span className="text-sm text-gray-600">Auto-Master</span>
+            </div>
+            <span className="text-sm font-semibold text-gray-900">{kpi.auto_master.toLocaleString()}</span>
+          </div>
+          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-violet-100 flex items-center justify-center">
+                <Eye className="w-4 h-4 text-violet-600" />
+              </div>
+              <span className="text-sm text-gray-600">Manual Entry</span>
+            </div>
+            <span className="text-sm font-semibold text-gray-900">{(kpi.master_total - kpi.auto_master).toLocaleString()}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* AI Accuracy Card */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-semibold text-gray-900">AI Performance</h3>
+          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+            accuracy >= 90 
+              ? 'bg-emerald-100 text-emerald-700' 
+              : accuracy >= 75 
+                ? 'bg-amber-100 text-amber-700' 
+                : 'bg-red-100 text-red-700'
+          }`}>
+            {accuracy >= 90 ? 'Excellent' : accuracy >= 75 ? 'Good' : 'Needs Review'}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-6 mb-6">
+          <div className="relative">
+            <svg className="w-20 h-20 -rotate-90">
+              <circle
+                className="text-gray-100"
+                strokeWidth="8"
+                stroke="currentColor"
+                fill="transparent"
+                r="32"
+                cx="40"
+                cy="40"
+              />
+              <circle
+                className="text-violet-500"
+                strokeWidth="8"
+                strokeLinecap="round"
+                stroke="currentColor"
+                fill="transparent"
+                r="32"
+                cx="40"
+                cy="40"
+                style={{
+                  strokeDasharray: `${2 * Math.PI * 32}`,
+                  strokeDashoffset: `${2 * Math.PI * 32 * (1 - accuracy / 100)}`,
+                  transition: 'stroke-dashoffset 1s ease-out'
+                }}
+              />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-lg font-bold text-gray-900">{accuracy}%</span>
+            </div>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500 mb-2">Recognition Accuracy</p>
+            <p className="text-xs text-gray-400">Based on {(kpi.alpr_total + kpi.mlpr_total).toLocaleString()} samples</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="p-3 bg-emerald-50 rounded-xl">
+            <p className="text-xs text-emerald-600 font-medium mb-1">ALPR Correct</p>
+            <p className="text-lg font-bold text-gray-900">{kpi.alpr_total.toLocaleString()}</p>
+          </div>
+          <div className="p-3 bg-orange-50 rounded-xl">
+            <p className="text-xs text-orange-600 font-medium mb-1">MLPR Corrected</p>
+            <p className="text-lg font-bold text-gray-900">{kpi.mlpr_total.toLocaleString()}</p>
+          </div>
+        </div>
       </div>
     </div>
   )
 }
 
-/* ===== MINI SPARKLINE ===== */
-function MiniSparkline({ data = [], color = '#10b981' }) {
-  if (data.length === 0) return null
-  
-  const max = Math.max(...data)
-  const min = Math.min(...data)
-  const range = max - min || 1
-  const width = 60
-  const height = 24
-  
-  const points = data.map((val, i) => {
-    const x = (i / (data.length - 1)) * width
-    const y = height - ((val - min) / range) * height
-    return `${x},${y}`
-  }).join(' ')
-  
-  return (
-    <svg width={width} height={height} className="opacity-60">
-      <polyline
-        fill="none"
-        stroke={color}
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        points={points}
-      />
-    </svg>
-  )
-}
+/* ===== SYSTEM STATUS ===== */
+function SystemStatus() {
+  const metrics = [
+    { icon: Cpu, label: 'CPU Usage', value: '45%', status: 'good' },
+    { icon: Target, label: 'Throughput', value: '125/min', status: 'good' },
+    { icon: Shield, label: 'Uptime', value: '99.8%', status: 'good' },
+    { icon: Camera, label: 'Active Cams', value: '12/12', status: 'good' },
+  ]
 
-/* ===== LIVE INDICATOR ===== */
-function LiveBadge() {
   return (
-    <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-      <span className="relative flex h-1.5 w-1.5">
-        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
-      </span>
-      <span className="text-[10px] font-medium text-emerald-400 uppercase tracking-wider">Live</span>
+    <div className="bg-white rounded-2xl border border-gray-100 p-6">
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-lg font-semibold text-gray-900">System Status</h3>
+        <span className="flex items-center gap-1.5 text-sm text-emerald-600 font-medium">
+          <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+          All Systems Operational
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {metrics.map((metric) => (
+          <div key={metric.label} className="text-center p-4 bg-gray-50 rounded-xl">
+            <div className="w-10 h-10 rounded-xl bg-white shadow-sm flex items-center justify-center mx-auto mb-3">
+              <metric.icon className="w-5 h-5 text-violet-600" />
+            </div>
+            <p className="text-lg font-bold text-gray-900">{metric.value}</p>
+            <p className="text-xs text-gray-500">{metric.label}</p>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -296,13 +447,12 @@ function LiveBadge() {
 /* ===== LOADING STATE ===== */
 function LoadingState() {
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="flex flex-col items-center gap-4">
-        <div className="relative">
-          <div className="w-10 h-10 border border-neutral-800 rounded-full" />
-          <div className="absolute inset-0 w-10 h-10 border border-emerald-500 border-t-transparent rounded-full animate-spin" />
+        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center animate-pulse">
+          <Camera className="w-6 h-6 text-white" />
         </div>
-        <p className="text-neutral-500 text-sm">Loading dashboard...</p>
+        <p className="text-gray-500 text-sm">Loading dashboard...</p>
       </div>
     </div>
   )
@@ -311,18 +461,21 @@ function LoadingState() {
 /* ===== ERROR STATE ===== */
 function ErrorState({ error }) {
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center p-4">
-      <BentoCard className="p-6 max-w-md border-rose-500/20">
-        <div className="flex items-start gap-3">
-          <div className="p-2 rounded-lg bg-rose-500/10">
-            <AlertCircle className="w-5 h-5 text-rose-400" />
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl border border-red-100 p-6 max-w-md shadow-lg">
+        <div className="flex items-start gap-4">
+          <div className="w-12 h-12 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
+            <AlertCircle className="w-6 h-6 text-red-500" />
           </div>
           <div>
-            <h3 className="text-sm font-medium text-rose-300">Connection Error</h3>
-            <p className="text-xs text-neutral-500 mt-1">{error}</p>
+            <h3 className="font-semibold text-gray-900 mb-1">Connection Error</h3>
+            <p className="text-sm text-gray-500">{error}</p>
+            <button className="mt-4 px-4 py-2 bg-red-50 text-red-600 rounded-xl text-sm font-medium hover:bg-red-100 transition-colors">
+              Try Again
+            </button>
           </div>
         </div>
-      </BentoCard>
+      </div>
     </div>
   )
 }
@@ -355,253 +508,30 @@ export default function Dashboard() {
   if (error) return <ErrorState error={error} />
   if (!kpi) return null
 
-  const accuracy = kpi.alpr_total + kpi.mlpr_total > 0
-    ? (kpi.alpr_total / (kpi.alpr_total + kpi.mlpr_total)) * 100
-    : 0
-    
-  const verifiedRate = kpi.total_reads > 0 
-    ? ((kpi.verified / kpi.total_reads) * 100).toFixed(1) 
-    : 0
-
-  // Simulated sparkline data based on real metrics
-  const generateSparkline = (base, variance = 0.1) => {
-    return Array.from({ length: 12 }, () => base * (1 + (Math.random() - 0.5) * variance))
-  }
-
   return (
-    <div className="min-h-screen bg-black relative">
-      {/* Globe Background */}
-      <div className="fixed inset-0 flex items-center justify-center pointer-events-none">
-        <div className="relative w-[800px] h-[800px] opacity-40">
-          <div className="absolute inset-0 bg-gradient-to-b from-black via-transparent to-black z-10" />
-          <div className="absolute inset-0 bg-gradient-to-r from-black via-transparent to-black z-10" />
-          <Globe className="pointer-events-auto" />
-        </div>
-      </div>
-      
-      {/* Content */}
-      <div className="relative z-10 p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto">
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Sidebar */}
+      <Sidebar />
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-xl md:text-2xl font-semibold text-white tracking-tight">
-              ALPR Command Center
-            </h1>
-            <p className="text-sm text-neutral-500 mt-0.5">
-              Real-time license plate recognition analytics
-            </p>
-          </div>
-          <LiveBadge />
-        </header>
+        <Header />
 
-        {/* Bento Grid */}
-        <div className="grid grid-cols-12 gap-3 md:gap-4">
-          
-          {/* Total Scans - Large Card */}
-          <BentoCard className="col-span-12 md:col-span-6 lg:col-span-3 p-5">
-            <div className="flex items-start justify-between mb-4">
-              <div className="p-2 rounded-lg bg-emerald-500/10">
-                <Activity className="w-4 h-4 text-emerald-400" />
-              </div>
-              <TrendIndicator value="+12.5%" positive />
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs text-neutral-500 uppercase tracking-wider">Total Scans</p>
-              <div className="flex items-end justify-between">
-                <StatNumber value={kpi.total_reads.toLocaleString()} size="xl" />
-                <MiniSparkline data={generateSparkline(kpi.total_reads / 100)} color="#10b981" />
-              </div>
-            </div>
-          </BentoCard>
+        {/* Content */}
+        <main className="flex-1 p-4 md:p-6 lg:p-8 space-y-6">
+          {/* Hero Banner */}
+          <HeroBanner kpi={kpi} />
 
-          {/* Verified */}
-          <BentoCard className="col-span-6 md:col-span-3 lg:col-span-2 p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <CheckCircle2 className="w-4 h-4 text-cyan-400" />
-              <span className="text-xs text-neutral-500 uppercase tracking-wider">Verified</span>
-            </div>
-            <StatNumber value={kpi.verified.toLocaleString()} size="lg" />
-            <p className="text-xs text-cyan-400 mt-1">{verifiedRate}% rate</p>
-          </BentoCard>
+          {/* Quick Stats */}
+          <QuickStats kpi={kpi} />
 
-          {/* Pending */}
-          <BentoCard className="col-span-6 md:col-span-3 lg:col-span-2 p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <Clock className="w-4 h-4 text-amber-400" />
-              <span className="text-xs text-neutral-500 uppercase tracking-wider">Pending</span>
-            </div>
-            <StatNumber value={kpi.pending.toLocaleString()} size="lg" />
-            <p className="text-xs text-amber-400 mt-1">In queue</p>
-          </BentoCard>
+          {/* Database & AI Performance */}
+          <DatabaseSection kpi={kpi} />
 
-          {/* Master DB */}
-          <BentoCard className="col-span-12 md:col-span-6 lg:col-span-5 p-5">
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <Database className="w-4 h-4 text-teal-400" />
-                  <span className="text-xs text-neutral-500 uppercase tracking-wider">Master Database</span>
-                </div>
-                <StatNumber value={kpi.master_total.toLocaleString()} size="xl" />
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-neutral-500 mb-1">Auto-Master</p>
-                <p className="text-sm font-semibold text-teal-400">{kpi.auto_master.toLocaleString()}</p>
-              </div>
-            </div>
-            <ProgressBar value={kpi.auto_master} max={kpi.master_total} color="cyan" />
-          </BentoCard>
-
-          {/* AI Accuracy - Featured Card */}
-          <BentoCard className="col-span-12 lg:col-span-4 p-6 bg-gradient-to-br from-[#0a0a0a] to-[#0f1210]">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h3 className="text-sm font-medium text-white">AI Accuracy</h3>
-                <p className="text-xs text-neutral-500 mt-0.5">ALPR vs MLPR comparison</p>
-              </div>
-              <div className={`px-2 py-1 rounded-md text-[10px] font-medium uppercase tracking-wider ${
-                accuracy >= 90 
-                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-                  : accuracy >= 75 
-                    ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' 
-                    : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-              }`}>
-                {accuracy >= 90 ? 'Excellent' : accuracy >= 75 ? 'Good' : 'Review'}
-              </div>
-            </div>
-            
-            <div className="flex items-center justify-center py-4">
-              <CircularGauge value={accuracy} size={140} strokeWidth={10} />
-            </div>
-            
-            <div className="grid grid-cols-2 gap-3 mt-6">
-              <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
-                <p className="text-[10px] text-emerald-400 uppercase tracking-wider mb-1">ALPR</p>
-                <p className="text-lg font-semibold text-white">{kpi.alpr_total.toLocaleString()}</p>
-                <p className="text-[10px] text-neutral-600">Correct reads</p>
-              </div>
-              <div className="p-3 rounded-lg bg-rose-500/5 border border-rose-500/10">
-                <p className="text-[10px] text-rose-400 uppercase tracking-wider mb-1">MLPR</p>
-                <p className="text-lg font-semibold text-white">{kpi.mlpr_total.toLocaleString()}</p>
-                <p className="text-[10px] text-neutral-600">Corrected</p>
-              </div>
-            </div>
-          </BentoCard>
-
-          {/* Confidence Distribution */}
-          <BentoCard className="col-span-12 md:col-span-6 lg:col-span-4 p-6">
-            <div className="flex items-center justify-between mb-5">
-              <div>
-                <h3 className="text-sm font-medium text-white">Confidence Distribution</h3>
-                <p className="text-xs text-neutral-500 mt-0.5">Recognition score breakdown</p>
-              </div>
-              <BarChart3 className="w-4 h-4 text-neutral-600" />
-            </div>
-            
-            <div className="space-y-4">
-              {[
-                { label: 'High', sublabel: '>=90%', value: Math.floor(kpi.total_reads * 0.65), color: 'emerald' },
-                { label: 'Medium', sublabel: '70-90%', value: Math.floor(kpi.total_reads * 0.25), color: 'amber' },
-                { label: 'Low', sublabel: '<70%', value: Math.floor(kpi.total_reads * 0.1), color: 'rose' }
-              ].map((item) => (
-                <div key={item.label}>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-neutral-300">{item.label}</span>
-                      <span className="text-[10px] text-neutral-600">{item.sublabel}</span>
-                    </div>
-                    <span className="text-sm font-medium text-white">{item.value.toLocaleString()}</span>
-                  </div>
-                  <ProgressBar value={item.value} max={kpi.total_reads} color={item.color} showLabel={false} />
-                </div>
-              ))}
-            </div>
-          </BentoCard>
-
-          {/* System Metrics */}
-          <BentoCard className="col-span-12 md:col-span-6 lg:col-span-4 p-6">
-            <div className="flex items-center justify-between mb-5">
-              <div>
-                <h3 className="text-sm font-medium text-white">System Performance</h3>
-                <p className="text-xs text-neutral-500 mt-0.5">Real-time metrics</p>
-              </div>
-              <Cpu className="w-4 h-4 text-neutral-600" />
-            </div>
-            
-            <div className="space-y-3">
-              {[
-                { icon: Zap, label: 'Avg. Processing', value: '0.8s', color: 'text-emerald-400' },
-                { icon: Target, label: 'Throughput', value: '~125/min', color: 'text-cyan-400' },
-                { icon: Shield, label: 'System Uptime', value: '99.8%', color: 'text-emerald-400' },
-                { icon: Camera, label: 'Active Cameras', value: '12', color: 'text-white' },
-              ].map((metric) => (
-                <div key={metric.label} className="flex items-center justify-between py-2 border-b border-neutral-800/50 last:border-0">
-                  <div className="flex items-center gap-2.5">
-                    <metric.icon className="w-4 h-4 text-neutral-600" />
-                    <span className="text-sm text-neutral-400">{metric.label}</span>
-                  </div>
-                  <span className={`text-sm font-medium ${metric.color}`}>{metric.value}</span>
-                </div>
-              ))}
-            </div>
-            
-            <div className="mt-5 p-3 rounded-lg bg-gradient-to-r from-emerald-500/5 to-cyan-500/5 border border-emerald-500/10">
-              <div className="flex items-center gap-3">
-                <Activity className="w-4 h-4 text-emerald-400" />
-                <div>
-                  <p className="text-[10px] text-neutral-500 uppercase tracking-wider">Today's Scans</p>
-                  <p className="text-lg font-semibold text-white">{Math.floor(kpi.total_reads * 0.15).toLocaleString()}</p>
-                </div>
-              </div>
-            </div>
-          </BentoCard>
-
-          {/* Bottom Stats Row */}
-          <BentoCard className="col-span-6 lg:col-span-3 p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="p-1.5 rounded-md bg-emerald-500/10">
-                <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-              </div>
-              <span className="text-[10px] text-neutral-500 uppercase tracking-wider">Last 7 Days</span>
-            </div>
-            <StatNumber value={Math.floor(kpi.total_reads * 0.78).toLocaleString()} size="md" />
-            <p className="text-[10px] text-emerald-400 mt-1">+8.2% vs last week</p>
-          </BentoCard>
-
-          <BentoCard className="col-span-6 lg:col-span-3 p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="p-1.5 rounded-md bg-teal-500/10">
-                <Database className="w-3.5 h-3.5 text-teal-400" />
-              </div>
-              <span className="text-[10px] text-neutral-500 uppercase tracking-wider">Province Match</span>
-            </div>
-            <StatNumber value={Math.floor(kpi.total_reads * 0.82).toLocaleString()} size="md" />
-            <p className="text-[10px] text-teal-400 mt-1">82% detection rate</p>
-          </BentoCard>
-
-          <BentoCard className="col-span-6 lg:col-span-3 p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="p-1.5 rounded-md bg-cyan-500/10">
-                <Clock className="w-3.5 h-3.5 text-cyan-400" />
-              </div>
-              <span className="text-[10px] text-neutral-500 uppercase tracking-wider">Response Time</span>
-            </div>
-            <StatNumber value="0.8s" size="md" />
-            <p className="text-[10px] text-cyan-400 mt-1">-5.3% faster</p>
-          </BentoCard>
-
-          <BentoCard className="col-span-6 lg:col-span-3 p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="p-1.5 rounded-md bg-violet-500/10">
-                <Cpu className="w-3.5 h-3.5 text-violet-400" />
-              </div>
-              <span className="text-[10px] text-neutral-500 uppercase tracking-wider">GPU Load</span>
-            </div>
-            <StatNumber value="67%" size="md" />
-            <p className="text-[10px] text-violet-400 mt-1">Optimal range</p>
-          </BentoCard>
-
-        </div>
+          {/* System Status */}
+          <SystemStatus />
+        </main>
       </div>
     </div>
   )
