@@ -1,30 +1,48 @@
 import React, { useEffect, useState } from 'react'
-import { deleteMaster, searchMaster, upsertMaster, absImageUrl, API_BASE } from '../lib/api.js'
+import {
+  deleteMaster,
+  searchMaster,
+  upsertMaster,
+  absImageUrl,
+  API_BASE,
+} from '../lib/api.js'
+import {
+  Card,
+  CardBody,
+  CardHeader,
+  Button,
+  Badge,
+  Modal,
+  EmptyState,
+} from '../components/UIComponents.jsx'
+import { Search, Database, X } from 'lucide-react'
 
 export default function Master() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useState('')
   const [rows, setRows] = useState([])
-  const [err, setErr] = useState("")
-  const [msg, setMsg] = useState("")
+  const [err, setErr] = useState('')
+  const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const [viewerOpen, setViewerOpen] = useState(false)
-  const [viewerImage, setViewerImage] = useState("")
+  const [viewerImage, setViewerImage] = useState('')
 
   async function load() {
-    setErr(""); setMsg("")
+    setErr('')
+    setMsg('')
     try {
       const r = await searchMaster(q)
-      // Fetch crop images for each master record
       const enriched = await Promise.all(
         r.map(async (row) => {
           try {
-            const res = await fetch(`${API_BASE}/api/master/${row.id}/crops?limit=5`)
+            const res = await fetch(
+              `${API_BASE}/api/master/${row.id}/crops?limit=5`
+            )
             if (res.ok) {
               const crops = await res.json()
               return { ...row, crops }
             }
-          } catch (e) {
-            console.warn('Failed to fetch crops for', row.id)
+          } catch {
+            /* skip */
           }
           return { ...row, crops: [] }
         })
@@ -35,19 +53,23 @@ export default function Master() {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+  }, [])
 
   async function saveRow(row) {
-    setBusy(true); setErr(""); setMsg("")
+    setBusy(true)
+    setErr('')
+    setMsg('')
     try {
       await upsertMaster({
         plate_text_norm: row.plate_text_norm,
         display_text: row.display_text,
         province: row.province,
         confidence: row.confidence,
-        editable: row.editable
+        editable: row.editable,
       })
-      setMsg("✓ บันทึกแล้ว")
+      setMsg('Record saved successfully')
       await load()
     } catch (e) {
       setErr(String(e))
@@ -57,13 +79,17 @@ export default function Master() {
   }
 
   async function removeRow(row) {
-    if (!window.confirm(`ลบข้อมูลป้ายทะเบียน ${row.plate_text_norm} ใช่หรือไม่?`)) {
+    if (
+      !window.confirm(`Delete plate ${row.plate_text_norm}?`)
+    ) {
       return
     }
-    setBusy(true); setErr(""); setMsg("")
+    setBusy(true)
+    setErr('')
+    setMsg('')
     try {
       await deleteMaster(row.id)
-      setMsg("✓ ลบแล้ว")
+      setMsg('Record deleted')
       await load()
     } catch (e) {
       setErr(String(e))
@@ -77,164 +103,237 @@ export default function Master() {
     setViewerOpen(true)
   }
 
+  const handleSearch = (e) => {
+    e.preventDefault()
+    load()
+  }
+
   return (
-    <div className="space-y-4">
-      <div className="rounded-2xl border border-emerald-300/20 bg-gradient-to-r from-emerald-600/20 to-teal-500/10 p-5">
-        <h1 className="text-2xl font-semibold text-slate-100">Master Data</h1>
-        <p className="text-sm text-slate-300">ฐานข้อมูลป้ายทะเบียนที่ยืนยันแล้ว พร้อมภาพตัวอย่าง</p>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="page-header">
+        <h1 className="page-title">Master Database</h1>
+        <p className="page-subtitle">
+          Verified license plate records with sample images
+        </p>
       </div>
 
-      <div className="rounded-2xl border border-slate-700/50 bg-slate-900/55 p-4 shadow-lg">
-        <div className="flex gap-2">
-          <input
-            className="input-dark flex-1"
-            placeholder="ค้นหาป้ายทะเบียน..."
-            value={q}
-            onChange={e => setQ(e.target.value)}
-          />
-          <button className="btn-emerald" onClick={load}>ค้นหา</button>
+      {/* Search */}
+      <Card>
+        <CardBody>
+          <form onSubmit={handleSearch} className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+              <input
+                className="input-dark pl-10"
+                placeholder="Search plate number..."
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+            </div>
+            <Button type="submit" variant="primary" size="sm">
+              Search
+            </Button>
+          </form>
+        </CardBody>
+      </Card>
+
+      {/* Messages */}
+      {err && (
+        <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          {err}
         </div>
-      </div>
-
-      {err && <div className="rounded-xl border border-rose-300/40 bg-rose-500/10 p-3 text-rose-200">{err}</div>}
-      {msg && <div className="rounded-xl border border-emerald-300/40 bg-emerald-500/10 p-3 text-emerald-200">{msg}</div>}
-
-      <div className="overflow-x-auto rounded-2xl border border-slate-700/50 bg-slate-900/55 shadow-lg">
-        <table className="w-full text-sm">
-          <thead className="border-b border-slate-700/50 bg-slate-950/40">
-            <tr>
-              <th className="p-3 text-left text-slate-300">ภาพตัวอย่าง</th>
-              <th className="p-3 text-left text-slate-300">Plate (Normalized)</th>
-              <th className="p-3 text-left text-slate-300">Display Text</th>
-              <th className="p-3 text-left text-slate-300">Province</th>
-              <th className="p-3 text-left text-slate-300">Confidence</th>
-              <th className="p-3 text-left text-slate-300">Seen Count</th>
-              <th className="p-3 text-left text-slate-300">Editable</th>
-              <th className="p-3 text-left text-slate-300">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(r => <Row key={r.id} r={r} busy={busy} onSave={saveRow} onDelete={removeRow} onViewImage={openViewer} />)}
-            {!rows.length && (
-              <tr>
-                <td className="p-4 text-center text-slate-500" colSpan="8">
-                  ไม่พบข้อมูล
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {viewerOpen && (
-        <ImageViewer src={viewerImage} onClose={() => setViewerOpen(false)} />
       )}
+      {msg && (
+        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300 flex items-center justify-between">
+          <span>{msg}</span>
+          <button
+            onClick={() => setMsg('')}
+            className="text-emerald-400 hover:text-white"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Table */}
+      <Card>
+        <CardBody className="p-0">
+          <div className="overflow-x-auto">
+            <table className="table-enterprise">
+              <thead>
+                <tr>
+                  <th>Image</th>
+                  <th>Plate (Norm)</th>
+                  <th>Display Text</th>
+                  <th>Province</th>
+                  <th>Confidence</th>
+                  <th>Seen</th>
+                  <th>Editable</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <Row
+                    key={r.id}
+                    r={r}
+                    busy={busy}
+                    onSave={saveRow}
+                    onDelete={removeRow}
+                    onViewImage={openViewer}
+                  />
+                ))}
+                {!rows.length && (
+                  <tr>
+                    <td
+                      className="p-8 text-center text-slate-600"
+                      colSpan="8"
+                    >
+                      <EmptyState
+                        icon={<Database className="h-10 w-10" />}
+                        title="No records found"
+                        description="Try a different search term or add new plates via the Upload page."
+                      />
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* Image Viewer */}
+      <ImageViewer
+        open={viewerOpen}
+        src={viewerImage}
+        onClose={() => setViewerOpen(false)}
+      />
     </div>
   )
 }
 
 function Row({ r, onSave, onDelete, busy, onViewImage }) {
-  const [display, setDisplay] = useState(r.display_text || "")
-  const [prov, setProv] = useState(r.province || "")
+  const [display, setDisplay] = useState(r.display_text || '')
+  const [prov, setProv] = useState(r.province || '')
   const [conf, setConf] = useState(r.confidence ?? 1.0)
   const [editable, setEditable] = useState(!!r.editable)
 
   return (
-    <tr className="border-b border-slate-800 hover:bg-slate-800/30 transition">
-      <td className="p-3">
+    <tr>
+      <td>
         {r.crops && r.crops.length > 0 ? (
           <div className="relative inline-block group">
             <img
               src={absImageUrl(r.crops[0].crop_url)}
               alt="crop"
-              className="h-16 w-24 cursor-pointer rounded-lg border border-slate-700/50 object-cover hover:border-emerald-400/50 transition shadow-sm"
+              className="h-12 w-20 cursor-pointer rounded-md border border-white/[0.08] object-cover hover:border-white/[0.2] transition"
               onClick={() => onViewImage(absImageUrl(r.crops[0].crop_url))}
             />
             {r.crops.length > 1 && (
-              <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-bold text-white shadow-lg ring-2 ring-slate-900">
+              <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[9px] font-bold text-white ring-2 ring-slate-900">
                 +{r.crops.length - 1}
               </span>
             )}
-            <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/60 opacity-0 group-hover:opacity-100 transition">
-              <span className="text-xs text-white">คลิกเพื่อดู</span>
-            </div>
           </div>
         ) : (
-          <div className="flex h-16 w-24 items-center justify-center rounded-lg border border-dashed border-slate-700 bg-slate-950/50">
-            <span className="text-xs text-slate-600">ไม่มีภาพ</span>
+          <div className="flex h-12 w-20 items-center justify-center rounded-md border border-dashed border-white/[0.08] bg-slate-950/50">
+            <span className="text-[10px] text-slate-600">No image</span>
           </div>
         )}
       </td>
-      <td className="p-3 font-mono text-slate-100">{r.plate_text_norm}</td>
-      <td className="p-3">
+      <td className="font-mono text-white text-sm">{r.plate_text_norm}</td>
+      <td>
         <input
-          className="input-dark w-full"
+          className="input-dark w-full text-sm"
           value={display}
-          onChange={e => setDisplay(e.target.value)}
+          onChange={(e) => setDisplay(e.target.value)}
         />
       </td>
-      <td className="p-3">
+      <td>
         <input
-          className="input-dark w-full"
+          className="input-dark w-full text-sm"
           value={prov}
-          onChange={e => setProv(e.target.value)}
+          onChange={(e) => setProv(e.target.value)}
         />
       </td>
-      <td className="p-3">
+      <td>
         <input
-          className="input-dark w-28"
+          className="input-dark w-24 text-sm tabular-nums"
           type="number"
           step="0.001"
           value={conf}
-          onChange={e => setConf(parseFloat(e.target.value))}
+          onChange={(e) => setConf(parseFloat(e.target.value))}
         />
       </td>
-      <td className="p-3">
-        <div className="flex items-center gap-2">
-          <span className="text-slate-300">{r.count_seen}</span>
-          <span className="text-xs text-slate-500">ครั้ง</span>
-        </div>
+      <td>
+        <span className="text-sm tabular-nums text-white">
+          {r.count_seen}
+        </span>
       </td>
-      <td className="p-3">
+      <td>
         <input
           type="checkbox"
           checked={editable}
-          onChange={e => setEditable(e.target.checked)}
-          className="h-4 w-4 accent-emerald-500"
+          onChange={(e) => setEditable(e.target.checked)}
+          className="h-4 w-4 rounded border-white/20 bg-slate-950 accent-blue-600"
         />
       </td>
-      <td className="p-3">
-        <div className="flex flex-wrap gap-2">
-          <button
+      <td>
+        <div className="flex gap-1.5">
+          <Button
+            variant="primary"
+            size="sm"
             disabled={busy}
-            className="btn-emerald text-xs disabled:opacity-50"
-            onClick={() => onSave({ ...r, display_text: display, province: prov, confidence: conf, editable })}
+            onClick={() =>
+              onSave({
+                ...r,
+                display_text: display,
+                province: prov,
+                confidence: conf,
+                editable,
+              })
+            }
           >
-            บันทึก
-          </button>
-          <button
+            Save
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
             disabled={busy}
-            className="rounded-xl border border-rose-300/60 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-100 hover:bg-rose-500/20 disabled:opacity-50 transition"
             onClick={() => onDelete(r)}
           >
-            ลบ
-          </button>
+            Delete
+          </Button>
         </div>
       </td>
     </tr>
   )
 }
 
-function ImageViewer({ src, onClose }) {
+function ImageViewer({ open, src, onClose }) {
+  if (!open) return null
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-sm" onClick={onClose}>
-      <div className="relative max-h-[90vh] max-w-[90vw]" onClick={e => e.stopPropagation()}>
-        <img src={src} alt="full" className="max-h-[90vh] max-w-[90vw] rounded-xl border border-emerald-300/30 shadow-2xl" />
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="relative max-h-[90vh] max-w-[90vw]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <img
+          src={src}
+          alt="full"
+          className="max-h-[90vh] max-w-[90vw] rounded-lg border border-white/[0.1] shadow-2xl"
+        />
         <button
-          className="absolute right-2 top-2 rounded-lg border border-white/20 bg-slate-900/80 px-3 py-1.5 text-sm text-slate-100 hover:border-white/40 transition backdrop-blur"
+          className="absolute right-3 top-3 rounded-md border border-white/[0.1] bg-slate-900/90 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 transition backdrop-blur"
           onClick={onClose}
         >
-          ✕ ปิด
+          Close
         </button>
       </div>
     </div>

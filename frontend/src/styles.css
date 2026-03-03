@@ -1,8 +1,8 @@
+@import "./styles/design-system.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import "./styles/design-system.css";
 
 @layer base {
   :root {
@@ -11,50 +11,132 @@
 
   body {
     @apply bg-slate-950 text-slate-100 antialiased;
-    background-image: 
-      radial-gradient(circle at top left, rgba(16, 185, 129, 0.15), transparent 50%),
-      radial-gradient(circle at bottom right, rgba(20, 184, 166, 0.12), transparent 50%);
   }
+
   :focus-visible {
     outline: none;
-    @apply ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950;
+    @apply ring-2 ring-blue-500 ring-offset-2 ring-offset-slate-950;
   }
 }
 
 @layer components {
+  /* ── Glass / Card Panels ── */
   .glass-panel {
-    @apply rounded-2xl border border-emerald-300/15 bg-slate-900/60 shadow-xl shadow-emerald-950/20 backdrop-blur;
+    @apply rounded-xl border border-white/[0.08] bg-slate-900/80 shadow-lg shadow-black/20 backdrop-blur-sm;
   }
 
-  .top-nav {
-    @apply rounded-xl border border-emerald-300/10 bg-slate-950/40 p-2;
+  /* ── Sidebar ── */
+  .sidebar {
+    @apply flex flex-col border-r border-white/[0.06] bg-slate-950;
+    transition: width 200ms cubic-bezier(0.4, 0, 0.2, 1);
   }
 
-  .nav-item {
-    @apply flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition;
+  .sidebar-expanded {
+    width: 240px;
+    min-width: 240px;
   }
 
-  .nav-item-active {
-    @apply bg-gradient-to-r from-emerald-500/20 to-teal-500/20 text-emerald-100 shadow-sm shadow-emerald-900/30;
+  .sidebar-collapsed {
+    width: 64px;
+    min-width: 64px;
   }
 
-  .nav-item-idle {
-    @apply text-slate-300 hover:bg-emerald-500/10 hover:text-emerald-100;
+  .sidebar-item {
+    @apply relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors;
   }
 
+  .sidebar-item-active {
+    @apply bg-white/[0.08] text-white;
+  }
+
+  .sidebar-item-active::before {
+    content: '';
+    @apply absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-blue-500;
+  }
+
+  .sidebar-item-idle {
+    @apply text-slate-400 hover:bg-white/[0.04] hover:text-slate-100;
+  }
+
+  /* ── Buttons ── */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-500 active:bg-blue-700;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-white/[0.1] bg-white/[0.04] px-4 py-2 text-sm font-medium text-slate-200 transition-colors hover:bg-white/[0.08] hover:text-white;
+  }
+
+  .btn-success {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-500;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-slate-400 transition-colors hover:bg-white/[0.04] hover:text-slate-100;
+  }
+
+  /* Legacy aliases */
   .btn-emerald, .btn-blue {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2 text-sm font-semibold text-white transition hover:from-emerald-400 hover:to-teal-400 shadow-lg shadow-emerald-500/20;
+    @apply btn-primary;
   }
 
   .btn-soft {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-300/20 bg-slate-800/80 px-4 py-2 text-sm font-medium text-slate-100 transition hover:bg-emerald-500/10 hover:border-emerald-300/40;
+    @apply btn-secondary;
+  }
+
+  /* ── Inputs ── */
+  .input-dark {
+    @apply w-full rounded-lg border border-white/[0.1] bg-slate-950/80 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 transition-colors focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 focus:outline-none;
   }
 
   .file-input {
-    @apply block w-full rounded-xl border border-emerald-300/15 bg-slate-950/60 px-3 py-2 text-sm text-slate-300 file:mr-4 file:rounded-lg file:border-0 file:bg-emerald-500 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-emerald-400;
+    @apply block w-full rounded-lg border border-white/[0.1] bg-slate-950/80 px-3 py-2 text-sm text-slate-300 transition-colors file:mr-4 file:rounded-md file:border-0 file:bg-blue-600 file:px-4 file:py-1.5 file:text-sm file:font-semibold file:text-white hover:file:bg-blue-500;
   }
 
-  .input-dark {
-    @apply mt-1 w-full rounded-xl border border-emerald-300/20 bg-slate-950/50 px-3 py-2 text-sm text-slate-100 focus:border-emerald-400/50 focus:ring-2 focus:ring-emerald-400/20;
+  /* ── Tables ── */
+  .table-enterprise {
+    @apply w-full text-sm text-left;
+  }
+
+  .table-enterprise thead {
+    @apply bg-slate-950/50 text-xs font-medium uppercase tracking-wider text-slate-400;
+  }
+
+  .table-enterprise thead th {
+    @apply px-4 py-3;
+  }
+
+  .table-enterprise tbody {
+    @apply divide-y divide-white/[0.06];
+  }
+
+  .table-enterprise tbody tr {
+    @apply transition-colors hover:bg-white/[0.02];
+  }
+
+  .table-enterprise tbody td {
+    @apply px-4 py-3 text-slate-300;
+  }
+
+  /* ── Skeleton Loading ── */
+  .skeleton {
+    @apply animate-pulse rounded-md bg-white/[0.06];
+  }
+
+  /* ── Page Layout ── */
+  .page-header {
+    @apply mb-6 flex flex-col gap-1;
+  }
+
+  .page-title {
+    @apply text-2xl font-bold text-white tracking-tight;
+  }
+
+  .page-subtitle {
+    @apply text-sm text-slate-400;
   }
 }
