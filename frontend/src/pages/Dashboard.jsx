@@ -153,7 +153,7 @@ function Header() {
             <Download className="w-4 h-4" />
             <span>Export</span>
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-600 to-purple-600 rounded-xl text-sm font-medium text-white shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 transition-all">
+          <button className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 rounded-xl text-sm font-medium text-white shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40 transition-all">
             <Plus className="w-4 h-4" />
             <span>New Scan</span>
           </button>
@@ -161,7 +161,7 @@ function Header() {
             <Bell className="w-5 h-5" />
             <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
           </button>
-          <div className="hidden lg:block w-9 h-9 rounded-full bg-gradient-to-br from-violet-400 to-purple-500" />
+          <div className="hidden lg:block w-9 h-9 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500" />
         </div>
       </div>
     </header>
