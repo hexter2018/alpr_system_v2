@@ -224,6 +224,8 @@ services:
     depends_on:
       - redis
       - postgres
+    networks:
+      - alpr-network
     deploy:
       resources:
         reservations:
@@ -256,6 +258,8 @@ services:
     depends_on:
       - redis
       - postgres
+    networks:
+      - alpr-network
 
 volumes:
   pgdata:
