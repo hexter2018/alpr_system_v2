@@ -222,6 +222,7 @@ body {
 .stagger-2 { animation-delay: 80ms; }
 .stagger-3 { animation-delay: 160ms; }
 .stagger-4 { animation-delay: 240ms; }
+.stagger-5 { animation-delay: 320ms; }
 
 /* Confidence Level Colors */
 .confidence-high {

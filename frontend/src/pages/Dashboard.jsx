@@ -25,6 +25,7 @@ import {
   CheckCircle2,
   Clock4,
   Database,
+  Zap,
 } from 'lucide-react'
 
 /* ── Accuracy Gauge (SVG) ── */
@@ -146,8 +147,8 @@ export default function Dashboard() {
           <div className="skeleton h-7 w-40" />
           <div className="skeleton h-4 w-64 mt-1" />
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
             <SkeletonCard key={i} />
           ))}
         </div>
@@ -194,6 +195,22 @@ export default function Dashboard() {
   const sevenDayReads = kpi.last_7_days_reads ?? 0
   const withProvinceReads = kpi.with_province_reads ?? 0
   const withoutProvinceReads = kpi.without_province_reads ?? 0
+
+  /* Processing speed display */
+  const avgMs = kpi.avg_processing_ms
+  let avgSpeedDisplay = '--'
+  let avgSpeedUnit = 'no data'
+  let avgSpeedAccent = 'slate'
+  if (avgMs != null) {
+    if (avgMs < 1000) {
+      avgSpeedDisplay = `${Math.round(avgMs)}`
+      avgSpeedUnit = 'ms / plate'
+    } else {
+      avgSpeedDisplay = `${(avgMs / 1000).toFixed(1)}`
+      avgSpeedUnit = 'sec / plate'
+    }
+    avgSpeedAccent = avgMs < 500 ? 'emerald' : avgMs < 2000 ? 'amber' : 'red'
+  }
 
   /* ── Chart data ── */
   const confidenceData = [
@@ -246,7 +263,7 @@ export default function Dashboard() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <div className="animate-fade-in-up stagger-1">
           <StatCard
             title="Total Scans"
@@ -286,6 +303,15 @@ export default function Dashboard() {
             subtitle="registered plates"
             accentColor="slate"
             icon={<Database className="h-5 w-5" />}
+          />
+        </div>
+        <div className="animate-fade-in-up stagger-5">
+          <StatCard
+            title="Avg Speed"
+            value={avgSpeedDisplay}
+            subtitle={avgSpeedUnit}
+            accentColor={avgSpeedAccent}
+            icon={<Zap className="h-5 w-5" />}
           />
         </div>
       </div>
