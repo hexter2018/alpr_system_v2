@@ -25,18 +25,25 @@ import {
   CheckCircle2,
   Clock4,
   Database,
+  Zap,
 } from 'lucide-react'
 
 /* ── Accuracy Gauge (SVG) ── */
 function AccuracyGauge({ percentage }) {
-  const radius = 64
-  const stroke = 10
+  const radius = 72
+  const stroke = 8
   const normalizedRadius = radius - stroke / 2
   const circumference = normalizedRadius * 2 * Math.PI
   const strokeDashoffset = circumference - (percentage / 100) * circumference
 
   const color =
     percentage >= 90 ? '#3b82f6' : percentage >= 75 ? '#f59e0b' : '#ef4444'
+  const glowColor =
+    percentage >= 90
+      ? 'rgba(59,130,246,0.3)'
+      : percentage >= 75
+        ? 'rgba(245,158,11,0.3)'
+        : 'rgba(239,68,68,0.3)'
 
   return (
     <div className="flex flex-col items-center justify-center">
@@ -46,14 +53,25 @@ function AccuracyGauge({ percentage }) {
           width={radius * 2}
           className="transform -rotate-90"
         >
+          <defs>
+            <filter id="glow">
+              <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+              <feMerge>
+                <feMergeNode in="coloredBlur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+          {/* Background track */}
           <circle
-            stroke="rgba(255,255,255,0.06)"
+            stroke="rgba(255,255,255,0.04)"
             fill="transparent"
             strokeWidth={stroke}
             r={normalizedRadius}
             cx={radius}
             cy={radius}
           />
+          {/* Progress arc with glow */}
           <circle
             stroke={color}
             fill="transparent"
@@ -63,6 +81,7 @@ function AccuracyGauge({ percentage }) {
               strokeDashoffset,
               transition:
                 'stroke-dashoffset 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
+              filter: `drop-shadow(0 0 6px ${glowColor})`,
             }}
             r={normalizedRadius}
             cx={radius}
@@ -71,10 +90,10 @@ function AccuracyGauge({ percentage }) {
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-3xl font-bold text-white tabular-nums">
+          <span className="text-4xl font-extrabold text-white tabular-nums tracking-tight">
             {percentage.toFixed(1)}%
           </span>
-          <span className="text-[10px] text-slate-500 mt-0.5">Accuracy</span>
+          <span className="text-[11px] font-medium text-slate-500 mt-1 uppercase tracking-wider">Accuracy</span>
         </div>
       </div>
     </div>
@@ -128,8 +147,8 @@ export default function Dashboard() {
           <div className="skeleton h-7 w-40" />
           <div className="skeleton h-4 w-64 mt-1" />
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
             <SkeletonCard key={i} />
           ))}
         </div>
@@ -176,6 +195,22 @@ export default function Dashboard() {
   const sevenDayReads = kpi.last_7_days_reads ?? 0
   const withProvinceReads = kpi.with_province_reads ?? 0
   const withoutProvinceReads = kpi.without_province_reads ?? 0
+
+  /* Processing speed display */
+  const avgMs = kpi.avg_processing_ms
+  let avgSpeedDisplay = '--'
+  let avgSpeedUnit = 'no data'
+  let avgSpeedAccent = 'slate'
+  if (avgMs != null) {
+    if (avgMs < 1000) {
+      avgSpeedDisplay = `${Math.round(avgMs)}`
+      avgSpeedUnit = 'ms / plate'
+    } else {
+      avgSpeedDisplay = `${(avgMs / 1000).toFixed(1)}`
+      avgSpeedUnit = 'sec / plate'
+    }
+    avgSpeedAccent = avgMs < 500 ? 'emerald' : avgMs < 2000 ? 'amber' : 'red'
+  }
 
   /* ── Chart data ── */
   const confidenceData = [
@@ -228,35 +263,57 @@ export default function Dashboard() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          title="Total Scans"
-          value={kpi.total_reads.toLocaleString()}
-          subtitle={'records'}
-          accentColor="blue"
-          icon={<ScanLine className="h-5 w-5" />}
-        />
-        <StatCard
-          title="Verified"
-          value={kpi.verified.toLocaleString()}
-          subtitle={`${kpi.total_reads > 0 ? ((kpi.verified / kpi.total_reads) * 100).toFixed(1) : 0}%`}
-          accentColor="emerald"
-          icon={<CheckCircle2 className="h-5 w-5" />}
-        />
-        <StatCard
-          title="Pending Queue"
-          value={kpi.pending.toLocaleString()}
-          subtitle={'awaiting review'}
-          accentColor="amber"
-          icon={<Clock4 className="h-5 w-5" />}
-        />
-        <StatCard
-          title="Master DB"
-          value={kpi.master_total.toLocaleString()}
-          subtitle={'plates'}
-          accentColor="slate"
-          icon={<Database className="h-5 w-5" />}
-        />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <div className="animate-fade-in-up stagger-1">
+          <StatCard
+            title="Total Scans"
+            value={kpi.total_reads.toLocaleString()}
+            subtitle={`${todayReads} today`}
+            accentColor="blue"
+            icon={<ScanLine className="h-5 w-5" />}
+            trend={
+              todayReads > 0
+                ? { value: `+${todayReads} today`, positive: true }
+                : undefined
+            }
+          />
+        </div>
+        <div className="animate-fade-in-up stagger-2">
+          <StatCard
+            title="Verified"
+            value={kpi.verified.toLocaleString()}
+            subtitle={`${kpi.total_reads > 0 ? ((kpi.verified / kpi.total_reads) * 100).toFixed(1) : 0}% verified`}
+            accentColor="emerald"
+            icon={<CheckCircle2 className="h-5 w-5" />}
+          />
+        </div>
+        <div className="animate-fade-in-up stagger-3">
+          <StatCard
+            title="Pending Queue"
+            value={kpi.pending.toLocaleString()}
+            subtitle="awaiting review"
+            accentColor="amber"
+            icon={<Clock4 className="h-5 w-5" />}
+          />
+        </div>
+        <div className="animate-fade-in-up stagger-4">
+          <StatCard
+            title="Master DB"
+            value={kpi.master_total.toLocaleString()}
+            subtitle="registered plates"
+            accentColor="slate"
+            icon={<Database className="h-5 w-5" />}
+          />
+        </div>
+        <div className="animate-fade-in-up stagger-5">
+          <StatCard
+            title="Avg Speed"
+            value={avgSpeedDisplay}
+            subtitle={avgSpeedUnit}
+            accentColor={avgSpeedAccent}
+            icon={<Zap className="h-5 w-5" />}
+          />
+        </div>
       </div>
 
       {/* Charts Row 1 */}
@@ -266,7 +323,7 @@ export default function Dashboard() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-sm font-semibold text-white">
+                <h2 className="text-sm font-semibold text-white tracking-tight">
                   AI Accuracy
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
@@ -470,20 +527,20 @@ export default function Dashboard() {
               })}
 
               {/* Daily summary cards */}
-              <div className="grid grid-cols-3 gap-3 pt-3 border-t border-white/[0.06]">
+              <div className="grid grid-cols-3 gap-3 pt-4 border-t border-white/[0.06]">
                 {[
-                  { label: 'Today', value: todayReads },
-                  { label: 'Yesterday', value: yesterdayReads },
-                  { label: '7 Days', value: sevenDayReads },
+                  { label: 'Today', value: todayReads, color: 'text-blue-400' },
+                  { label: 'Yesterday', value: yesterdayReads, color: 'text-slate-300' },
+                  { label: '7 Days', value: sevenDayReads, color: 'text-slate-300' },
                 ].map((stat) => (
                   <div
                     key={stat.label}
-                    className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-3 text-center"
+                    className="group/mini rounded-lg bg-white/[0.03] border border-white/[0.06] p-3 text-center transition-colors duration-200 hover:bg-white/[0.05] hover:border-white/[0.1]"
                   >
-                    <p className="text-lg font-bold text-white tabular-nums">
+                    <p className={`text-xl font-extrabold tabular-nums tracking-tight ${stat.color}`}>
                       {stat.value.toLocaleString()}
                     </p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">
+                    <p className="text-[10px] font-medium text-slate-500 mt-1 uppercase tracking-wider">
                       {stat.label}
                     </p>
                   </div>

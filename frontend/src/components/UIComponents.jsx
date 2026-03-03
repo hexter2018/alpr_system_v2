@@ -67,9 +67,9 @@ export function Button({
 export function Card({ children, className = '', hover = false, ...props }) {
   return (
     <div
-      className={`rounded-xl border border-white/[0.08] bg-slate-900/80 ${
+      className={`rounded-xl border border-white/[0.08] bg-slate-900/80 transition-all duration-300 hover:border-white/[0.12] hover:shadow-lg hover:shadow-black/10 ${
         hover
-          ? 'hover:border-white/[0.14] hover:bg-slate-900 transition-colors'
+          ? 'hover:border-white/[0.14] hover:bg-slate-900'
           : ''
       } ${className}`}
       {...props}
@@ -267,10 +267,18 @@ export function Skeleton({ className = '', variant = 'rect' }) {
 
 export function SkeletonCard() {
   return (
-    <div className="rounded-xl border border-white/[0.08] bg-slate-900/80 p-5 space-y-4">
-      <Skeleton className="h-3 w-24" variant="text" />
-      <Skeleton className="h-8 w-32" variant="text" />
-      <Skeleton className="h-2 w-full" variant="text" />
+    <div className="rounded-xl border border-white/[0.08] bg-slate-900/80 overflow-hidden">
+      <div className="h-[2px] bg-white/[0.06]" />
+      <div className="p-5">
+        <div className="flex items-start justify-between">
+          <div className="flex-1 space-y-3">
+            <Skeleton className="h-3 w-24" variant="text" />
+            <Skeleton className="h-8 w-28" variant="text" />
+            <Skeleton className="h-3 w-20" variant="text" />
+          </div>
+          <Skeleton className="h-11 w-11 rounded-xl flex-shrink-0" />
+        </div>
+      </div>
     </div>
   )
 }
@@ -395,42 +403,99 @@ export function Modal({ open, onClose, title, children, size = 'md' }) {
 
 /* ===== STAT CARD ===== */
 export function StatCard({ title, value, subtitle, trend, icon, accentColor = 'blue' }) {
-  const accents = {
-    blue: 'border-l-blue-500',
-    emerald: 'border-l-emerald-500',
-    amber: 'border-l-amber-500',
-    red: 'border-l-red-500',
-    slate: 'border-l-slate-500',
+  const themes = {
+    blue: {
+      iconBg: 'bg-blue-500/10',
+      iconRing: 'ring-blue-500/20',
+      iconText: 'text-blue-400',
+      glowFrom: 'from-blue-500/[0.07]',
+      barBg: 'bg-blue-500',
+      trendPositive: 'text-blue-400',
+    },
+    emerald: {
+      iconBg: 'bg-emerald-500/10',
+      iconRing: 'ring-emerald-500/20',
+      iconText: 'text-emerald-400',
+      glowFrom: 'from-emerald-500/[0.07]',
+      barBg: 'bg-emerald-500',
+      trendPositive: 'text-emerald-400',
+    },
+    amber: {
+      iconBg: 'bg-amber-500/10',
+      iconRing: 'ring-amber-500/20',
+      iconText: 'text-amber-400',
+      glowFrom: 'from-amber-500/[0.07]',
+      barBg: 'bg-amber-500',
+      trendPositive: 'text-amber-400',
+    },
+    red: {
+      iconBg: 'bg-red-500/10',
+      iconRing: 'ring-red-500/20',
+      iconText: 'text-red-400',
+      glowFrom: 'from-red-500/[0.07]',
+      barBg: 'bg-red-500',
+      trendPositive: 'text-red-400',
+    },
+    slate: {
+      iconBg: 'bg-slate-500/10',
+      iconRing: 'ring-slate-500/20',
+      iconText: 'text-slate-400',
+      glowFrom: 'from-slate-500/[0.07]',
+      barBg: 'bg-slate-500',
+      trendPositive: 'text-slate-400',
+    },
   }
 
+  const t = themes[accentColor] || themes.blue
+
   return (
-    <div
-      className={`rounded-xl border border-white/[0.08] bg-slate-900/80 p-5 border-l-2 ${
-        accents[accentColor] || accents.blue
-      }`}
-    >
-      <div className="flex items-start justify-between">
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium uppercase tracking-wider text-slate-400 mb-1">
-            {title}
-          </p>
-          <div className="flex items-baseline gap-2">
-            <p className="text-2xl font-bold text-white tabular-nums">{value}</p>
-            {subtitle && <span className="text-sm text-slate-500">{subtitle}</span>}
-          </div>
-          {trend && (
-            <p
-              className={`mt-1.5 text-xs font-medium ${
-                trend.positive ? 'text-emerald-400' : 'text-red-400'
-              }`}
-            >
-              {trend.value}
+    <div className="group relative rounded-xl border border-white/[0.08] bg-slate-900/80 overflow-hidden transition-all duration-300 hover:border-white/[0.14] hover:shadow-lg hover:shadow-black/20">
+      {/* Top accent bar */}
+      <div className={`absolute top-0 inset-x-0 h-[2px] ${t.barBg} opacity-80`} />
+      {/* Subtle radial glow */}
+      <div className={`absolute -top-12 -right-12 h-32 w-32 rounded-full bg-gradient-to-br ${t.glowFrom} to-transparent blur-2xl pointer-events-none transition-opacity duration-300 opacity-0 group-hover:opacity-100`} />
+
+      <div className="relative p-5">
+        <div className="flex items-start justify-between">
+          <div className="flex-1 min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500 mb-2">
+              {title}
             </p>
+            <div className="flex items-baseline gap-2">
+              <p className="text-3xl font-extrabold text-white tabular-nums tracking-tight">{value}</p>
+            </div>
+            {subtitle && (
+              <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+            )}
+            {trend && (
+              <div className="mt-2 flex items-center gap-1">
+                <span
+                  className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                    trend.positive
+                      ? 'bg-emerald-500/10 text-emerald-400'
+                      : 'bg-red-500/10 text-red-400'
+                  }`}
+                >
+                  <svg
+                    className={`h-3 w-3 ${trend.positive ? '' : 'rotate-180'}`}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2.5}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                  </svg>
+                  {trend.value}
+                </span>
+              </div>
+            )}
+          </div>
+          {icon && (
+            <div className={`flex-shrink-0 flex items-center justify-center h-11 w-11 rounded-xl ${t.iconBg} ring-1 ${t.iconRing} ${t.iconText} transition-transform duration-300 group-hover:scale-110`}>
+              {icon}
+            </div>
           )}
         </div>
-        {icon && (
-          <div className="text-slate-600 flex-shrink-0">{icon}</div>
-        )}
       </div>
     </div>
   )
