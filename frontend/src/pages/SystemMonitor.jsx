@@ -22,11 +22,8 @@ import {
   Server,
   Database,
   Cpu,
-  HardDrive,
-  MemoryStick,
   Wifi,
   WifiOff,
-  Clock,
   AlertTriangle,
   CheckCircle2,
   XCircle,
@@ -203,8 +200,8 @@ export default function SystemMonitor() {
       setHistory((prev) => {
         const entry = {
           time: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-          latency: data.api?.latency_ms ?? 0,
-          queue: data.queue?.backlog ?? 0,
+          processingMs: data.throughput?.avg_processing_ms ?? 0,
+          pendingReads: data.database?.pending_reads ?? 0,
         }
         const next = [...prev, entry]
         return next.slice(-20) // keep last 20 data points
@@ -239,19 +236,52 @@ export default function SystemMonitor() {
     )
   }
 
-  // Build mock/fallback data when backend hasn't implemented the endpoint yet
-  const api = health?.api || { status: error ? 'error' : 'healthy', latency_ms: 0, uptime: 'N/A' }
-  const db = health?.database || { status: error ? 'error' : 'healthy', connections: 0, max_connections: 100 }
-  const queue = health?.queue || { status: 'healthy', backlog: 0, processing: 0, workers: 0 }
-  const workers = health?.workers || []
+  const database = health?.database
+  const throughput = health?.throughput
   const cameras = health?.cameras || []
-  const resources = health?.resources || null
-  const alerts = health?.alerts || []
 
-  const overallStatus = error ? 'error' : (
-    api.status === 'healthy' && db.status === 'healthy' ? 'healthy' :
-    api.status === 'error' || db.status === 'error' ? 'error' : 'warning'
-  )
+  const uptimeLabel = health?.uptime_seconds != null
+    ? `${Math.floor(health.uptime_seconds / 3600)}h ${Math.floor((health.uptime_seconds % 3600) / 60)}m`
+    : 'N/A'
+
+  const cameraSummary = {
+    online: cameras.filter((cam) => cam.enabled).length,
+    offline: cameras.filter((cam) => !cam.enabled).length,
+  }
+
+  const workerSummary = {
+    active: null,
+    queued: database?.pending_reads || 0,
+  }
+
+  const processingStatus =
+    throughput?.avg_processing_ms == null
+      ? 'offline'
+      : throughput.avg_processing_ms > 2000
+        ? 'warning'
+        : 'healthy'
+
+  const overallStatus = error
+    ? 'error'
+    : database && throughput
+      ? 'healthy'
+      : 'warning'
+
+  const alerts = []
+  if ((database?.pending_reads || 0) > 200) {
+    alerts.push({
+      level: 'warning',
+      message: `Pending reads backlog is high (${database.pending_reads})`,
+      timestamp: 'now',
+    })
+  }
+  if ((cameraSummary.offline || 0) > 0) {
+    alerts.push({
+      level: 'warning',
+      message: `${cameraSummary.offline} camera(s) disabled or offline`,
+      timestamp: 'now',
+    })
+  }
 
   const gridStroke = light ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.04)'
   const axisFill = light ? '#64748b' : '#94a3b8'
@@ -305,7 +335,7 @@ export default function SystemMonitor() {
         }`}>
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-            <span>Unable to reach monitoring endpoint. The backend may not have the /api/monitor/health route yet. Showing placeholder data.</span>
+            <span>Unable to reach monitoring endpoint. Data shown below is from the latest successful poll.</span>
           </div>
         </div>
       )}
@@ -314,50 +344,50 @@ export default function SystemMonitor() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatusCard
           title="API Health"
-          status={api.status}
-          value={api.latency_ms != null ? `${api.latency_ms}ms` : 'N/A'}
-          subtitle="Response latency"
+          status={error ? 'error' : 'healthy'}
+          value={throughput?.avg_processing_ms != null ? `${throughput.avg_processing_ms}ms` : 'N/A'}
+          subtitle="Avg processing time"
           icon={Activity}
           light={light}
           details={[
-            { label: 'Uptime', value: api.uptime || 'N/A' },
-            { label: 'Version', value: api.version || '2.0.0' },
+            { label: 'Uptime', value: uptimeLabel },
+            { label: 'Python', value: health?.python_version || 'N/A' },
           ]}
         />
         <StatusCard
           title="Database"
-          status={db.status}
-          value={`${db.connections || 0}`}
-          subtitle="Active connections"
+          status={database ? 'healthy' : 'offline'}
+          value={database?.total_reads?.toLocaleString() || 'N/A'}
+          subtitle="Total plate reads"
           icon={Database}
           light={light}
           details={[
-            { label: 'Max Connections', value: `${db.max_connections || 100}` },
-            { label: 'Pool Usage', value: db.max_connections ? `${((db.connections / db.max_connections) * 100).toFixed(0)}%` : 'N/A' },
+            { label: 'Pending Reads', value: database?.pending_reads?.toLocaleString() || '0' },
+            { label: 'Verified', value: database?.verified_reads?.toLocaleString() || '0' },
           ]}
         />
         <StatusCard
           title="Processing Queue"
-          status={queue.backlog > 50 ? 'warning' : queue.backlog > 200 ? 'error' : 'healthy'}
-          value={`${queue.backlog}`}
-          subtitle="Items in backlog"
+          status={workerSummary.queued > 200 ? 'error' : workerSummary.queued > 50 ? 'warning' : 'healthy'}
+          value={`${workerSummary.queued}`}
+          subtitle="Pending reads"
           icon={Layers}
           light={light}
           details={[
-            { label: 'Processing', value: `${queue.processing}` },
-            { label: 'Workers Active', value: `${queue.workers}` },
+            { label: 'Reads Last Hour', value: throughput?.reads_last_hour?.toLocaleString() || '0' },
+            { label: 'Reads Today', value: throughput?.reads_today?.toLocaleString() || '0' },
           ]}
         />
         <StatusCard
           title="Inference Speed"
-          status={health?.inference?.avg_ms > 2000 ? 'warning' : 'healthy'}
-          value={health?.inference?.avg_ms != null ? `${health.inference.avg_ms}ms` : 'N/A'}
-          subtitle="Avg inference time"
+          status={processingStatus}
+          value={throughput?.avg_processing_ms != null ? `${throughput.avg_processing_ms}ms` : 'N/A'}
+          subtitle="Avg read-to-inference time"
           icon={Gauge}
           light={light}
           details={[
-            { label: 'Total Processed', value: health?.inference?.total_processed?.toLocaleString() || 'N/A' },
-            { label: 'Errors', value: health?.inference?.errors?.toLocaleString() || '0' },
+            { label: 'Workers Active', value: workerSummary.active ?? 'N/A' },
+            { label: 'Total Captures', value: database?.total_captures?.toLocaleString() || 'N/A' },
           ]}
         />
       </div>
@@ -368,9 +398,9 @@ export default function SystemMonitor() {
         <Card>
           <CardHeader>
             <h2 className={`text-sm font-semibold ${light ? 'text-slate-900' : 'text-white'}`}>
-              API Latency
+              Processing Latency
             </h2>
-            <p className="text-xs text-slate-500 mt-0.5">Response time trend (polled every 10s)</p>
+            <p className="text-xs text-slate-500 mt-0.5">Average processing time (polled every 10s)</p>
           </CardHeader>
           <CardBody>
             <div className="h-48">
@@ -387,7 +417,7 @@ export default function SystemMonitor() {
                         <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <Area type="monotone" dataKey="latency" name="Latency" stroke="#3b82f6" strokeWidth={2} fill="url(#latGrad)" />
+                    <Area type="monotone" dataKey="processingMs" name="Processing (ms)" stroke="#3b82f6" strokeWidth={2} fill="url(#latGrad)" />
                   </AreaChart>
                 </ResponsiveContainer>
               ) : (
@@ -399,13 +429,13 @@ export default function SystemMonitor() {
           </CardBody>
         </Card>
 
-        {/* Queue Backlog Trend */}
+        {/* Pending Reads Trend */}
         <Card>
           <CardHeader>
             <h2 className={`text-sm font-semibold ${light ? 'text-slate-900' : 'text-white'}`}>
-              Queue Backlog
+              Pending Reads
             </h2>
-            <p className="text-xs text-slate-500 mt-0.5">Processing queue size over time</p>
+            <p className="text-xs text-slate-500 mt-0.5">Pending read queue size over time</p>
           </CardHeader>
           <CardBody>
             <div className="h-48">
@@ -422,7 +452,7 @@ export default function SystemMonitor() {
                         <stop offset="100%" stopColor="#f59e0b" stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <Area type="monotone" dataKey="queue" name="Backlog" stroke="#f59e0b" strokeWidth={2} fill="url(#queueGrad)" />
+                    <Area type="monotone" dataKey="pendingReads" name="Pending Reads" stroke="#f59e0b" strokeWidth={2} fill="url(#queueGrad)" />
                   </AreaChart>
                 </ResponsiveContainer>
               ) : (
@@ -446,32 +476,28 @@ export default function SystemMonitor() {
             <p className="text-xs text-slate-500 mt-0.5">Inference worker status</p>
           </CardHeader>
           <CardBody>
-            {workers.length > 0 ? (
-              <div className="space-y-2.5">
-                {workers.map((w, i) => (
-                  <div key={i} className={`flex items-center justify-between rounded-lg border p-3 ${
-                    light ? 'border-slate-100 bg-slate-50' : 'border-white/[0.06] bg-white/[0.02]'
-                  }`}>
-                    <div className="flex items-center gap-2">
-                      <StatusDot status={w.status === 'idle' ? 'healthy' : w.status === 'processing' ? 'warning' : 'offline'} />
-                      <span className={`text-xs font-medium ${light ? 'text-slate-700' : 'text-slate-300'}`}>{w.name || `Worker ${i + 1}`}</span>
-                    </div>
-                    <span className={`text-[10px] font-semibold uppercase ${
-                      w.status === 'idle' ? 'text-emerald-500' : w.status === 'processing' ? 'text-amber-500' : 'text-slate-500'
-                    }`}>
-                      {w.status}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <Server className={`h-8 w-8 mb-2 ${light ? 'text-slate-300' : 'text-slate-600'}`} />
-                <p className={`text-xs ${light ? 'text-slate-500' : 'text-slate-500'}`}>
-                  No worker data available. Add /api/monitor/health endpoint to backend.
+            <div className="space-y-3">
+              <div className={`rounded-lg border p-3 ${
+                light ? 'border-slate-100 bg-slate-50' : 'border-white/[0.06] bg-white/[0.02]'
+              }`}>
+                <p className="text-[11px] text-slate-500">Pending Reads</p>
+                <p className={`text-base font-semibold ${light ? 'text-slate-700' : 'text-slate-200'}`}>
+                  {workerSummary.queued.toLocaleString()}
                 </p>
               </div>
-            )}
+              <div className={`rounded-lg border p-3 ${
+                light ? 'border-slate-100 bg-slate-50' : 'border-white/[0.06] bg-white/[0.02]'
+              }`}>
+                <p className="text-[11px] text-slate-500">Throughput (last hour)</p>
+                <p className={`text-base font-semibold ${light ? 'text-slate-700' : 'text-slate-200'}`}>
+                  {throughput?.reads_last_hour?.toLocaleString() || '0'} reads
+                </p>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <Server className="h-3.5 w-3.5" />
+                Worker-level telemetry is not provided by the backend endpoint yet.
+              </div>
+            </div>
           </CardBody>
         </Card>
 
@@ -484,11 +510,11 @@ export default function SystemMonitor() {
             <p className="text-xs text-slate-500 mt-0.5">CPU, memory, disk usage</p>
           </CardHeader>
           <CardBody>
-            {resources ? (
+            {health?.resources ? (
               <div className="space-y-4">
                 <ResourceGauge
                   label="CPU"
-                  value={resources.cpu_percent || 0}
+                  value={health.resources.cpu_percent || 0}
                   max={100}
                   unit="%"
                   color="bg-blue-500"
@@ -496,24 +522,24 @@ export default function SystemMonitor() {
                 />
                 <ResourceGauge
                   label="Memory"
-                  value={resources.memory_used_gb || 0}
-                  max={resources.memory_total_gb || 16}
+                  value={health.resources.memory_used_gb || 0}
+                  max={health.resources.memory_total_gb || 16}
                   unit="GB"
                   color="bg-emerald-500"
                   light={light}
                 />
                 <ResourceGauge
                   label="Disk"
-                  value={resources.disk_used_gb || 0}
-                  max={resources.disk_total_gb || 100}
+                  value={health.resources.disk_used_gb || 0}
+                  max={health.resources.disk_total_gb || 100}
                   unit="GB"
                   color="bg-amber-500"
                   light={light}
                 />
-                {resources.gpu_percent != null && (
+                {health.resources.gpu_percent != null && (
                   <ResourceGauge
                     label="GPU"
-                    value={resources.gpu_percent}
+                    value={health.resources.gpu_percent}
                     max={100}
                     unit="%"
                     color="bg-purple-500"
@@ -548,7 +574,7 @@ export default function SystemMonitor() {
                     light ? 'border-slate-100 bg-slate-50' : 'border-white/[0.06] bg-white/[0.02]'
                   }`}>
                     <div className="flex items-center gap-2">
-                      {cam.status === 'online' ? (
+                      {cam.enabled ? (
                         <Wifi className="h-3.5 w-3.5 text-emerald-500" />
                       ) : (
                         <WifiOff className="h-3.5 w-3.5 text-red-500" />
@@ -556,11 +582,11 @@ export default function SystemMonitor() {
                       <span className={`text-xs font-medium ${light ? 'text-slate-700' : 'text-slate-300'}`}>{cam.name || `Camera ${i + 1}`}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      {cam.fps && <span className="text-[10px] text-slate-500">{cam.fps} FPS</span>}
+                      {cam.last_capture && <span className="text-[10px] text-slate-500">Last: {new Date(cam.last_capture).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</span>}
                       <span className={`text-[10px] font-semibold uppercase ${
-                        cam.status === 'online' ? 'text-emerald-500' : 'text-red-500'
+                        cam.enabled ? 'text-emerald-500' : 'text-red-500'
                       }`}>
-                        {cam.status}
+                        {cam.enabled ? 'online' : 'offline'}
                       </span>
                     </div>
                   </div>
