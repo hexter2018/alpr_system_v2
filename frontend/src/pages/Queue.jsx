@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react'
 import { absImageUrl, deleteRead, listPending, verifyRead } from '../lib/api.js'
+import { useTheme } from '../lib/ThemeContext.jsx'
 import {
   Button,
   Card,
@@ -14,7 +15,7 @@ import {
   Spinner,
   SkeletonCard,
 } from '../components/UIComponents.jsx'
-import { RefreshCw, ListChecks } from 'lucide-react'
+import { RefreshCw, ListChecks, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 
 /* ===== PROVINCES DATA ===== */
 const POPULAR_PROVINCES = [
@@ -58,6 +59,8 @@ function ToastContainer({ toasts }) {
 
 /* ===== IMAGE VIEWER MODAL ===== */
 function ImageViewer({ open, src, title, onClose }) {
+  const { theme } = useTheme()
+  const light = theme === 'light'
   const [scale, setScale] = useState(1)
   const [position, setPosition] = useState({ x: 0, y: 0 })
   const dragState = useRef({
@@ -130,9 +133,11 @@ function ImageViewer({ open, src, title, onClose }) {
       onMouseUp={handleMouseUp}
     >
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-white/[0.06] px-6 py-3 bg-slate-950/80">
+      <div className={`flex items-center justify-between border-b px-6 py-3 ${
+        light ? 'border-slate-200 bg-white/80' : 'border-white/[0.06] bg-slate-950/80'
+      }`}>
         <div>
-          <h3 className="text-sm font-semibold text-white">{title}</h3>
+          <h3 className={`text-sm font-semibold ${light ? 'text-slate-900' : 'text-white'}`}>{title}</h3>
           <p className="text-xs text-slate-500 mt-0.5">
             Zoom: {(scale * 100).toFixed(0)}% | Scroll to zoom, drag to pan
           </p>
@@ -155,7 +160,7 @@ function ImageViewer({ open, src, title, onClose }) {
           >
             +
           </Button>
-          <div className="w-px h-5 bg-white/[0.1] mx-1" />
+          <div className={`w-px h-5 ${light ? 'bg-slate-200' : 'bg-white/[0.1]'} mx-1`} />
           <Button variant="ghost" size="sm" onClick={onClose}>
             Close
           </Button>
@@ -194,29 +199,33 @@ function DeleteConfirmModal({
   province,
   confidence,
 }) {
+  const { theme } = useTheme()
+  const light = theme === 'light'
   if (!open) return null
 
   return (
     <Modal open={open} onClose={onClose} title="Confirm Delete" size="sm">
       <div className="space-y-4">
-        <p className="text-sm text-slate-400">
+        <p className={`text-sm ${light ? 'text-slate-600' : 'text-slate-400'}`}>
           This will permanently remove this item from the verification queue.
         </p>
 
-        <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-4 space-y-2">
+        <div className={`rounded-lg border p-4 space-y-2 ${
+          light ? 'border-red-200 bg-red-50' : 'border-red-500/20 bg-red-500/5'
+        }`}>
           <div className="flex justify-between text-sm">
             <span className="text-slate-500">Plate</span>
-            <span className="font-mono font-medium text-white">
+            <span className={`font-mono font-medium ${light ? 'text-slate-900' : 'text-white'}`}>
               {plate || '-'}
             </span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-slate-500">Province</span>
-            <span className="text-white">{province || '-'}</span>
+            <span className={light ? 'text-slate-900' : 'text-white'}>{province || '-'}</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-slate-500">Confidence</span>
-            <span className="text-white">{confidence}</span>
+            <span className={light ? 'text-slate-900' : 'text-white'}>{confidence}</span>
           </div>
         </div>
 
@@ -242,6 +251,8 @@ function VerificationItem({
   onDelete,
   onToast,
 }) {
+  const { theme } = useTheme()
+  const light = theme === 'light'
   const [plateText, setPlateText] = useState(item.plate_text || '')
   const [province, setProvince] = useState(item.province || '')
   const [note, setNote] = useState('')
@@ -326,16 +337,20 @@ function VerificationItem({
     <>
       <Card>
         <CardBody>
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[560px_minmax(0,1fr)]">
-            {/* Left: Image Evidence */}
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_minmax(0,1fr)]">
+            {/* Left: Image Evidence -- BIGGER IMAGES */}
             <div>
-              <h3 className="text-xs font-medium uppercase tracking-wider text-slate-500 mb-3">
+              <h3 className={`text-xs font-medium uppercase tracking-wider mb-3 ${light ? 'text-slate-500' : 'text-slate-500'}`}>
                 Image Evidence
               </h3>
               <div className="grid grid-cols-2 gap-3">
                 {/* Original */}
                 <div
-                  className="relative group cursor-pointer rounded-lg overflow-hidden border border-white/[0.08] hover:border-white/[0.16] transition-colors"
+                  className={`relative group cursor-pointer rounded-lg overflow-hidden border transition-colors ${
+                    light
+                      ? 'border-slate-200 hover:border-slate-400'
+                      : 'border-white/[0.08] hover:border-white/[0.16]'
+                  }`}
                   onClick={() =>
                     openViewer(absImageUrl(item.original_url), 'Original')
                   }
@@ -343,21 +358,25 @@ function VerificationItem({
                   <img
                     src={absImageUrl(item.original_url)}
                     alt="Original"
-                    className="w-full h-40 object-contain bg-slate-950"
+                    className={`w-full h-56 object-contain ${light ? 'bg-slate-100' : 'bg-slate-950'}`}
                   />
                   <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <span className="text-xs text-white font-medium">
                       View Full
                     </span>
                   </div>
-                  <div className="absolute bottom-0 inset-x-0 bg-slate-950/80 px-2 py-1">
-                    <span className="text-[10px] text-slate-400">Original</span>
+                  <div className={`absolute bottom-0 inset-x-0 px-2 py-1 ${light ? 'bg-white/80' : 'bg-slate-950/80'}`}>
+                    <span className={`text-[10px] ${light ? 'text-slate-500' : 'text-slate-400'}`}>Original</span>
                   </div>
                 </div>
 
                 {/* Crop */}
                 <div
-                  className="relative group cursor-pointer rounded-lg overflow-hidden border border-white/[0.08] hover:border-white/[0.16] transition-colors"
+                  className={`relative group cursor-pointer rounded-lg overflow-hidden border transition-colors ${
+                    light
+                      ? 'border-slate-200 hover:border-slate-400'
+                      : 'border-white/[0.08] hover:border-white/[0.16]'
+                  }`}
                   onClick={() =>
                     openViewer(absImageUrl(item.crop_url), 'Cropped Plate')
                   }
@@ -365,15 +384,15 @@ function VerificationItem({
                   <img
                     src={absImageUrl(item.crop_url)}
                     alt="Cropped Plate"
-                    className="w-full h-40 object-contain bg-slate-950"
+                    className={`w-full h-56 object-contain ${light ? 'bg-slate-100' : 'bg-slate-950'}`}
                   />
                   <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <span className="text-xs text-white font-medium">
                       View Full
                     </span>
                   </div>
-                  <div className="absolute bottom-0 inset-x-0 bg-slate-950/80 px-2 py-1">
-                    <span className="text-[10px] text-slate-400">Crop</span>
+                  <div className={`absolute bottom-0 inset-x-0 px-2 py-1 ${light ? 'bg-white/80' : 'bg-slate-950/80'}`}>
+                    <span className={`text-[10px] ${light ? 'text-slate-500' : 'text-slate-400'}`}>Crop</span>
                   </div>
                 </div>
               </div>
@@ -383,10 +402,10 @@ function VerificationItem({
             <div className="flex flex-col">
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <h3 className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                  <h3 className={`text-xs font-medium uppercase tracking-wider ${light ? 'text-slate-500' : 'text-slate-500'}`}>
                     OCR Result
                   </h3>
-                  <p className="text-[10px] text-slate-600 mt-0.5">
+                  <p className={`text-[10px] mt-0.5 ${light ? 'text-slate-400' : 'text-slate-600'}`}>
                     Enter = Confirm | Ctrl+Enter = Save Edit | N = Normalize |
                     Del = Delete
                   </p>
@@ -413,7 +432,7 @@ function VerificationItem({
                   <div>
                     <div className="flex items-center gap-1.5 mb-1.5">
                       <span className="h-2 w-2 rounded-full bg-red-500" />
-                      <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">
+                      <span className={`text-[10px] font-medium uppercase tracking-wider ${light ? 'text-slate-500' : 'text-slate-500'}`}>
                         Common Confusion
                       </span>
                     </div>
@@ -424,7 +443,11 @@ function VerificationItem({
                           type="button"
                           title={fix.tooltip}
                           onClick={() => applyFix(fix.from, fix.to)}
-                          className="px-2 py-1 text-xs font-medium rounded-md border border-red-500/20 bg-red-500/10 text-red-300 hover:bg-red-500/20 transition-colors"
+                          className={`px-2 py-1 text-xs font-medium rounded-md border transition-colors ${
+                            light
+                              ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100'
+                              : 'border-red-500/20 bg-red-500/10 text-red-300 hover:bg-red-500/20'
+                          }`}
                         >
                           {fix.from}
                           {' -> '}
@@ -437,7 +460,7 @@ function VerificationItem({
                   <div>
                     <div className="flex items-center gap-1.5 mb-1.5">
                       <span className="h-2 w-2 rounded-full bg-amber-500" />
-                      <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">
+                      <span className={`text-[10px] font-medium uppercase tracking-wider ${light ? 'text-slate-500' : 'text-slate-500'}`}>
                         Other Fixes
                       </span>
                     </div>
@@ -448,7 +471,11 @@ function VerificationItem({
                           type="button"
                           title={fix.tooltip}
                           onClick={() => applyFix(fix.from, fix.to)}
-                          className="px-2 py-1 text-xs font-medium rounded-md border border-amber-500/20 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-colors"
+                          className={`px-2 py-1 text-xs font-medium rounded-md border transition-colors ${
+                            light
+                              ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                              : 'border-amber-500/20 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+                          }`}
                         >
                           {fix.from}
                           {' -> '}
@@ -467,7 +494,7 @@ function VerificationItem({
                   placeholder="Enter province"
                   className={`${
                     provinceMissing
-                      ? 'border-amber-500/30 bg-amber-500/5'
+                      ? light ? 'border-amber-400 bg-amber-50' : 'border-amber-500/30 bg-amber-500/5'
                       : ''
                   } ${highlightField === 'province' ? 'ring-1 ring-blue-500' : ''}`}
                   hint={provinceMissing ? 'Province not detected -- please review' : undefined}
@@ -475,7 +502,7 @@ function VerificationItem({
 
                 {/* Province Quick Select */}
                 <div>
-                  <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">
+                  <span className={`text-[10px] font-medium uppercase tracking-wider ${light ? 'text-slate-500' : 'text-slate-500'}`}>
                     Quick Select
                   </span>
                   <div className="flex flex-wrap gap-1.5 mt-1.5">
@@ -487,7 +514,11 @@ function VerificationItem({
                           setProvince(prov.value)
                           setHighlightField('province')
                         }}
-                        className="px-2.5 py-1 text-xs font-medium rounded-md border border-white/[0.08] bg-white/[0.03] text-slate-300 hover:bg-white/[0.08] hover:text-white transition-colors"
+                        className={`px-2.5 py-1 text-xs font-medium rounded-md border transition-colors ${
+                          light
+                            ? 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                            : 'border-white/[0.08] bg-white/[0.03] text-slate-300 hover:bg-white/[0.08] hover:text-white'
+                        }`}
                       >
                         {prov.label}
                       </button>
@@ -523,7 +554,7 @@ function VerificationItem({
               </div>
 
               {/* Action Buttons */}
-              <div className="mt-5 pt-4 border-t border-white/[0.06]">
+              <div className={`mt-5 pt-4 border-t ${light ? 'border-slate-100' : 'border-white/[0.06]'}`}>
                 <div className="flex flex-wrap gap-2">
                   <Button
                     variant="primary"
@@ -546,7 +577,9 @@ function VerificationItem({
                     className="flex-1"
                   >
                     Save Edit
-                    <kbd className="ml-1.5 px-1 py-0.5 text-[10px] font-mono bg-white/[0.08] rounded text-slate-400">
+                    <kbd className={`ml-1.5 px-1 py-0.5 text-[10px] font-mono rounded ${
+                      light ? 'bg-slate-100 text-slate-500' : 'bg-white/[0.08] text-slate-400'
+                    }`}>
                       Ctrl+Enter
                     </kbd>
                   </Button>
@@ -598,12 +631,15 @@ function VerificationItem({
 
 /* ===== MAIN QUEUE PAGE ===== */
 export default function Queue() {
+  const { theme } = useTheme()
+  const light = theme === 'light'
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState(null)
   const [toasts, setToasts] = useState([])
   const [lastRefresh, setLastRefresh] = useState(null)
+  const [sortOrder, setSortOrder] = useState('newest') // 'newest' or 'oldest'
 
   const addToast = useCallback((message, type = 'info') => {
     const id = Date.now()
@@ -632,6 +668,24 @@ export default function Queue() {
     const interval = setInterval(refresh, 10000)
     return () => clearInterval(interval)
   }, [refresh])
+
+  /* Sort items by created_at or id */
+  const sortedItems = React.useMemo(() => {
+    if (!items || items.length === 0) return []
+    const sorted = [...items]
+    if (sortOrder === 'newest') {
+      sorted.sort((a, b) => {
+        if (a.created_at && b.created_at) return new Date(b.created_at) - new Date(a.created_at)
+        return (b.id || 0) - (a.id || 0)
+      })
+    } else {
+      sorted.sort((a, b) => {
+        if (a.created_at && b.created_at) return new Date(a.created_at) - new Date(b.created_at)
+        return (a.id || 0) - (b.id || 0)
+      })
+    }
+    return sorted
+  }, [items, sortOrder])
 
   const handleConfirm = useCallback(
     async (id) => {
@@ -687,6 +741,10 @@ export default function Queue() {
     [refresh, addToast]
   )
 
+  const toggleSort = () => {
+    setSortOrder((prev) => (prev === 'newest' ? 'oldest' : 'newest'))
+  }
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -702,13 +760,28 @@ export default function Queue() {
             {items.length} pending
           </Badge>
           {lastRefresh && (
-            <span className="text-xs text-slate-600 tabular-nums">
+            <span className={`text-xs tabular-nums ${light ? 'text-slate-400' : 'text-slate-600'}`}>
               {lastRefresh.toLocaleTimeString('th-TH', {
                 hour: '2-digit',
                 minute: '2-digit',
               })}
             </span>
           )}
+
+          {/* Sort Button */}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={toggleSort}
+            icon={
+              sortOrder === 'newest'
+                ? <ArrowDown className="h-3.5 w-3.5" />
+                : <ArrowUp className="h-3.5 w-3.5" />
+            }
+          >
+            {sortOrder === 'newest' ? 'Newest' : 'Oldest'}
+          </Button>
+
           <Button
             variant="secondary"
             size="sm"
@@ -727,7 +800,11 @@ export default function Queue() {
 
       {/* Error */}
       {error && (
-        <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+        <div className={`rounded-lg border px-4 py-3 text-sm ${
+          light
+            ? 'border-red-200 bg-red-50 text-red-700'
+            : 'border-red-500/20 bg-red-500/10 text-red-300'
+        }`}>
           {error}
         </div>
       )}
@@ -751,7 +828,7 @@ export default function Queue() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {items.map((item) => (
+          {sortedItems.map((item) => (
             <VerificationItem
               key={item.id}
               item={item}

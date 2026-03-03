@@ -8,7 +8,11 @@ import {
   FileBarChart,
   PanelLeftClose,
   PanelLeftOpen,
+  Sun,
+  Moon,
+  Activity,
 } from 'lucide-react'
+import { useTheme } from '../lib/ThemeContext.jsx'
 
 const SIDEBAR_KEY = 'alpr_sidebar_collapsed'
 
@@ -18,9 +22,11 @@ const navItems = [
   { to: '/queue', label: 'Verification', icon: ListChecks },
   { to: '/master', label: 'Master DB', icon: Database },
   { to: '/reports', label: 'Reports', icon: FileBarChart },
+  { to: '/monitor', label: 'System Health', icon: Activity },
 ]
 
 export default function AppLayout() {
+  const { theme, toggle: toggleTheme } = useTheme()
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 1024) return true
     try {
@@ -53,7 +59,7 @@ export default function AppLayout() {
   }, [])
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-950">
+    <div className={`flex h-screen overflow-hidden ${theme === 'light' ? 'bg-gray-50' : 'bg-slate-950'}`}>
       {/* ── Sidebar ── */}
       <aside
         className={`sidebar flex-shrink-0 ${
@@ -61,16 +67,16 @@ export default function AppLayout() {
         }`}
       >
         {/* Logo */}
-        <div className="flex items-center gap-3 px-4 py-5 border-b border-white/[0.06]">
+        <div className={`flex items-center gap-3 px-4 py-5 border-b ${theme === 'light' ? 'border-slate-200' : 'border-white/[0.06]'}`}>
           <div className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-lg bg-blue-600 text-xs font-bold text-white">
             LP
           </div>
           {!collapsed && (
             <div className="overflow-hidden">
-              <p className="text-sm font-semibold text-white whitespace-nowrap">
+              <p className={`text-sm font-semibold whitespace-nowrap ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>
                 Thai ALPR
               </p>
-              <p className="text-[10px] text-slate-500 whitespace-nowrap">
+              <p className={`text-[10px] whitespace-nowrap ${theme === 'light' ? 'text-slate-500' : 'text-slate-500'}`}>
                 License Plate System
               </p>
             </div>
@@ -97,8 +103,27 @@ export default function AppLayout() {
           ))}
         </nav>
 
-        {/* Toggle */}
-        <div className="border-t border-white/[0.06] p-2">
+        {/* Bottom: Theme Toggle + Collapse */}
+        <div className={`border-t p-2 space-y-1 ${theme === 'light' ? 'border-slate-200' : 'border-white/[0.06]'}`}>
+          <button
+            onClick={toggleTheme}
+            className={`sidebar-item sidebar-item-idle w-full ${
+              collapsed ? 'justify-center px-0' : ''
+            }`}
+            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {theme === 'dark' ? (
+              <>
+                <Sun className="h-[18px] w-[18px]" />
+                {!collapsed && <span className="truncate">Light Mode</span>}
+              </>
+            ) : (
+              <>
+                <Moon className="h-[18px] w-[18px]" />
+                {!collapsed && <span className="truncate">Dark Mode</span>}
+              </>
+            )}
+          </button>
           <button
             onClick={toggle}
             className={`sidebar-item sidebar-item-idle w-full ${

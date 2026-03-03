@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTheme } from '../lib/ThemeContext.jsx'
 
 /* ===== BUTTONS ===== */
 export function Button({
@@ -65,11 +66,19 @@ export function Button({
 
 /* ===== CARDS ===== */
 export function Card({ children, className = '', hover = false, ...props }) {
+  const { theme } = useTheme()
+  const light = theme === 'light'
   return (
     <div
-      className={`rounded-xl border border-white/[0.08] bg-slate-900/80 transition-all duration-300 hover:border-white/[0.12] hover:shadow-lg hover:shadow-black/10 ${
+      className={`rounded-xl border transition-all duration-300 ${
+        light
+          ? 'border-slate-200 bg-white shadow-sm hover:border-slate-300 hover:shadow-md'
+          : 'border-white/[0.08] bg-slate-900/80 hover:border-white/[0.12] hover:shadow-lg hover:shadow-black/10'
+      } ${
         hover
-          ? 'hover:border-white/[0.14] hover:bg-slate-900'
+          ? light
+            ? 'hover:border-slate-300 hover:shadow-md'
+            : 'hover:border-white/[0.14] hover:bg-slate-900'
           : ''
       } ${className}`}
       {...props}
@@ -80,8 +89,9 @@ export function Card({ children, className = '', hover = false, ...props }) {
 }
 
 export function CardHeader({ children, className = '' }) {
+  const { theme } = useTheme()
   return (
-    <div className={`px-5 py-4 border-b border-white/[0.06] ${className}`}>
+    <div className={`px-5 py-4 border-b ${theme === 'light' ? 'border-slate-100' : 'border-white/[0.06]'} ${className}`}>
       {children}
     </div>
   )
@@ -101,31 +111,39 @@ export function Input({
   containerClassName = '',
   ...props
 }) {
+  const { theme } = useTheme()
+  const light = theme === 'light'
   return (
     <div className={containerClassName}>
       {label && (
-        <label className="block text-sm font-medium text-slate-300 mb-1.5">
+        <label className={`block text-sm font-medium mb-1.5 ${light ? 'text-slate-700' : 'text-slate-300'}`}>
           {label}
         </label>
       )}
       <div className="relative">
         {icon && (
-          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
+          <div className={`absolute left-3 top-1/2 -translate-y-1/2 ${light ? 'text-slate-400' : 'text-slate-500'}`}>
             {icon}
           </div>
         )}
         <input
           className={`
-            w-full rounded-lg border bg-slate-950/80 px-3 py-2 text-sm text-slate-100
+            w-full rounded-lg border px-3 py-2 text-sm
             transition-colors focus:outline-none
             ${icon ? 'pl-10' : ''}
-            ${
-              error
-                ? 'border-red-500/50 focus:border-red-500 focus:ring-1 focus:ring-red-500/20'
-                : 'border-white/[0.1] focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20'
+            ${light
+              ? `bg-white text-slate-900 placeholder:text-slate-400 ${
+                  error
+                    ? 'border-red-400 focus:border-red-500 focus:ring-1 focus:ring-red-500/20'
+                    : 'border-slate-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20'
+                }`
+              : `bg-slate-950/80 text-slate-100 placeholder:text-slate-500 ${
+                  error
+                    ? 'border-red-500/50 focus:border-red-500 focus:ring-1 focus:ring-red-500/20'
+                    : 'border-white/[0.1] focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20'
+                }`
             }
             disabled:opacity-50 disabled:cursor-not-allowed
-            placeholder:text-slate-500
             ${className}
           `}
           {...props}
@@ -143,7 +161,7 @@ export function Input({
           {error}
         </p>
       )}
-      {hint && !error && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
+      {hint && !error && <p className={`mt-1 text-xs ${light ? 'text-slate-500' : 'text-slate-500'}`}>{hint}</p>}
     </div>
   )
 }
@@ -266,9 +284,11 @@ export function Skeleton({ className = '', variant = 'rect' }) {
 }
 
 export function SkeletonCard() {
+  const { theme } = useTheme()
+  const light = theme === 'light'
   return (
-    <div className="rounded-xl border border-white/[0.08] bg-slate-900/80 overflow-hidden">
-      <div className="h-[2px] bg-white/[0.06]" />
+    <div className={`rounded-xl border overflow-hidden ${light ? 'border-slate-200 bg-white' : 'border-white/[0.08] bg-slate-900/80'}`}>
+      <div className={`h-[2px] ${light ? 'bg-slate-200' : 'bg-white/[0.06]'}`} />
       <div className="p-5">
         <div className="flex items-start justify-between">
           <div className="flex-1 space-y-3">
@@ -403,6 +423,8 @@ export function Modal({ open, onClose, title, children, size = 'md' }) {
 
 /* ===== STAT CARD ===== */
 export function StatCard({ title, value, subtitle, trend, icon, accentColor = 'blue' }) {
+  const { theme } = useTheme()
+  const light = theme === 'light'
   const themes = {
     blue: {
       iconBg: 'bg-blue-500/10',
@@ -449,7 +471,11 @@ export function StatCard({ title, value, subtitle, trend, icon, accentColor = 'b
   const t = themes[accentColor] || themes.blue
 
   return (
-    <div className="group relative rounded-xl border border-white/[0.08] bg-slate-900/80 overflow-hidden transition-all duration-300 hover:border-white/[0.14] hover:shadow-lg hover:shadow-black/20">
+    <div className={`group relative rounded-xl border overflow-hidden transition-all duration-300 ${
+      light
+        ? 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-md'
+        : 'border-white/[0.08] bg-slate-900/80 hover:border-white/[0.14] hover:shadow-lg hover:shadow-black/20'
+    }`}>
       {/* Top accent bar */}
       <div className={`absolute top-0 inset-x-0 h-[2px] ${t.barBg} opacity-80`} />
       {/* Subtle radial glow */}
@@ -458,14 +484,14 @@ export function StatCard({ title, value, subtitle, trend, icon, accentColor = 'b
       <div className="relative p-5">
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500 mb-2">
+            <p className={`text-[11px] font-semibold uppercase tracking-widest mb-2 ${light ? 'text-slate-500' : 'text-slate-500'}`}>
               {title}
             </p>
             <div className="flex items-baseline gap-2">
-              <p className="text-3xl font-extrabold text-white tabular-nums tracking-tight">{value}</p>
+              <p className={`text-3xl font-extrabold tabular-nums tracking-tight ${light ? 'text-slate-900' : 'text-white'}`}>{value}</p>
             </div>
             {subtitle && (
-              <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+              <p className={`mt-1 text-sm ${light ? 'text-slate-500' : 'text-slate-500'}`}>{subtitle}</p>
             )}
             {trend && (
               <div className="mt-2 flex items-center gap-1">
