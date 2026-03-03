@@ -9,13 +9,25 @@
     color-scheme: dark;
   }
 
+  :root.light {
+    color-scheme: light;
+  }
+
   body {
     @apply bg-slate-950 text-slate-100 antialiased;
+  }
+
+  :root.light body {
+    @apply bg-white text-slate-800;
   }
 
   :focus-visible {
     outline: none;
     @apply ring-2 ring-blue-500 ring-offset-2 ring-offset-slate-950;
+  }
+
+  :root.light :focus-visible {
+    @apply ring-offset-white;
   }
 }
 
@@ -25,10 +37,18 @@
     @apply rounded-xl border border-white/[0.08] bg-slate-900/80 shadow-lg shadow-black/20 backdrop-blur-sm;
   }
 
+  :root.light .glass-panel {
+    @apply border-slate-200 bg-white shadow-slate-200/50;
+  }
+
   /* ── Sidebar ── */
   .sidebar {
     @apply flex flex-col border-r border-white/[0.06] bg-slate-950;
     transition: width 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  :root.light .sidebar {
+    @apply border-slate-200 bg-slate-50;
   }
 
   .sidebar-expanded {
@@ -49,6 +69,10 @@
     @apply bg-white/[0.08] text-white;
   }
 
+  :root.light .sidebar-item-active {
+    @apply bg-blue-50 text-blue-700;
+  }
+
   .sidebar-item-active::before {
     content: '';
     @apply absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-blue-500;
@@ -56,6 +80,10 @@
 
   .sidebar-item-idle {
     @apply text-slate-400 hover:bg-white/[0.04] hover:text-slate-100;
+  }
+
+  :root.light .sidebar-item-idle {
+    @apply text-slate-500 hover:bg-slate-100 hover:text-slate-900;
   }
 
   /* ── Buttons ── */
@@ -93,8 +121,16 @@
     @apply w-full rounded-lg border border-white/[0.1] bg-slate-950/80 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 transition-colors focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 focus:outline-none;
   }
 
+  :root.light .input-dark {
+    @apply border-slate-300 bg-white text-slate-900 placeholder-slate-400;
+  }
+
   .file-input {
     @apply block w-full rounded-lg border border-white/[0.1] bg-slate-950/80 px-3 py-2 text-sm text-slate-300 transition-colors file:mr-4 file:rounded-md file:border-0 file:bg-blue-600 file:px-4 file:py-1.5 file:text-sm file:font-semibold file:text-white hover:file:bg-blue-500;
+  }
+
+  :root.light .file-input {
+    @apply border-slate-300 bg-white text-slate-700;
   }
 
   /* ── Tables ── */
@@ -104,6 +140,10 @@
 
   .table-enterprise thead {
     @apply bg-slate-950/50 text-xs font-medium uppercase tracking-wider text-slate-400;
+  }
+
+  :root.light .table-enterprise thead {
+    @apply bg-slate-50 text-slate-500;
   }
 
   .table-enterprise thead th {
@@ -118,13 +158,25 @@
     @apply transition-colors hover:bg-white/[0.02];
   }
 
+  :root.light .table-enterprise tbody tr {
+    @apply hover:bg-slate-50;
+  }
+
   .table-enterprise tbody td {
     @apply px-4 py-3 text-slate-300;
+  }
+
+  :root.light .table-enterprise tbody td {
+    @apply text-slate-700;
   }
 
   /* ── Skeleton Loading ── */
   .skeleton {
     @apply animate-pulse rounded-md bg-white/[0.06];
+  }
+
+  :root.light .skeleton {
+    @apply bg-slate-200;
   }
 
   /* ── Page Layout ── */
@@ -136,7 +188,15 @@
     @apply text-2xl font-bold text-white tracking-tight;
   }
 
+  :root.light .page-title {
+    @apply text-slate-900;
+  }
+
   .page-subtitle {
     @apply text-sm text-slate-400;
+  }
+
+  :root.light .page-subtitle {
+    @apply text-slate-500;
   }
 }

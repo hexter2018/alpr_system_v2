@@ -133,3 +133,9 @@ export function absImageUrl(pathOrUrl) {
   if (pathOrUrl.startsWith("http")) return pathOrUrl;
   return `${API_BASE}${pathOrUrl}`;
 }
+
+export async function getMonitorHealth() {
+  const res = await fetch(`${API_BASE}/api/monitor/health`);
+  if (!res.ok) throw new Error("failed to load monitor health");
+  return res.json();
+}
