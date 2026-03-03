@@ -238,8 +238,26 @@ export default function Dashboard() {
     ? (kpi.alpr_total / (kpi.alpr_total + kpi.mlpr_total)) * 100
     : 0
 
-  // Mock sparkline data (in production, get from time-series API)
-  const mockSparkline = [65, 72, 68, 78, 85, 82, 94]
+  const todayReads = kpi.today_reads ?? 0
+  const yesterdayReads = kpi.yesterday_reads ?? 0
+  const sevenDayReads = kpi.last_7_days_reads ?? 0
+  const withProvinceReads = kpi.with_province_reads ?? 0
+  const withoutProvinceReads = kpi.without_province_reads ?? 0
+  const provinceTotal = Math.max(withProvinceReads + withoutProvinceReads, 1)
+  const withProvincePct = (withProvinceReads / provinceTotal) * 100
+  const withoutProvincePct = (withoutProvinceReads / provinceTotal) * 100
+
+  const todayTrend = yesterdayReads > 0
+    ? ((todayReads - yesterdayReads) / yesterdayReads) * 100
+    : 0
+
+  const todaySparkline = [Math.max(yesterdayReads, 0), todayReads]
+  const weekSparkline = [
+    Math.max(sevenDayReads - (todayReads + yesterdayReads), 0),
+    Math.max(sevenDayReads - todayReads, 0),
+    sevenDayReads,
+  ]
+
 
   return (
     <div className="space-y-6">
@@ -376,16 +394,16 @@ export default function Dashboard() {
         <ActivityCard
           icon="📅"
           title="วันนี้"
-          value={Math.floor(kpi.total_reads * 0.15).toLocaleString()}
-          trend={12.5}
-          sparklineData={mockSparkline}
+          value={todayReads.toLocaleString()}
+          trend={todayTrend}
+          sparklineData={todaySparkline}
         />
         <ActivityCard
           icon="📊"
           title="7 วันที่แล้ว"
-          value={Math.floor(kpi.total_reads * 0.78).toLocaleString()}
+          value={sevenDayReads.toLocaleString()}
           trend={8.2}
-          sparklineData={mockSparkline}
+          sparklineData={weekSparkline}
         />
         <ActivityCard
           icon="⚡"
@@ -410,9 +428,9 @@ export default function Dashboard() {
           <CardBody>
             <div className="space-y-3">
               {[
-                { label: 'วันนี้', value: Math.floor(kpi.total_reads * 0.15), color: 'text-emerald-400' },
-                { label: 'เมื่อวาน', value: Math.floor(kpi.total_reads * 0.12), color: 'text-slate-300' },
-                { label: '7 วันที่แล้ว', value: Math.floor(kpi.total_reads * 0.78), color: 'text-slate-300' }
+                { label: 'วันนี้', value: todayReads, color: 'text-emerald-400' },
+                { label: 'เมื่อวาน', value: yesterdayReads, color: 'text-slate-300' },
+                { label: '7 วันที่แล้ว', value: sevenDayReads, color: 'text-slate-300' }
               ].map(stat => (
                 <div key={stat.label} className="flex justify-between items-center">
                   <span className="text-sm text-slate-400">{stat.label}</span>
@@ -432,8 +450,8 @@ export default function Dashboard() {
           <CardBody>
             <div className="space-y-3">
               {[
-                { label: 'มีจังหวัด', value: Math.floor(kpi.total_reads * 0.82), color: 'text-emerald-400', pct: 82 },
-                { label: 'ไม่มีจังหวัด', value: Math.floor(kpi.total_reads * 0.18), color: 'text-amber-400', pct: 18 }
+                { label: 'มีจังหวัด', value: withProvinceReads, color: 'text-emerald-400', pct: withProvincePct },
+                { label: 'ไม่มีจังหวัด', value: withoutProvinceReads, color: 'text-amber-400', pct: withoutProvincePct }
               ].map(stat => (
                 <div key={stat.label}>
                   <div className="flex justify-between items-center mb-1">
