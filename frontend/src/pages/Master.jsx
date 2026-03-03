@@ -6,6 +6,7 @@ import {
   absImageUrl,
   API_BASE,
 } from '../lib/api.js'
+import { useTheme } from '../lib/ThemeContext.jsx'
 import {
   Card,
   CardBody,
@@ -18,6 +19,8 @@ import {
 import { Search, Database, X } from 'lucide-react'
 
 export default function Master() {
+  const { theme } = useTheme()
+  const light = theme === 'light'
   const [q, setQ] = useState('')
   const [rows, setRows] = useState([])
   const [err, setErr] = useState('')

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { absImageUrl, API_BASE } from '../lib/api.js'
+import { useTheme } from '../lib/ThemeContext.jsx'
 import {
   Card,
   CardBody,
@@ -34,10 +35,16 @@ function formatBangkokDateTime(value) {
 }
 
 function ChartTooltip({ active, payload, label }) {
+  const { theme } = useTheme()
+  const light = theme === 'light'
   if (!active || !payload?.length) return null
   return (
-    <div className="rounded-lg border border-white/[0.1] bg-slate-900 px-3 py-2 shadow-xl text-xs">
-      <p className="text-slate-400 mb-1">{label}</p>
+    <div className={`rounded-lg border px-3 py-2 shadow-xl text-xs ${
+      light
+        ? 'border-slate-200 bg-white text-slate-700'
+        : 'border-white/[0.1] bg-slate-900 text-slate-300'
+    }`}>
+      <p className="text-slate-500 mb-1">{label}</p>
       {payload.map((entry, i) => (
         <p key={i} className="font-medium" style={{ color: entry.color }}>
           {entry.name}: {typeof entry.value === 'number' && entry.value % 1 !== 0 ? entry.value.toFixed(1) + '%' : entry.value?.toLocaleString()}
@@ -48,6 +55,8 @@ function ChartTooltip({ active, payload, label }) {
 }
 
 export default function Reports() {
+  const { theme } = useTheme()
+  const light = theme === 'light'
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [province, setProvince] = useState('')
@@ -163,7 +172,7 @@ export default function Reports() {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-white">Filters</h2>
+            <h2 className={`text-sm font-semibold ${light ? 'text-slate-900' : 'text-white'}`}>Filters</h2>
             {(province || cameraId) && (
               <button
                 onClick={clearFilters}

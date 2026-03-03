@@ -1,10 +1,13 @@
 import React, { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { uploadBatch, uploadSingle } from '../lib/api.js'
+import { useTheme } from '../lib/ThemeContext.jsx'
 import { Card, CardBody, Button, Badge } from '../components/UIComponents.jsx'
 import { Upload as UploadIcon, Image, ImagePlus, X } from 'lucide-react'
 
 function DropZone({ onFiles, accept, multiple, children }) {
+  const { theme } = useTheme()
+  const light = theme === 'light'
   const [dragOver, setDragOver] = useState(false)
   const inputRef = useRef(null)
 
@@ -29,7 +32,9 @@ function DropZone({ onFiles, accept, multiple, children }) {
       className={`cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors ${
         dragOver
           ? 'border-blue-500 bg-blue-500/10'
-          : 'border-white/[0.1] hover:border-white/[0.2] hover:bg-white/[0.02]'
+          : light
+            ? 'border-slate-300 hover:border-slate-400 hover:bg-slate-50'
+            : 'border-white/[0.1] hover:border-white/[0.2] hover:bg-white/[0.02]'
       }`}
       role="button"
       tabIndex={0}
@@ -53,13 +58,17 @@ function DropZone({ onFiles, accept, multiple, children }) {
 }
 
 function FilePreview({ files, onRemove }) {
+  const { theme } = useTheme()
+  const light = theme === 'light'
   if (!files?.length) return null
   return (
     <div className="flex flex-wrap gap-2 mt-4">
       {files.map((file, i) => (
         <div
           key={`${file.name}-${i}`}
-          className="relative group rounded-md border border-white/[0.08] bg-slate-950 overflow-hidden"
+          className={`relative group rounded-md border overflow-hidden ${
+            light ? 'border-slate-200 bg-white' : 'border-white/[0.08] bg-slate-950'
+          }`}
         >
           <img
             src={URL.createObjectURL(file)}
@@ -88,6 +97,8 @@ function FilePreview({ files, onRemove }) {
 }
 
 export default function Upload() {
+  const { theme } = useTheme()
+  const light = theme === 'light'
   const [single, setSingle] = useState(null)
   const [multi, setMulti] = useState([])
   const [msg, setMsg] = useState('')
@@ -171,7 +182,7 @@ export default function Upload() {
                 <Image className="h-5 w-5 text-blue-400" />
               </div>
               <div>
-                <h2 className="text-sm font-semibold text-white">
+                <h2 className={`text-sm font-semibold ${light ? 'text-slate-900' : 'text-white'}`}>
                   Single Image
                 </h2>
                 <p className="text-xs text-slate-500">
@@ -220,7 +231,7 @@ export default function Upload() {
               </div>
               <div className="flex items-center gap-2">
                 <div>
-                  <h2 className="text-sm font-semibold text-white">
+                  <h2 className={`text-sm font-semibold ${light ? 'text-slate-900' : 'text-white'}`}>
                     Batch Upload
                   </h2>
                   <p className="text-xs text-slate-500">
