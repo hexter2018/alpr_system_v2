@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# worker/start.sh  (MODIFIED — เพิ่ม sentinel watcher ด้านล่าง)
+# ====================================================================
+# ⚠️  เพิ่มเฉพาะส่วน "Sentinel watcher" ด้านล่าง
+#     โค้ดส่วนบนทั้งหมดเหมือนเดิม ไม่แก้ core logic
+# ====================================================================
 set -euo pipefail
 
 export PYTHONPATH=/app
@@ -50,4 +55,57 @@ PlateOCR()
 print("[worker] preload complete")
 PY
 fi
-celery -A alpr_worker.celery_app:celery_app worker -l info --pool=solo -Q default,celery
+
+# ====================================================================
+# ✅ NEW: Sentinel File Watcher
+# ====================================================================
+# Background loop: เช็คทุก 30 วินาทีว่า /models/reload.sentinel ถูก touch หรือไม่
+# ถ้าใช่ → ส่ง SIGHUP ให้ Celery worker (graceful warm restart)
+# Celery จะ finish งานที่กำลังทำอยู่ก่อนแล้วค่อย reload
+SENTINEL_FILE="/models/reload.sentinel"
+LAST_SENTINEL_TS=0
+
+sentinel_watcher() {
+  echo "[worker-sentinel] Watcher started. Watching: $SENTINEL_FILE"
+  while true; do
+    sleep 30
+    if [[ -f "$SENTINEL_FILE" ]]; then
+      CURRENT_TS=$(stat -c %Y "$SENTINEL_FILE" 2>/dev/null || echo 0)
+      if [[ "$CURRENT_TS" -gt "$LAST_SENTINEL_TS" ]]; then
+        LAST_SENTINEL_TS="$CURRENT_TS"
+        echo "[worker-sentinel] Sentinel updated at $(date). Sending warm restart to Celery..."
+        # ส่ง SIGHUP → Celery warm restart (finish current tasks then reload)
+        kill -HUP "$(cat /tmp/celery_worker.pid 2>/dev/null || echo 0)" 2>/dev/null || true
+        # fallback: kill -TERM แล้วให้ Docker restart policy เปิดใหม่
+        # (ใช้เมื่อ SIGHUP ไม่ work กับ --pool=solo)
+        if [[ "${WORKER_RESTART_ON_SENTINEL:-false}" == "true" ]]; then
+          echo "[worker-sentinel] WORKER_RESTART_ON_SENTINEL=true → graceful stop for Docker to restart"
+          kill -TERM "$CELERY_PID" 2>/dev/null || true
+        fi
+      fi
+    fi
+  done
+}
+
+# รัน sentinel watcher เป็น background process
+sentinel_watcher &
+SENTINEL_WATCHER_PID=$!
+echo "[worker] Sentinel watcher PID: $SENTINEL_WATCHER_PID"
+
+# รัน Celery worker (เก็บ PID ไว้ให้ sentinel ใช้)
+celery -A alpr_worker.celery_app:celery_app worker \
+  -l info \
+  --pool=solo \
+  -Q default,celery \
+  --pidfile=/tmp/celery_worker.pid &
+CELERY_PID=$!
+echo "[worker] Celery worker PID: $CELERY_PID"
+
+# รอให้ Celery จบ (จะ exit เมื่อถูก kill หรือ error)
+wait $CELERY_PID
+EXIT_CODE=$?
+
+# cleanup
+kill $SENTINEL_WATCHER_PID 2>/dev/null || true
+echo "[worker] Celery exited with code $EXIT_CODE"
+exit $EXIT_CODE

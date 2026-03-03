@@ -186,9 +186,81 @@ services:
       - alpr-network
     restart: unless-stopped
 
+  # ─────────────────────────────────────────────────────────────────
+  # MLOps: Trainer Worker (queue: training)
+  # รัน YOLO training + EasyOCR fine-tuning
+  # ⚠️  แยก GPU resource จาก worker-gpu-1 โดย CUDA_VISIBLE_DEVICES
+  # ─────────────────────────────────────────────────────────────────
+  trainer-worker:
+    build:
+      context: ./mlops
+      dockerfile: Dockerfile
+    container_name: trainer-worker
+    restart: unless-stopped
+    command: >
+      celery -A mlops.celery_app:celery_app worker
+      -Q training --concurrency=1 -l info
+      --pidfile=/tmp/celery_trainer.pid
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+psycopg2://alpr:alpr@postgres:5432/alpr
+      - STORAGE_DIR=/storage
+      - MODELS_DIR=/models
+      - TRAINING_DIR=/storage/training
+      - YOLO_TRAIN_DEVICE=0
+      - YOLO_TRAIN_EPOCHS=50
+      - YOLO_TRAIN_BATCH=8          # batch เล็กลง — trainer ใช้ VRAM ร่วมกับ production
+      - RETRAIN_THRESHOLD=1000
+      - MIN_MAP_IMPROVEMENT=0.001
+      - OCR_TRAIN_BATCH=32
+      # CUDA_VISIBLE_DEVICES: ถ้ามี 2 GPU → ใช้ GPU 1, production ใช้ GPU 0
+      # ถ้ามี 1 GPU → ใช้ร่วมกัน (batch เล็กป้องกัน OOM)
+      - CUDA_VISIBLE_DEVICES=${TRAINER_GPU:-0}
+    volumes:
+      - ./mlops:/app/mlops:ro        # source code (read-only)
+      - model_data:/models           # shared models dir กับ production worker
+      - storage_data:/storage        # training data
+      - trainer_data:/data           # celerybeat schedule
+    depends_on:
+      - redis
+      - postgres
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # ─────────────────────────────────────────────────────────────────
+  # MLOps: Celery Beat Scheduler
+  # ส่ง check_retrain_trigger task ทุก 1 ชั่วโมง
+  # ─────────────────────────────────────────────────────────────────
+  celery-beat:
+    build:
+      context: ./mlops
+      dockerfile: Dockerfile
+    container_name: celery-beat
+    restart: unless-stopped
+    command: >
+      celery -A mlops.celery_app:celery_app beat
+      -l info
+      --schedule=/data/celerybeat-schedule
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+psycopg2://alpr:alpr@postgres:5432/alpr
+      - RETRAIN_THRESHOLD=1000
+    volumes:
+      - ./mlops:/app/mlops:ro
+      - trainer_data:/data
+    depends_on:
+      - redis
+      - postgres
+
 volumes:
   pgdata:
   redisdata:
+  trainer_data:
 
 networks:
   alpr-network:

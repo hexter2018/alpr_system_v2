@@ -1,0 +1,11 @@
+celery[redis]==5.3.6
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+ultralytics>=8.0.200
+lmdb==1.4.1
+Pillow>=10.0.0
+PyYAML>=6.0
+opencv-python-headless>=4.8.0
+easyocr>=1.7.1
+torch>=2.1.0
+torchvision>=0.16.0
