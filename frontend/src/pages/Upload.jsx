@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { uploadBatch, uploadSingle } from '../lib/api.js'
 import { Card, CardBody, Button, Badge } from '../components/UIComponents.jsx'
-import { Upload as UploadIcon, Image, Images, X } from 'lucide-react'
+import { Upload as UploadIcon, Image, ImagePlus, X } from 'lucide-react'
 
 function DropZone({ onFiles, accept, multiple, children }) {
   const [dragOver, setDragOver] = useState(false)
@@ -216,7 +216,7 @@ export default function Upload() {
           <CardBody className="space-y-4">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10 border border-blue-500/20">
-                <Images className="h-5 w-5 text-blue-400" />
+                <ImagePlus className="h-5 w-5 text-blue-400" />
               </div>
               <div className="flex items-center gap-2">
                 <div>
@@ -240,7 +240,7 @@ export default function Upload() {
               multiple={true}
               onFiles={(files) => setMulti((prev) => [...prev, ...files])}
             >
-              <Images className="h-8 w-8 text-slate-600 mx-auto mb-3" />
+              <ImagePlus className="h-8 w-8 text-slate-600 mx-auto mb-3" />
               <p className="text-sm text-slate-400 mb-1">
                 Drop images here or click to browse
               </p>
