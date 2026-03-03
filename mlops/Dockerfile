@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN git clone --depth=1 \
     https://github.com/clovaai/deep-text-recognition-benchmark \
     /opt/deep-text-recognition-benchmark && \
-    pip install --no-cache-dir -r /opt/deep-text-recognition-benchmark/requirements.txt
+    pip install --no-cache-dir lmdb pillow torchvision nltk natsort
 
 COPY . /app/mlops
 
