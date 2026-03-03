@@ -261,6 +261,7 @@ volumes:
   pgdata:
   redisdata:
   trainer_data:
+  model_data:
 
 networks:
   alpr-network:
