@@ -6,18 +6,16 @@
 
 @layer base {
   :root {
-    color-scheme: dark;
+    color-scheme: light;
   }
 
   body {
-    @apply bg-slate-950 text-slate-100 antialiased;
-    background-image: 
-      radial-gradient(circle at top left, rgba(16, 185, 129, 0.15), transparent 50%),
-      radial-gradient(circle at bottom right, rgba(20, 184, 166, 0.12), transparent 50%);
+    @apply bg-gray-50 text-gray-900 antialiased;
   }
+  
   :focus-visible {
     outline: none;
-    @apply ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950;
+    @apply ring-2 ring-violet-400 ring-offset-2 ring-offset-white;
   }
 }
 
