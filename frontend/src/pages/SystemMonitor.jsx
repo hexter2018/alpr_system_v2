@@ -177,6 +177,30 @@ function MonitorTooltip({ active, payload, label, light }) {
   )
 }
 
+function formatLatency(ms) {
+  if (ms == null || Number.isNaN(ms)) return 'N/A'
+  if (ms < 1000) return `${ms.toFixed(1)}ms`
+
+  const seconds = ms / 1000
+  if (seconds < 60) return `${seconds.toFixed(2)}s`
+
+  const minutes = seconds / 60
+  if (minutes < 60) return `${minutes.toFixed(2)}m`
+
+  const hours = minutes / 60
+  if (hours < 24) return `${hours.toFixed(2)}h`
+
+  const days = hours / 24
+  return `${days.toFixed(2)}d`
+}
+
+function queuePressureLabel(pendingReads) {
+  if (pendingReads > 500) return 'Critical'
+  if (pendingReads > 200) return 'High'
+  if (pendingReads > 50) return 'Moderate'
+  return 'Low'
+}
+
 /* ========== MAIN PAGE ========== */
 export default function SystemMonitor() {
   const { theme } = useTheme()
@@ -254,10 +278,15 @@ export default function SystemMonitor() {
     queued: database?.pending_reads || 0,
   }
 
+  const avgReadRatePerMinute = (throughput?.reads_last_hour || 0) / 60
+  const queueDrainMinutes = avgReadRatePerMinute > 0 ? workerSummary.queued / avgReadRatePerMinute : null
+
   const processingStatus =
     throughput?.avg_processing_ms == null
       ? 'offline'
-      : throughput.avg_processing_ms > 2000
+      : throughput.avg_processing_ms > 10000
+        ? 'error'
+        : throughput.avg_processing_ms > 2000
         ? 'warning'
         : 'healthy'
 
@@ -279,6 +308,13 @@ export default function SystemMonitor() {
     alerts.push({
       level: 'warning',
       message: `${cameraSummary.offline} camera(s) disabled or offline`,
+      timestamp: 'now',
+    })
+  }
+  if ((throughput?.avg_processing_ms || 0) > 10000) {
+    alerts.push({
+      level: 'error',
+      message: `Inference latency is very high (${formatLatency(throughput.avg_processing_ms)})`,
       timestamp: 'now',
     })
   }
@@ -345,7 +381,7 @@ export default function SystemMonitor() {
         <StatusCard
           title="API Health"
           status={error ? 'error' : 'healthy'}
-          value={throughput?.avg_processing_ms != null ? `${throughput.avg_processing_ms}ms` : 'N/A'}
+          value={formatLatency(throughput?.avg_processing_ms)}
           subtitle="Avg processing time"
           icon={Activity}
           light={light}
@@ -376,12 +412,14 @@ export default function SystemMonitor() {
           details={[
             { label: 'Reads Last Hour', value: throughput?.reads_last_hour?.toLocaleString() || '0' },
             { label: 'Reads Today', value: throughput?.reads_today?.toLocaleString() || '0' },
+            { label: 'Queue Pressure', value: queuePressureLabel(workerSummary.queued) },
+            { label: 'Est. Catch-up', value: queueDrainMinutes != null ? formatLatency(queueDrainMinutes * 60 * 1000) : 'N/A' },
           ]}
         />
         <StatusCard
           title="Inference Speed"
           status={processingStatus}
-          value={throughput?.avg_processing_ms != null ? `${throughput.avg_processing_ms}ms` : 'N/A'}
+          value={formatLatency(throughput?.avg_processing_ms)}
           subtitle="Avg read-to-inference time"
           icon={Gauge}
           light={light}
