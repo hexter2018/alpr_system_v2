@@ -67,6 +67,17 @@ export function CardBody({ children, className = '' }) {
   return <div className={`p-5 ${className}`}>{children}</div>
 }
 
+export function SkeletonCard({ className = '' }) {
+  return (
+    <Card className={`p-5 space-y-3 ${className}`}>
+      <div className="skeleton h-4 w-24 rounded" />
+      <div className="skeleton h-8 w-20 rounded" />
+      <div className="skeleton h-3 w-full rounded" />
+      <div className="skeleton h-3 w-4/5 rounded" />
+    </Card>
+  )
+}
+
 /* ===== INPUTS ===== */
 export function Input({
   label,
