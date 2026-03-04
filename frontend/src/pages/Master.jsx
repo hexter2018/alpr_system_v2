@@ -1,26 +1,12 @@
 import React, { useEffect, useState } from 'react'
+import { deleteMaster, searchMaster, upsertMaster, absImageUrl, API_BASE, apiFetch } from '../lib/api.js'
 import {
-  deleteMaster,
-  searchMaster,
-  upsertMaster,
-  absImageUrl,
-  API_BASE,
-} from '../lib/api.js'
-import { useTheme } from '../lib/ThemeContext.jsx'
-import {
-  Card,
-  CardBody,
-  CardHeader,
-  Button,
-  Badge,
-  Modal,
-  EmptyState,
+  Card, CardBody, CardHeader, Badge, Button, Input, Spinner, Modal,
+  EmptyState, PageHeader,
 } from '../components/UIComponents.jsx'
-import { Search, Database, X } from 'lucide-react'
+import { Search, Save, Trash2, Database, Eye, X, Image as ImageIcon } from 'lucide-react'
 
 export default function Master() {
-  const { theme } = useTheme()
-  const light = theme === 'light'
   const [q, setQ] = useState('')
   const [rows, setRows] = useState([])
   const [err, setErr] = useState('')
@@ -30,22 +16,19 @@ export default function Master() {
   const [viewerImage, setViewerImage] = useState('')
 
   async function load() {
-    setErr('')
-    setMsg('')
+    setErr(''); setMsg('')
     try {
       const r = await searchMaster(q)
       const enriched = await Promise.all(
         r.map(async (row) => {
           try {
-            const res = await fetch(
-              `${API_BASE}/api/master/${row.id}/crops?limit=5`
-            )
+            const res = await apiFetch(`${API_BASE}/api/master/${row.id}/crops?limit=5`)
             if (res.ok) {
               const crops = await res.json()
               return { ...row, crops }
             }
-          } catch {
-            /* skip */
+          } catch (e) {
+            console.warn('Failed to fetch crops for', row.id)
           }
           return { ...row, crops: [] }
         })
@@ -56,14 +39,10 @@ export default function Master() {
     }
   }
 
-  useEffect(() => {
-    load()
-  }, [])
+  useEffect(() => { load() }, [])
 
   async function saveRow(row) {
-    setBusy(true)
-    setErr('')
-    setMsg('')
+    setBusy(true); setErr(''); setMsg('')
     try {
       await upsertMaster({
         plate_text_norm: row.plate_text_norm,
@@ -82,14 +61,8 @@ export default function Master() {
   }
 
   async function removeRow(row) {
-    if (
-      !window.confirm(`Delete plate ${row.plate_text_norm}?`)
-    ) {
-      return
-    }
-    setBusy(true)
-    setErr('')
-    setMsg('')
+    if (!window.confirm(`Delete plate ${row.plate_text_norm}?`)) return
+    setBusy(true); setErr(''); setMsg('')
     try {
       await deleteMaster(row.id)
       setMsg('Record deleted')
@@ -101,118 +74,79 @@ export default function Master() {
     }
   }
 
-  function openViewer(url) {
-    setViewerImage(url)
-    setViewerOpen(true)
-  }
-
-  const handleSearch = (e) => {
-    e.preventDefault()
-    load()
-  }
-
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="page-header">
-        <h1 className="page-title">Master Database</h1>
-        <p className="page-subtitle">
-          Verified license plate records with sample images
-        </p>
-      </div>
+      <PageHeader
+        title="Master Database"
+        description="Verified plate records with sample images"
+        actions={
+          <Badge variant="primary" size="lg" dot>{rows.length} records</Badge>
+        }
+      />
 
       {/* Search */}
       <Card>
         <CardBody>
-          <form onSubmit={handleSearch} className="flex gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-              <input
-                className="input-dark pl-10"
-                placeholder="Search plate number..."
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <Input
+                placeholder="Search plate text..."
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
+                icon={<Search className="w-4 h-4" />}
+                onKeyDown={(e) => e.key === 'Enter' && load()}
               />
             </div>
-            <Button type="submit" variant="primary" size="sm">
-              Search
-            </Button>
-          </form>
-        </CardBody>
-      </Card>
-
-      {/* Messages */}
-      {err && (
-        <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-          {err}
-        </div>
-      )}
-      {msg && (
-        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300 flex items-center justify-between">
-          <span>{msg}</span>
-          <button
-            onClick={() => setMsg('')}
-            className="text-emerald-400 hover:text-white"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
-      {/* Table */}
-      <Card>
-        <CardBody className="p-0">
-          <div className="overflow-x-auto">
-            <table className="table-enterprise">
-              <thead>
-                <tr>
-                  <th>Image</th>
-                  <th>Plate (Norm)</th>
-                  <th>Display Text</th>
-                  <th>Province</th>
-                  <th>Confidence</th>
-                  <th>Seen</th>
-                  <th>Editable</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <Row
-                    key={r.id}
-                    r={r}
-                    busy={busy}
-                    onSave={saveRow}
-                    onDelete={removeRow}
-                    onViewImage={openViewer}
-                  />
-                ))}
-                {!rows.length && (
-                  <tr>
-                    <td
-                      className="p-8 text-center text-slate-600"
-                      colSpan="8"
-                    >
-                      <EmptyState
-                        icon={<Database className="h-10 w-10" />}
-                        title="No records found"
-                        description="Try a different search term or add new plates via the Upload page."
-                      />
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+            <Button onClick={load} icon={<Search className="w-4 h-4" />}>Search</Button>
           </div>
         </CardBody>
       </Card>
 
+      {err && (
+        <Card className="bg-danger-muted border-danger/30">
+          <CardBody><p className="text-sm text-danger-content">{err}</p></CardBody>
+        </Card>
+      )}
+      {msg && (
+        <Card className="bg-success-muted border-success/30">
+          <CardBody><p className="text-sm text-success-content">{msg}</p></CardBody>
+        </Card>
+      )}
+
+      {/* Table */}
+      <Card>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border">
+                {['Sample', 'Plate (Norm)', 'Display', 'Province', 'Confidence', 'Seen', 'Editable', 'Actions'].map((h) => (
+                  <th key={h} className="px-4 py-3 text-left text-xs uppercase tracking-wider font-semibold text-content-tertiary">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rows.map((r) => (
+                <Row key={r.id} r={r} busy={busy} onSave={saveRow} onDelete={removeRow}
+                  onViewImage={(url) => { setViewerImage(url); setViewerOpen(true) }} />
+              ))}
+              {!rows.length && (
+                <tr>
+                  <td className="px-4 py-16 text-center text-content-tertiary" colSpan="8">
+                    No records found
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
       {/* Image Viewer */}
-      <ImageViewer
-        open={viewerOpen}
-        src={viewerImage}
-        onClose={() => setViewerOpen(false)}
-      />
+      <Modal open={viewerOpen} onClose={() => setViewerOpen(false)} title="Plate Image" size="lg">
+        {viewerImage && (
+          <img src={viewerImage} alt="Full plate" className="w-full rounded-lg" crossOrigin="anonymous" />
+        )}
+      </Modal>
     </div>
   )
 }
@@ -224,121 +158,69 @@ function Row({ r, onSave, onDelete, busy, onViewImage }) {
   const [editable, setEditable] = useState(!!r.editable)
 
   return (
-    <tr>
-      <td>
+    <tr className="hover:bg-surface-overlay/50 transition-colors">
+      <td className="px-4 py-3">
         {r.crops && r.crops.length > 0 ? (
           <div className="relative inline-block group">
-            <img
-              src={absImageUrl(r.crops[0].crop_url)}
-              alt="crop"
-              className="h-12 w-20 cursor-pointer rounded-md border border-white/[0.08] object-cover hover:border-white/[0.2] transition"
+            <button
               onClick={() => onViewImage(absImageUrl(r.crops[0].crop_url))}
-            />
+              className="block rounded-xl overflow-hidden border border-border hover:border-accent/50 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-accent/50 hover:shadow-md hover:scale-105"
+            >
+              <img src={absImageUrl(r.crops[0].crop_url)} alt="crop" className="h-16 w-24 object-cover" crossOrigin="anonymous" />
+            </button>
             {r.crops.length > 1 && (
-              <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[9px] font-bold text-white ring-2 ring-slate-900">
+              <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-white shadow ring-2 ring-surface-raised">
                 +{r.crops.length - 1}
               </span>
             )}
           </div>
         ) : (
-          <div className="flex h-12 w-20 items-center justify-center rounded-md border border-dashed border-white/[0.08] bg-slate-950/50">
-            <span className="text-[10px] text-slate-600">No image</span>
+          <div className="flex h-16 w-24 items-center justify-center rounded-xl border border-dashed border-border bg-surface-inset pattern-dots">
+            <ImageIcon className="w-5 h-5 text-content-tertiary opacity-60" />
           </div>
         )}
       </td>
-      <td className="font-mono text-white text-sm">{r.plate_text_norm}</td>
-      <td>
+      <td className="px-4 py-3 font-mono font-bold text-content text-base">{r.plate_text_norm}</td>
+      <td className="px-4 py-3">
         <input
-          className="input-dark w-full text-sm"
-          value={display}
-          onChange={(e) => setDisplay(e.target.value)}
+          className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-content focus:border-accent focus:ring-2 focus:ring-accent/20"
+          value={display} onChange={(e) => setDisplay(e.target.value)}
         />
       </td>
-      <td>
+      <td className="px-4 py-3">
         <input
-          className="input-dark w-full text-sm"
-          value={prov}
-          onChange={(e) => setProv(e.target.value)}
+          className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-content focus:border-accent focus:ring-2 focus:ring-accent/20"
+          value={prov} onChange={(e) => setProv(e.target.value)}
         />
       </td>
-      <td>
+      <td className="px-4 py-3">
         <input
-          className="input-dark w-24 text-sm tabular-nums"
-          type="number"
-          step="0.001"
-          value={conf}
-          onChange={(e) => setConf(parseFloat(e.target.value))}
+          className="w-28 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-content focus:border-accent focus:ring-2 focus:ring-accent/20"
+          type="number" step="0.001" value={conf} onChange={(e) => setConf(parseFloat(e.target.value))}
         />
       </td>
-      <td>
-        <span className="text-sm tabular-nums text-white">
-          {r.count_seen}
-        </span>
+      <td className="px-4 py-3">
+        <span className="text-content tabular-nums">{r.count_seen}</span>
+        <span className="text-xs text-content-tertiary ml-1">times</span>
       </td>
-      <td>
+      <td className="px-4 py-3">
         <input
-          type="checkbox"
-          checked={editable}
-          onChange={(e) => setEditable(e.target.checked)}
-          className="h-4 w-4 rounded border-white/20 bg-slate-950 accent-blue-600"
+          type="checkbox" checked={editable} onChange={(e) => setEditable(e.target.checked)}
+          className="h-4 w-4 rounded border-border accent-accent"
         />
       </td>
-      <td>
-        <div className="flex gap-1.5">
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={busy}
-            onClick={() =>
-              onSave({
-                ...r,
-                display_text: display,
-                province: prov,
-                confidence: conf,
-                editable,
-              })
-            }
-          >
+      <td className="px-4 py-3">
+        <div className="flex gap-2">
+          <Button variant="primary" size="xs" disabled={busy} icon={<Save className="w-3.5 h-3.5" />}
+            onClick={() => onSave({ ...r, display_text: display, province: prov, confidence: conf, editable })}>
             Save
           </Button>
-          <Button
-            variant="danger"
-            size="sm"
-            disabled={busy}
-            onClick={() => onDelete(r)}
-          >
+          <Button variant="danger" size="xs" disabled={busy} icon={<Trash2 className="w-3.5 h-3.5" />}
+            onClick={() => onDelete(r)}>
             Delete
           </Button>
         </div>
       </td>
     </tr>
-  )
-}
-
-function ImageViewer({ open, src, onClose }) {
-  if (!open) return null
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className="relative max-h-[90vh] max-w-[90vw]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <img
-          src={src}
-          alt="full"
-          className="max-h-[90vh] max-w-[90vw] rounded-lg border border-white/[0.1] shadow-2xl"
-        />
-        <button
-          className="absolute right-3 top-3 rounded-md border border-white/[0.1] bg-slate-900/90 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 transition backdrop-blur"
-          onClick={onClose}
-        >
-          Close
-        </button>
-      </div>
-    </div>
   )
 }
