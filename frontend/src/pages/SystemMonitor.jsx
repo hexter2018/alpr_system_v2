@@ -290,17 +290,27 @@ export default function SystemMonitor() {
         ? 'warning'
         : 'healthy'
 
+  const queueStatus = workerSummary.queued > 200
+    ? 'error'
+    : workerSummary.queued > 50
+      ? 'warning'
+      : 'healthy'
+
   const overallStatus = error
     ? 'error'
-    : database && throughput
-      ? 'healthy'
-      : 'warning'
+    : [processingStatus, queueStatus].includes('error')
+      ? 'error'
+      : [processingStatus, queueStatus].includes('warning') || (cameraSummary.offline || 0) > 0
+        ? 'warning'
+        : database && throughput
+          ? 'healthy'
+          : 'warning'
 
   const alerts = []
   if ((database?.pending_reads || 0) > 200) {
     alerts.push({
       level: 'warning',
-      message: `Pending reads backlog is high (${database.pending_reads})`,
+      message: `Pending reads backlog is high (${database.pending_reads.toLocaleString()})`,
       timestamp: 'now',
     })
   }
@@ -404,8 +414,8 @@ export default function SystemMonitor() {
         />
         <StatusCard
           title="Processing Queue"
-          status={workerSummary.queued > 200 ? 'error' : workerSummary.queued > 50 ? 'warning' : 'healthy'}
-          value={`${workerSummary.queued}`}
+          status={queueStatus}
+          value={workerSummary.queued.toLocaleString()}
           subtitle="Pending reads"
           icon={Layers}
           light={light}
