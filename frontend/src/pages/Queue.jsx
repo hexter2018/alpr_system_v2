@@ -284,6 +284,9 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
   const [highlightField, setHighlightField] = useState(null)
 
   const provinceMissing = !province.trim()
+  const plateChanged = plateText !== (item.plate_text || '')
+  const provinceChanged = province !== (item.province || '')
+  const hasVerificationEdits = plateChanged || provinceChanged
 
   useEffect(() => {
     if (!highlightField) return
@@ -295,10 +298,10 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
     if (busy) return
     const isTyping = ['INPUT', 'TEXTAREA'].includes(e.target.tagName)
     if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); onCorrect(plateText, province, note) }
-    else if (e.key === 'Enter' && !e.ctrlKey && !isTyping) { e.preventDefault(); onConfirm() }
+    else if (e.key === 'Enter' && !e.ctrlKey && !isTyping && !hasVerificationEdits) { e.preventDefault(); onConfirm() }
     else if (e.key === 'Delete' && !isTyping) { e.preventDefault(); setDeleteOpen(true) }
     else if ((e.key === 'n' || e.key === 'N') && !isTyping) { e.preventDefault(); handleNormalize() }
-  }, [busy, plateText, province, note, onConfirm, onCorrect])
+  }, [busy, plateText, province, note, onConfirm, onCorrect, hasVerificationEdits])
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown)
@@ -457,7 +460,7 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
             {/* Action Buttons */}
             <div className="mt-5 pt-5 border-t border-border">
               <div className="flex flex-wrap gap-2.5">
-                <Button variant="primary" disabled={busy} onClick={onConfirm} className="flex-1 min-w-0 shadow-sm shadow-accent/20"
+                <Button variant="primary" disabled={busy || hasVerificationEdits} onClick={onConfirm} className="flex-1 min-w-0 shadow-sm shadow-accent/20"
                   icon={<CheckCircle className="w-4 h-4" />}>
                   Confirm
                   <kbd className="ml-1.5 px-1.5 py-0.5 text-[10px] font-mono bg-white/20 rounded hidden sm:inline-block">Enter</kbd>
@@ -474,6 +477,11 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
                   Delete
                 </Button>
               </div>
+              {hasVerificationEdits && (
+                <p className="mt-2 text-xs text-content-tertiary">
+                  Confirm is disabled because plate/province was edited. Use <span className="font-semibold">Save Edit</span> instead.
+                </p>
+              )}
             </div>
           </div>
         </div>
