@@ -131,21 +131,22 @@ def monitor_health(db: Session = Depends(get_db)):
     # ── Processing speed (avg ms) ──
     avg_processing_ms = None
     try:
-        subq = (
-            db.query(
-                func.extract(
-                    "epoch",
-                    models.PlateRead.created_at - models.Capture.captured_at,
-                )
-            )
+        samples = (
+            db.query(models.PlateRead.created_at, models.Capture.captured_at)
             .join(models.Detection, models.PlateRead.detection_id == models.Detection.id)
             .join(models.Capture, models.Detection.capture_id == models.Capture.id)
             .order_by(models.PlateRead.id.desc())
             .limit(50)
             .all()
         )
-        if subq:
-            diffs = [row[0] for row in subq if row[0] is not None and row[0] >= 0]
+        if samples:
+            diffs = []
+            for created_at, captured_at in samples:
+                if created_at is None or captured_at is None:
+                    continue
+                delta = (created_at - captured_at).total_seconds()
+                if delta >= 0:
+                    diffs.append(delta)
             if diffs:
                 avg_processing_ms = round((sum(diffs) / len(diffs)) * 1000, 1)
     except Exception:
