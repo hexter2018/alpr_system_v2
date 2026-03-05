@@ -11,6 +11,10 @@ from app.services.storage import make_image_url
 router = APIRouter()
 
 
+HAS_ALERT_MODEL = hasattr(models, "Alert")
+HAS_WATCHLIST_MODEL = hasattr(models, "Watchlist")
+
+
 @router.get("/plates")
 def search_plates(
     q: Optional[str] = Query(None, description="Plate number (partial match)"),
@@ -64,10 +68,17 @@ def search_plates(
         filters.append(models.PlateRead.confidence >= min_confidence)
     
     if status:
-        status_enum = models.ReadStatus[status.upper()]
+        try:
+            status_enum = models.ReadStatus[status.upper()]
+        except KeyError as exc:
+            allowed = ", ".join([item.value for item in models.ReadStatus])
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid status '{status}'. Allowed values: {allowed}",
+            ) from exc
         filters.append(models.PlateRead.status == status_enum)
-    
-    if watchlist_only:
+
+    if watchlist_only and HAS_ALERT_MODEL:
         query = query.join(
             models.Alert, models.PlateRead.id == models.Alert.read_id
         )
@@ -89,13 +100,15 @@ def search_plates(
         capture = detection.capture if detection else None
         
         # Check if on watchlist
-        on_watchlist = db.query(models.Alert).filter(
-            models.Alert.read_id == read.id
-        ).first() is not None
+        on_watchlist = False
+        if HAS_ALERT_MODEL:
+            on_watchlist = db.query(models.Alert).filter(
+                models.Alert.read_id == read.id
+            ).first() is not None
         
         # Get watchlist info if applicable
         watchlist_info = None
-        if on_watchlist:
+        if on_watchlist and HAS_WATCHLIST_MODEL:
             alert = db.query(models.Alert).join(
                 models.Watchlist
             ).filter(
