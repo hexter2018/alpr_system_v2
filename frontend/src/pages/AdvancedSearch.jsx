@@ -3,6 +3,15 @@ import { Card, CardHeader, CardBody, Badge, Button, Input, Spinner } from '../co
 import { searchPlates, getEvidence } from '../lib/management-api.js'
 import { API_BASE } from '../lib/api.js'
 
+function formatTimestamp(value, locale = 'th-TH', options = { dateStyle: 'short', timeStyle: 'short' }) {
+  if (!value) return '-'
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+
+  return date.toLocaleString(locale, options)
+}
+
 /* ===== EVIDENCE VIEWER MODAL ===== */
 function EvidenceViewer({ readId, onClose }) {
   const [evidence, setEvidence] = useState(null)
@@ -170,11 +179,11 @@ function EvidenceViewer({ readId, onClose }) {
                   <div>
                     <div className="text-xs text-slate-400">Timestamp</div>
                     <div className="text-slate-100 font-medium">
-                      {evidence?.captured_at ? new Date(evidence.captured_at).toLocaleString('th-TH', {
+                      {formatTimestamp(evidence?.captured_at, 'th-TH', {
                         timeZone: 'Asia/Bangkok',
                         dateStyle: 'medium',
                         timeStyle: 'medium'
-                      }) : '-'}
+                      })}
                     </div>
                   </div>
                   <div>
@@ -496,10 +505,7 @@ export default function AdvancedSearch() {
                         {result.camera_name || result.camera_id || '-'}
                       </td>
                       <td className="py-3 px-4 text-sm text-slate-300">
-                        {new Date(result.captured_at).toLocaleString('th-TH', {
-                          dateStyle: 'short',
-                          timeStyle: 'short'
-                        })}
+                        {formatTimestamp(result.captured_at || result.created_at)}
                       </td>
                       <td className="py-3 px-4">
                         <Badge variant={result.confidence >= 0.9 ? 'success' : 'warning'}>

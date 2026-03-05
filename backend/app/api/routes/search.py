@@ -11,6 +11,10 @@ from app.services.storage import make_image_url
 router = APIRouter()
 
 
+def _to_iso_or_none(dt: Optional[datetime]) -> Optional[str]:
+    return dt.isoformat() if dt else None
+
+
 HAS_ALERT_MODEL = hasattr(models, "Alert")
 HAS_WATCHLIST_MODEL = hasattr(models, "Watchlist")
 
@@ -130,6 +134,7 @@ def search_plates(
             "confidence": read.confidence,
             "status": read.status.value,
             "created_at": read.created_at,
+            "captured_at": capture.captured_at if capture else None,
             "camera_id": capture.camera_id if capture else None,
             "camera_name": "",
             "original_url": make_image_url(capture.original_path) if capture else "",
@@ -207,7 +212,7 @@ def get_evidence_details(read_id: int, db: Session = Depends(get_db)):
         "province": read.province,
         "confidence": read.confidence,
         "status": read.status.value,
-        "captured_at": capture.captured_at.isoformat() if capture else None,
+        "captured_at": _to_iso_or_none(capture.captured_at) if capture else None,
         "camera_id": capture.camera_id if capture else None,
         "original_image_url": make_image_url(capture.original_path) if capture else "",
         "cropped_image_url": make_image_url(detection.crop_path) if detection else "",
