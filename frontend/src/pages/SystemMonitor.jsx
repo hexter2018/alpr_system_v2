@@ -263,6 +263,7 @@ export default function SystemMonitor() {
   const database = health?.database
   const throughput = health?.throughput
   const cameras = health?.cameras || []
+  const resources = health?.resources || health?.system_resources
 
   const uptimeLabel = health?.uptime_seconds != null
     ? `${Math.floor(health.uptime_seconds / 3600)}h ${Math.floor((health.uptime_seconds % 3600) / 60)}m`
@@ -274,9 +275,31 @@ export default function SystemMonitor() {
   }
 
   const workerSummary = {
+
     active: health?.active_workers ?? 0,
     queued: health?.queue_length ?? 0,
+    
+    active: health?.active_workers ?? null,
+    queued: database?.pending_reads || 0,
+
   }
+
+  const resourceSummary = resources
+    ? {
+        cpuPercent: resources.cpu_percent ?? 0,
+        memoryUsedGb: resources.memory_used_gb
+          ?? (typeof resources.memory_total === 'number' && typeof resources.memory_available === 'number'
+            ? (resources.memory_total - resources.memory_available) / (1024 ** 3)
+            : null),
+        memoryTotalGb: resources.memory_total_gb
+          ?? (typeof resources.memory_total === 'number' ? resources.memory_total / (1024 ** 3) : null),
+        memoryPercent: resources.memory_percent,
+        diskUsedGb: resources.disk_used_gb ?? null,
+        diskTotalGb: resources.disk_total_gb ?? null,
+        diskPercent: resources.disk_percent,
+        gpuPercent: resources.gpu_percent,
+      }
+    : null
 
   const avgReadRatePerMinute = (throughput?.reads_last_hour || 0) / 60
   const queueDrainMinutes = avgReadRatePerMinute > 0 ? workerSummary.queued / avgReadRatePerMinute : null
@@ -558,36 +581,58 @@ export default function SystemMonitor() {
             <p className="text-xs text-slate-500 mt-0.5">CPU, memory, disk usage</p>
           </CardHeader>
           <CardBody>
-            {health?.resources ? (
+            {resourceSummary ? (
               <div className="space-y-4">
                 <ResourceGauge
                   label="CPU"
-                  value={health.resources.cpu_percent || 0}
+                  value={resourceSummary.cpuPercent}
                   max={100}
                   unit="%"
                   color="bg-blue-500"
                   light={light}
                 />
-                <ResourceGauge
-                  label="Memory"
-                  value={health.resources.memory_used_gb || 0}
-                  max={health.resources.memory_total_gb || 16}
-                  unit="GB"
-                  color="bg-emerald-500"
-                  light={light}
-                />
-                <ResourceGauge
-                  label="Disk"
-                  value={health.resources.disk_used_gb || 0}
-                  max={health.resources.disk_total_gb || 100}
-                  unit="GB"
-                  color="bg-amber-500"
-                  light={light}
-                />
-                {health.resources.gpu_percent != null && (
+                {resourceSummary.memoryTotalGb != null ? (
+                  <ResourceGauge
+                    label="Memory"
+                    value={resourceSummary.memoryUsedGb ?? 0}
+                    max={resourceSummary.memoryTotalGb}
+                    unit="GB"
+                    color="bg-emerald-500"
+                    light={light}
+                  />
+                ) : resourceSummary.memoryPercent != null ? (
+                  <ResourceGauge
+                    label="Memory"
+                    value={resourceSummary.memoryPercent}
+                    max={100}
+                    unit="%"
+                    color="bg-emerald-500"
+                    light={light}
+                  />
+                ) : null}
+                {resourceSummary.diskTotalGb != null ? (
+                  <ResourceGauge
+                    label="Disk"
+                    value={resourceSummary.diskUsedGb ?? 0}
+                    max={resourceSummary.diskTotalGb}
+                    unit="GB"
+                    color="bg-amber-500"
+                    light={light}
+                  />
+                ) : resourceSummary.diskPercent != null ? (
+                  <ResourceGauge
+                    label="Disk"
+                    value={resourceSummary.diskPercent}
+                    max={100}
+                    unit="%"
+                    color="bg-amber-500"
+                    light={light}
+                  />
+                ) : null}
+                {resourceSummary.gpuPercent != null && (
                   <ResourceGauge
                     label="GPU"
-                    value={health.resources.gpu_percent}
+                    value={resourceSummary.gpuPercent}
                     max={100}
                     unit="%"
                     color="bg-purple-500"
