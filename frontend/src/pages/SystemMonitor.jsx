@@ -225,7 +225,7 @@ export default function SystemMonitor() {
         const entry = {
           time: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
           processingMs: data.throughput?.avg_processing_ms ?? 0,
-          pendingReads: data.database?.pending_reads ?? 0,
+          pendingReads: data.queue_length ?? 0,
         }
         const next = [...prev, entry]
         return next.slice(-20) // keep last 20 data points
@@ -275,8 +275,13 @@ export default function SystemMonitor() {
   }
 
   const workerSummary = {
+
+    active: health?.active_workers ?? 0,
+    queued: health?.queue_length ?? 0,
+    
     active: health?.active_workers ?? null,
     queued: database?.pending_reads || 0,
+
   }
 
   const resourceSummary = resources
@@ -325,10 +330,10 @@ export default function SystemMonitor() {
           : 'warning'
 
   const alerts = []
-  if ((database?.pending_reads || 0) > 200) {
+  if (workerSummary.queued > 200) {
     alerts.push({
       level: 'warning',
-      message: `Pending reads backlog is high (${database.pending_reads.toLocaleString()})`,
+      message: `Processing queue backlog is high (${workerSummary.queued.toLocaleString()})`,
       timestamp: 'now',
     })
   }
@@ -426,7 +431,7 @@ export default function SystemMonitor() {
           icon={Database}
           light={light}
           details={[
-            { label: 'Pending Reads', value: database?.pending_reads?.toLocaleString() || '0' },
+            { label: 'Pending Verification', value: database?.pending_reads?.toLocaleString() || '0' },
             { label: 'Verified', value: database?.verified_reads?.toLocaleString() || '0' },
           ]}
         />
