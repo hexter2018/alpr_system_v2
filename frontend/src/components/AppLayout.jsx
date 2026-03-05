@@ -22,6 +22,7 @@ const navItems = [
   { to: '/queue', label: 'Verification', icon: ListChecks },
   { to: '/master', label: 'Master DB', icon: Database },
   { to: '/reports', label: 'Reports', icon: FileBarChart },
+  { to: '/search', label: 'Search', icon: Search },
   { to: '/monitor', label: 'System Health', icon: Activity },
 ]
 
