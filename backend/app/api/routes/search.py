@@ -187,19 +187,22 @@ def get_evidence_details(read_id: int, db: Session = Depends(get_db)):
         }
     
     # Get watchlist/alert info
-    alerts = db.query(models.Alert).join(
-        models.Watchlist
-    ).filter(
-        models.Alert.read_id == read_id
-    ).all()
+    alerts = []
+    if HAS_ALERT_MODEL and HAS_WATCHLIST_MODEL:
+        alerts = db.query(models.Alert).join(
+            models.Watchlist
+        ).filter(
+            models.Alert.read_id == read_id
+        ).all()
     
     alert_info = []
     for alert in alerts:
+        watchlist = alert.watchlist
         alert_info.append({
             "alert_id": alert.id,
-            "list_type": alert.watchlist.list_type.value,
+            "list_type": watchlist.list_type.value if watchlist and watchlist.list_type else None,
             "alert_level": alert.alert_level,
-            "reason": alert.watchlist.reason,
+            "reason": watchlist.reason if watchlist else None,
             "acknowledged": alert.acknowledged,
             "acknowledged_by": alert.acknowledged_by,
             "acknowledged_at": alert.acknowledged_at.isoformat() if alert.acknowledged_at else None
