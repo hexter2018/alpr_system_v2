@@ -11,6 +11,7 @@ import {
   Sun,
   Moon,
   Activity,
+  Search,
 } from 'lucide-react'
 import { useTheme } from '../lib/ThemeContext.jsx'
 
