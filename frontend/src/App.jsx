@@ -5,7 +5,8 @@ import Dashboard from './pages/Dashboard.jsx'
 import Upload from './pages/Upload.jsx'
 import Queue from './pages/Queue.jsx'
 import Master from './pages/Master.jsx'
-import Reports from './pages/Reports.jsx';
+import Reports from './pages/Reports.jsx'
+import AdvancedSearch from './pages/AdvancedSearch.jsx'
 import SystemMonitor from './pages/SystemMonitor.jsx';
 
 export default function App() {
@@ -17,6 +18,7 @@ export default function App() {
         <Route path="/queue" element={<Queue />} />
         <Route path="/master" element={<Master />} />
         <Route path="/reports" element={<Reports />} />
+        <Route path="/search" element={<AdvancedSearch />} />
         <Route path="/monitor" element={<SystemMonitor />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
