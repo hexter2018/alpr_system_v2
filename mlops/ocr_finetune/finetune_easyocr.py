@@ -195,6 +195,11 @@ def finetune(lmdb_train: str, lmdb_val: str, output_dir: str,
     # คำนวณ iter จาก epochs (approximate)
     num_iter = epochs * 1000  # ~1000 iters per epoch
 
+    # DTRB always writes to:  {cwd}/saved_models/{exp_name}/
+    # We set cwd=output_path so the run's artefacts land under our storage dir.
+    exp_name = "th_finetune"
+    dtrb_save_dir = output_path / "saved_models" / exp_name
+
     cmd = [
         "python", str(DTRB_DIR / "train.py"),
         "--train_data", lmdb_train,
@@ -205,27 +210,30 @@ def finetune(lmdb_train: str, lmdb_val: str, output_dir: str,
         "--FeatureExtraction", "ResNet",
         "--SequenceModeling", "BiLSTM",
         "--Prediction", "Attn",
-        "--saved_model", str(resolved_base_model),  # fine-tune จาก pretrained (actual resolved path)
-        "--exp_name", "th_finetune",
+        "--saved_model", str(resolved_base_model),
+        "--FT",          # ← Fine-Tune flag: loads saved_model with strict=False so the
+                         #   output-layer shape mismatch (128 chars vs pretrained size) is OK
+        "--exp_name", exp_name,
         "--num_iter", str(num_iter),
         "--batch_size", str(batch_size),
         "--workers", "2",
-        "--gpu", device,
+        # GPU is selected via CUDA_VISIBLE_DEVICES (set in env below);
+        # DTRB has no --gpu flag.
         "--character", THAI_CHARS,
         "--sensitive",
         "--imgH", "32",
         "--imgW", "100",
-        "--output_dir", str(output_path),
-        # Fine-tuning settings: LR เล็กลง
         "--lr", "1e-4",
-        "--scheduler",
+        # Note: --scheduler and --output_dir are NOT valid DTRB arguments.
     ]
 
     log.info("Starting fine-tuning: %d iters, batch=%d", num_iter, batch_size)
+    log.info("Output will be written to: %s", dtrb_save_dir)
     log.info("CMD: %s", " ".join(cmd))
 
     result = subprocess.run(
-        cmd, cwd=str(DTRB_DIR),
+        cmd,
+        cwd=str(output_path),   # DTRB writes saved_models/ relative to cwd
         env={**os.environ, "CUDA_VISIBLE_DEVICES": device},
     )
 
@@ -233,16 +241,19 @@ def finetune(lmdb_train: str, lmdb_val: str, output_dir: str,
         log.error("Fine-tuning FAILED (rc=%d)", result.returncode)
         return False
 
-    # หา best model
-    best_pt = output_path / "best_accuracy.pth"
+    # DTRB saves best_accuracy.pth inside saved_models/{exp_name}/
+    best_pt = dtrb_save_dir / "best_accuracy.pth"
     if not best_pt.exists():
-        # Fallback: หา .pth ที่มีในโฟลเดอร์
-        pts = sorted(output_path.glob("*.pth"))
+        # Fallback: any .pth inside the exp directory
+        pts = sorted(dtrb_save_dir.glob("*.pth"))
+        if not pts:
+            # Wider search: sometimes DTRB saves directly in saved_models/
+            pts = sorted((output_path / "saved_models").glob("**/*.pth"))
         if pts:
             best_pt = pts[-1]
             log.warning("best_accuracy.pth not found, using: %s", best_pt)
         else:
-            log.error("No .pth model found in %s", output_path)
+            log.error("No .pth model found under %s", dtrb_save_dir)
             return False
 
     # Copy ไปที่ production path
