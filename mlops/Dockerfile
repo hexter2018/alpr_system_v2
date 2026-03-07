@@ -20,6 +20,13 @@ RUN git clone --depth=1 \
     /opt/deep-text-recognition-benchmark && \
     pip install --no-cache-dir lmdb pillow torchvision nltk natsort
 
+# Patch DTRB for PyTorch 2.x compatibility:
+#   torch._utils._accumulate was removed in PyTorch 2.0.
+#   itertools.accumulate is an identical drop-in replacement.
+RUN sed -i \
+    's/from torch\._utils import _accumulate/from itertools import accumulate as _accumulate/' \
+    /opt/deep-text-recognition-benchmark/dataset.py
+
 COPY . /app/mlops
 
 ENV PYTHONPATH=/app

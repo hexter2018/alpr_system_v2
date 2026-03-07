@@ -87,19 +87,31 @@ def _build_charset() -> str:
 THAI_CHARS: str = _build_charset()
 
 
-def _ensure_base_model(base_model_path: Path) -> bool:
-    """Ensure the EasyOCR Thai base model exists, downloading it if necessary.
+# EasyOCR also downloads the CRAFT text-detector (craft_mlt_25k.pth) into the
+# same model directory.  We must exclude it when searching for the recognition
+# model because it is a different architecture and cannot be used for fine-tuning.
+_CRAFT_MODEL_NAME = "craft_mlt_25k.pth"
+
+
+def _ensure_base_model(base_model_path: Path) -> "Path | None":
+    """Ensure the EasyOCR Thai recognition model exists, downloading if needed.
 
     EasyOCR keeps its pretrained weights in ``~/.EasyOCR/model/``.  On a fresh
-    trainer-worker container this directory is empty.  Calling
-    ``easyocr.Reader(['th'])`` is the canonical way to trigger the download —
-    it resolves the correct URL, verifies the checksum, and unzips the archive
-    into the expected location automatically.
+    container this directory is empty.  ``easyocr.Reader(['th'])`` is the
+    canonical way to trigger the download — it resolves the URL, verifies the
+    checksum, and unzips into the expected location automatically.
 
-    Returns True if the model is present (or was successfully downloaded).
+    The file name changed between EasyOCR releases:
+      • older  → th.pth
+      • newer  → thai.pth
+
+    Returns the resolved Path to the recognition model, or None on failure.
+    The returned path must be used as --saved_model so that fine-tuning starts
+    from the correct file regardless of which naming convention is in use.
     """
+    # Fast path: expected name exists.
     if base_model_path.exists():
-        return True
+        return base_model_path
 
     log.info(
         "[OCR] Base model not found at %s — downloading via EasyOCR (this may take a minute)...",
@@ -109,10 +121,8 @@ def _ensure_base_model(base_model_path: Path) -> bool:
         import easyocr  # type: ignore
 
         # gpu=False avoids initialising CUDA just for a weight download.
-        # model_storage_directory ensures the file lands exactly where we
-        # expect it (base_model_path.parent), which is also the directory
-        # mounted as a named Docker volume so the download persists across
-        # container restarts.
+        # model_storage_directory ensures the file lands in the Docker-volume
+        # backed directory so the download persists across container restarts.
         model_dir = base_model_path.parent
         model_dir.mkdir(parents=True, exist_ok=True)
         easyocr.Reader(
@@ -122,37 +132,39 @@ def _ensure_base_model(base_model_path: Path) -> bool:
             model_storage_directory=str(model_dir),
         )
 
+        # Check exact name first.
         if base_model_path.exists():
-            log.info("[OCR] ✅ Downloaded base model: %s  (%d MiB)",
+            log.info("[OCR] ✅ Base model ready: %s  (%d MiB)",
                      base_model_path,
                      base_model_path.stat().st_size // (1024 * 1024))
-            return True
+            return base_model_path
 
-        # EasyOCR may store the model under a slightly different name depending
-        # on the installed version (e.g. th.pth vs thai.pth).  Accept any .pth
-        # file in the same directory.
-        model_dir = base_model_path.parent
-        candidates = sorted(model_dir.glob("*.pth"))
+        # EasyOCR may have used a different name (e.g. thai.pth vs th.pth).
+        # Exclude craft_mlt_25k.pth — that is the text *detector*, not the
+        # recognition model, and has a completely different architecture.
+        candidates = [
+            p for p in sorted(model_dir.glob("*.pth"))
+            if p.name != _CRAFT_MODEL_NAME
+        ]
         if candidates:
+            resolved = candidates[0]  # prefer alphabetically first recognition model
             log.warning(
-                "[OCR] Expected %s but found: %s — using that as base model.",
+                "[OCR] Expected '%s' but found '%s' — using that as the base recognition model.",
                 base_model_path.name,
-                [p.name for p in candidates],
+                resolved.name,
             )
-            return True
+            return resolved
 
-        log.error(
-            "[OCR] EasyOCR download finished but no .pth found in %s", model_dir
-        )
-        return False
+        log.error("[OCR] EasyOCR download finished but no recognition .pth found in %s", model_dir)
+        return None
 
     except Exception as exc:
         log.error("[OCR] Failed to auto-download base model: %s", exc, exc_info=True)
         log.error(
-            "[OCR] Fix: run  easyocr.Reader(['th'])  inside the trainer-worker container"
-            " or set BASE_OCR_MODEL env var to an existing .pth file."
+            "[OCR] Fix: run  easyocr.Reader(['th'])  inside the trainer-worker container, "
+            "or set BASE_OCR_MODEL env var to an existing .pth file."
         )
-        return False
+        return None
 
 
 def finetune(lmdb_train: str, lmdb_val: str, output_dir: str,
@@ -165,9 +177,11 @@ def finetune(lmdb_train: str, lmdb_val: str, output_dir: str,
         log.error("Run: git clone https://github.com/clovaai/deep-text-recognition-benchmark %s", DTRB_DIR)
         return False
 
-    if not _ensure_base_model(BASE_OCR_MODEL):
+    resolved_base_model = _ensure_base_model(BASE_OCR_MODEL)
+    if resolved_base_model is None:
         log.error("[OCR] Base model unavailable — cannot fine-tune without pretrained weights.")
         return False
+    log.info("[OCR] Using base model: %s", resolved_base_model)
 
     # Write charset file for the training script
     charset_path = output_path / "charset.txt"
@@ -191,7 +205,7 @@ def finetune(lmdb_train: str, lmdb_val: str, output_dir: str,
         "--FeatureExtraction", "ResNet",
         "--SequenceModeling", "BiLSTM",
         "--Prediction", "Attn",
-        "--saved_model", str(BASE_OCR_MODEL),  # fine-tune จาก pretrained
+        "--saved_model", str(resolved_base_model),  # fine-tune จาก pretrained (actual resolved path)
         "--exp_name", "th_finetune",
         "--num_iter", str(num_iter),
         "--batch_size", str(batch_size),
