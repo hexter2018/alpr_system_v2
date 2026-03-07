@@ -25,9 +25,11 @@ celery_app.conf.update(
     task_default_queue="training",
     task_routes={
         "mlops.tasks.check_retrain.check_retrain_trigger": {"queue": "training"},
-        "mlops.tasks.yolo_retrain.export_yolo_dataset": {"queue": "training"},
-        "mlops.tasks.yolo_retrain.run_yolo_train": {"queue": "training"},
-        "mlops.tasks.model_deploy.validate_and_deploy": {"queue": "training"},
+        "mlops.tasks.yolo_retrain.export_yolo_dataset":    {"queue": "training"},
+        "mlops.tasks.yolo_retrain.run_yolo_train":         {"queue": "training"},
+        "mlops.tasks.model_deploy.validate_and_deploy":    {"queue": "training"},
+        # OCR fine-tuning pipeline (task name declared in celery_tasks.py)
+        "mlops.tasks.ocr_pipeline.run_ocr_finetune":       {"queue": "training"},
     },
     beat_schedule={
         "check-retrain-trigger": {

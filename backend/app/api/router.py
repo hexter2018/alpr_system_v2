@@ -1,14 +1,15 @@
 from fastapi import APIRouter
 from app.api.routes import (
-    upload, 
-    dashboard, 
-    reads, 
-    master, 
-    images, 
-    reports,   # ← ระบบใหม่
+    upload,
+    dashboard,
+    reads,
+    master,
+    images,
+    reports,
     watchlist,
     search,
     monitor,
+    mlops,
 )
 
 api_router = APIRouter()
@@ -21,6 +22,7 @@ api_router.include_router(master.router, tags=["master"])
 api_router.include_router(images.router, tags=["images"])
 api_router.include_router(reports.router, tags=["reports"])
 api_router.include_router(monitor.router, tags=["monitor"])
+api_router.include_router(mlops.router, tags=["mlops"])
 
 # Management routes
 api_router.include_router(watchlist.router, prefix="/watchlist", tags=["watchlist"])
