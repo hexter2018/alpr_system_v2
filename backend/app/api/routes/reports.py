@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -11,6 +11,7 @@ from app.db.session import get_db
 from app.db import models
 from app.schemas.reports import ReportStats, ActivityLog, AccuracyMetrics
 from app.services.storage import make_image_url
+from app.utils.dt import now_bkk, BKK
 
 router = APIRouter()
 
@@ -26,9 +27,9 @@ def get_report_stats(
     
     # Default to last 7 days if no dates provided
     if not end_date:
-        end_date = datetime.utcnow().strftime("%Y-%m-%d")
+        end_date = now_bkk().strftime("%Y-%m-%d")
     if not start_date:
-        start_date = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%d")
+        start_date = (now_bkk() - timedelta(days=7)).strftime("%Y-%m-%d")
     
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
     end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
@@ -146,9 +147,9 @@ def get_activity_log(
 ):
     """Get recent activity log"""
     if not end_date:
-        end_date = datetime.utcnow().strftime("%Y-%m-%d")
+        end_date = now_bkk().strftime("%Y-%m-%d")
     if not start_date:
-        start_date = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%d")
+        start_date = (now_bkk() - timedelta(days=7)).strftime("%Y-%m-%d")
     
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
     end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
@@ -200,9 +201,9 @@ def export_report(
 ):
     """Export report as CSV"""
     if not end_date:
-        end_date = datetime.utcnow().strftime("%Y-%m-%d")
+        end_date = now_bkk().strftime("%Y-%m-%d")
     if not start_date:
-        start_date = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%d")
+        start_date = (now_bkk() - timedelta(days=7)).strftime("%Y-%m-%d")
     
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
     end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
@@ -242,12 +243,23 @@ def export_report(
     ])
     
     for r in rows:
+        # Ensure timestamp is displayed in Bangkok time (UTC+7)
+        ts = r.created_at
+        if ts is not None:
+            if getattr(ts, "tzinfo", None) is None:
+                # Naive datetime stored in DB – treat as Bangkok time (as per TZ config)
+                ts_str = ts.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                # Aware datetime – convert to Bangkok for display
+                ts_str = ts.astimezone(BKK).strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            ts_str = ""
         writer.writerow([
             r.plate_text,
             r.province,
             f"{r.confidence:.3f}",
             r.status.value,
-            r.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            ts_str,
             r.camera_id or "N/A",
             r.source,
             r.result_type.value if r.result_type else "N/A"
@@ -267,7 +279,7 @@ def get_accuracy_metrics(
     db: Session = Depends(get_db)
 ):
     """Get daily accuracy metrics"""
-    end_dt = datetime.utcnow()
+    end_dt = now_bkk()
     start_dt = end_dt - timedelta(days=days)
     
     results = []

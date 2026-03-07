@@ -1,6 +1,6 @@
 import platform
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends
 import psutil
@@ -10,6 +10,7 @@ from sqlalchemy import func, and_
 from app.db.session import get_db
 from app.db import models
 from app.services.queue import celery
+from app.utils.dt import now_bkk
 
 router = APIRouter()
 
@@ -93,7 +94,7 @@ def monitor_system_status():
 @router.get("/monitor/health")
 def monitor_health(db: Session = Depends(get_db)):
     """System health overview for the monitoring dashboard."""
-    now = datetime.utcnow()
+    now = now_bkk()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     one_hour_ago = now - timedelta(hours=1)
     uptime_seconds = time.time() - _start_time
@@ -129,26 +130,45 @@ def monitor_health(db: Session = Depends(get_db)):
     )
 
     # ── Processing speed (avg ms) ──
+    # Only consider captures from the last 24 hours so stale historical rows
+    # (which can produce multi-hour deltas) never corrupt the metric.
+    # Deltas are also capped at MAX_PROCESSING_DELTA_S to reject outliers that
+    # slip through (e.g. timezone-aware vs naive mismatches, queued backlogs).
+    # Median is used instead of mean so a handful of slow outliers cannot
+    # dominate the reported average.
+    MAX_PROCESSING_DELTA_S = 300  # 5 minutes — anything above is an outlier
     avg_processing_ms = None
     try:
+        recent_window = now - timedelta(hours=24)
         samples = (
             db.query(models.PlateRead.created_at, models.Capture.captured_at)
             .join(models.Detection, models.PlateRead.detection_id == models.Detection.id)
             .join(models.Capture, models.Detection.capture_id == models.Capture.id)
+            .filter(models.Capture.captured_at >= recent_window)
             .order_by(models.PlateRead.id.desc())
-            .limit(50)
+            .limit(100)
             .all()
         )
         if samples:
             diffs = []
-            for created_at, captured_at in samples:
-                if created_at is None or captured_at is None:
+            for read_ts, cap_ts in samples:
+                if read_ts is None or cap_ts is None:
                     continue
-                delta = (created_at - captured_at).total_seconds()
-                if delta >= 0:
+                # Strip tzinfo so aware and naive datetimes can be compared safely
+                if getattr(read_ts, "tzinfo", None) is not None:
+                    read_ts = read_ts.replace(tzinfo=None)
+                if getattr(cap_ts, "tzinfo", None) is not None:
+                    cap_ts = cap_ts.replace(tzinfo=None)
+                delta = (read_ts - cap_ts).total_seconds()
+                # Keep only plausible processing-time deltas
+                if 0 <= delta <= MAX_PROCESSING_DELTA_S:
                     diffs.append(delta)
             if diffs:
-                avg_processing_ms = round((sum(diffs) / len(diffs)) * 1000, 1)
+                # Use median to be robust against stragglers
+                diffs.sort()
+                mid = len(diffs) // 2
+                median_s = diffs[mid] if len(diffs) % 2 else (diffs[mid - 1] + diffs[mid]) / 2
+                avg_processing_ms = round(median_s * 1000, 1)
     except Exception:
         avg_processing_ms = None
 

@@ -2,6 +2,10 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Install tzdata so Node.js Intl APIs resolve Asia/Bangkok correctly
+RUN apk add --no-cache tzdata
+ENV TZ="Asia/Bangkok"
+
 # Copy package files
 COPY package.json ./
 

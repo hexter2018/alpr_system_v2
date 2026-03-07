@@ -2,11 +2,14 @@ FROM nvcr.io/nvidia/tensorrt:25.12-py3
 
 WORKDIR /app
 
+ENV TZ="Asia/Bangkok"
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     libglib2.0-0 \
     libxcb1 \
     libgl1 \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt /app/requirements.txt

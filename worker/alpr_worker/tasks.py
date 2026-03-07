@@ -4,12 +4,10 @@ import time
 import json
 import hashlib
 import shutil
-from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from sqlalchemy import text, create_engine
 from sqlalchemy.orm import sessionmaker
-from datetime import timezone
 import cv2
 import re
 import logging
@@ -20,6 +18,7 @@ from .inference.detector import PlateDetector
 from .inference.ocr import PlateOCR  # ใช้ OCR / parser ที่คุณมีอยู่แล้ว
 from .inference.master_lookup import assist_with_master
 from .inference.validate import classify_plate_type
+from .dt import now_bkk
 
 log = logging.getLogger(__name__)
 
@@ -63,8 +62,9 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def now_utc() -> datetime:
-    return datetime.utcnow()
+def now_utc():
+    """Deprecated alias – returns a Bangkok-aware datetime."""
+    return now_bkk()
 
 
 # ----------------------------
@@ -393,7 +393,7 @@ def rtsp_ingest(camera_id: str, rtsp_url: str, fps: float = DEFAULT_RTSP_FPS, re
         last_ts = now
 
         # save frame
-        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
+        ts = now_bkk().strftime("%Y%m%d_%H%M%S_%f")
         out_path = STORAGE_DIR / "original" / f"rtsp_{camera_id}_{ts}.jpg"
         cv2.imwrite(str(out_path), frame)
 

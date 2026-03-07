@@ -925,7 +925,7 @@ export default function Queue() {
           <div className="flex items-center gap-3">
             {lastRefresh && (
               <Badge variant="default" size="sm">
-                Updated {lastRefresh.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                Updated {lastRefresh.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' })}
               </Badge>
             )}
             <Button

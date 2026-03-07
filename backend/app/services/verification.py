@@ -1,10 +1,10 @@
-from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.db import models
 from app.schemas.reads import VerifyIn
 from app.services.master import upsert_master_from_read, store_feedback_if_mlpr
 from app.services.textnorm import normalize_plate_text
+from app.utils.dt import now_bkk
 
 
 def _coerce_plate_type(value: str | None) -> models.PlateType | None:
@@ -57,5 +57,5 @@ def verify_read(db: Session, read: models.PlateRead, payload: VerifyIn):
 
     job.note = payload.note
     job.assigned_to = payload.user
-    job.verified_at = datetime.utcnow()
+    job.verified_at = now_bkk()
     db.commit()

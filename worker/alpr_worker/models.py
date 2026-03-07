@@ -3,6 +3,8 @@ from datetime import datetime
 from sqlalchemy import String, Integer, DateTime, Enum, Float, Boolean
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from alpr_worker.dt import now_bkk
+
 
 class Base(DeclarativeBase):
     pass
@@ -20,6 +22,6 @@ class MasterPlate(Base):
     display_text: Mapped[str] = mapped_column(String(32), default="")
     province: Mapped[str] = mapped_column(String(64), default="")
     confidence: Mapped[float] = mapped_column(Float, default=1.0)
-    last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_seen: Mapped[datetime] = mapped_column(DateTime, default=now_bkk)
     count_seen: Mapped[int] = mapped_column(Integer, default=1)
     editable: Mapped[bool] = mapped_column(Boolean, default=True)

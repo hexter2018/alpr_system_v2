@@ -6,6 +6,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.utils.dt import now_bkk
 
 
 class ReadStatus(str, enum.Enum):
@@ -39,7 +40,7 @@ class Capture(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     source: Mapped[str] = mapped_column(String(50), default="UPLOAD")  # UPLOAD/RTSP
     camera_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    captured_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    captured_at: Mapped[datetime] = mapped_column(DateTime, default=now_bkk)
     original_path: Mapped[str] = mapped_column(Text)
     sha256: Mapped[str] = mapped_column(String(64))
 
@@ -76,7 +77,7 @@ class PlateRead(Base):
 
     confidence: Mapped[float] = mapped_column(Float, default=0.0)
     status: Mapped[ReadStatus] = mapped_column(Enum(ReadStatus), default=ReadStatus.PENDING)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_bkk)
 
     detection: Mapped["Detection"] = relationship(back_populates="reads")
     verification: Mapped["VerificationJob"] = relationship(back_populates="read", uselist=False)
@@ -114,7 +115,7 @@ class MasterPlate(Base):
     )
 
     confidence: Mapped[float] = mapped_column(Float, default=1.0)
-    last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_seen: Mapped[datetime] = mapped_column(DateTime, default=now_bkk)
     count_seen: Mapped[int] = mapped_column(Integer, default=1)
     editable: Mapped[bool] = mapped_column(Boolean, default=True)
 
@@ -127,7 +128,7 @@ class FeedbackSample(Base):
     corrected_province: Mapped[str] = mapped_column(String(64))
     reason: Mapped[str] = mapped_column(String(100), default="MLPR")
     used_in_train: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_bkk)
 
 
 class Camera(Base):
@@ -137,4 +138,4 @@ class Camera(Base):
     name: Mapped[str] = mapped_column(String(200), default="")
     rtsp_url: Mapped[str] = mapped_column(Text, default="")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_bkk)

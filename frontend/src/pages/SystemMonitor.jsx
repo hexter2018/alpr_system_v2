@@ -223,7 +223,7 @@ export default function SystemMonitor() {
       // Add to rolling history
       setHistory((prev) => {
         const entry = {
-          time: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          time: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Bangkok' }),
           processingMs: data.throughput?.avg_processing_ms ?? 0,
           pendingReads: data.queue_length ?? 0,
         }
@@ -275,13 +275,10 @@ export default function SystemMonitor() {
   }
 
   const workerSummary = {
-
-    active: health?.active_workers ?? 0,
-    queued: health?.queue_length ?? 0,
-    
+    // active_workers comes from Celery inspector (null when broker unreachable)
     active: health?.active_workers ?? null,
+    // Use DB pending_reads as the authoritative queue depth
     queued: database?.pending_reads || 0,
-
   }
 
   const resourceSummary = resources
@@ -304,20 +301,31 @@ export default function SystemMonitor() {
   const avgReadRatePerMinute = (throughput?.reads_last_hour || 0) / 60
   const queueDrainMinutes = avgReadRatePerMinute > 0 ? workerSummary.queued / avgReadRatePerMinute : null
 
+  // 'error' only when latency is genuinely broken (> 30 s after outlier filtering)
+  // 'warning' when slow but still processing (> 5 s)
+  // null / undefined means no recent data — show as 'offline'
   const processingStatus =
     throughput?.avg_processing_ms == null
       ? 'offline'
-      : throughput.avg_processing_ms > 10000
+      : throughput.avg_processing_ms > 30000
         ? 'error'
-        : throughput.avg_processing_ms > 2000
+        : throughput.avg_processing_ms > 5000
+          ? 'warning'
+          : 'healthy'
+
+  // Workers are "stuck" when the queue is large but nothing has been
+  // processed in the last hour — that is the genuine error condition.
+  // A large queue alone (backlog) is only a warning, not a system error.
+  const workersStuck =
+    workerSummary.queued > 100 && (throughput?.reads_last_hour ?? 0) === 0
+
+  const queueStatus = workersStuck
+    ? 'error'
+    : workerSummary.queued > 500
+      ? 'warning'
+      : workerSummary.queued > 100
         ? 'warning'
         : 'healthy'
-
-  const queueStatus = workerSummary.queued > 200
-    ? 'error'
-    : workerSummary.queued > 50
-      ? 'warning'
-      : 'healthy'
 
   const overallStatus = error
     ? 'error'
@@ -378,7 +386,7 @@ export default function SystemMonitor() {
           </div>
           {lastUpdate && (
             <span className={`text-xs tabular-nums ${light ? 'text-slate-400' : 'text-slate-600'}`}>
-              {lastUpdate.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              {lastUpdate.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Bangkok' })}
             </span>
           )}
           <button
@@ -675,7 +683,7 @@ export default function SystemMonitor() {
                       <span className={`text-xs font-medium ${light ? 'text-slate-700' : 'text-slate-300'}`}>{cam.name || `Camera ${i + 1}`}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      {cam.last_capture && <span className="text-[10px] text-slate-500">Last: {new Date(cam.last_capture).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</span>}
+                      {cam.last_capture && <span className="text-[10px] text-slate-500">Last: {new Date(cam.last_capture).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' })}</span>}
                       <span className={`text-[10px] font-semibold uppercase ${
                         cam.enabled ? 'text-emerald-500' : 'text-red-500'
                       }`}>

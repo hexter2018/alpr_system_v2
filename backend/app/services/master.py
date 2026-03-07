@@ -1,8 +1,8 @@
-from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.db import models
+from app.utils.dt import now_bkk
 
 def upsert_master_from_read(db: Session, read: models.PlateRead, force: bool = False):
     norm = read.plate_text_norm
@@ -16,13 +16,13 @@ def upsert_master_from_read(db: Session, read: models.PlateRead, force: bool = F
             display_text=read.plate_text or norm,
             province=read.province or "",
             confidence=float(read.confidence or 0.0),
-            last_seen=datetime.utcnow(),
+            last_seen=now_bkk(),
             count_seen=1,
             editable=True,
         )
         db.add(m)
     else:
-        m.last_seen = datetime.utcnow()
+        m.last_seen = now_bkk()
         m.count_seen = (m.count_seen or 0) + 1
         # keep best confidence
         if (read.confidence or 0.0) > (m.confidence or 0.0):
