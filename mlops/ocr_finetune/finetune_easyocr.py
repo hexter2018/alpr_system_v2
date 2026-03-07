@@ -87,6 +87,74 @@ def _build_charset() -> str:
 THAI_CHARS: str = _build_charset()
 
 
+def _ensure_base_model(base_model_path: Path) -> bool:
+    """Ensure the EasyOCR Thai base model exists, downloading it if necessary.
+
+    EasyOCR keeps its pretrained weights in ``~/.EasyOCR/model/``.  On a fresh
+    trainer-worker container this directory is empty.  Calling
+    ``easyocr.Reader(['th'])`` is the canonical way to trigger the download —
+    it resolves the correct URL, verifies the checksum, and unzips the archive
+    into the expected location automatically.
+
+    Returns True if the model is present (or was successfully downloaded).
+    """
+    if base_model_path.exists():
+        return True
+
+    log.info(
+        "[OCR] Base model not found at %s — downloading via EasyOCR (this may take a minute)...",
+        base_model_path,
+    )
+    try:
+        import easyocr  # type: ignore
+
+        # gpu=False avoids initialising CUDA just for a weight download.
+        # model_storage_directory ensures the file lands exactly where we
+        # expect it (base_model_path.parent), which is also the directory
+        # mounted as a named Docker volume so the download persists across
+        # container restarts.
+        model_dir = base_model_path.parent
+        model_dir.mkdir(parents=True, exist_ok=True)
+        easyocr.Reader(
+            ["th"],
+            gpu=False,
+            download_enabled=True,
+            model_storage_directory=str(model_dir),
+        )
+
+        if base_model_path.exists():
+            log.info("[OCR] ✅ Downloaded base model: %s  (%d MiB)",
+                     base_model_path,
+                     base_model_path.stat().st_size // (1024 * 1024))
+            return True
+
+        # EasyOCR may store the model under a slightly different name depending
+        # on the installed version (e.g. th.pth vs thai.pth).  Accept any .pth
+        # file in the same directory.
+        model_dir = base_model_path.parent
+        candidates = sorted(model_dir.glob("*.pth"))
+        if candidates:
+            log.warning(
+                "[OCR] Expected %s but found: %s — using that as base model.",
+                base_model_path.name,
+                [p.name for p in candidates],
+            )
+            return True
+
+        log.error(
+            "[OCR] EasyOCR download finished but no .pth found in %s", model_dir
+        )
+        return False
+
+    except Exception as exc:
+        log.error("[OCR] Failed to auto-download base model: %s", exc, exc_info=True)
+        log.error(
+            "[OCR] Fix: run  easyocr.Reader(['th'])  inside the trainer-worker container"
+            " or set BASE_OCR_MODEL env var to an existing .pth file."
+        )
+        return False
+
+
 def finetune(lmdb_train: str, lmdb_val: str, output_dir: str,
              epochs: int = 10, batch_size: int = 64, device: str = "0"):
     output_path = Path(output_dir)
@@ -97,8 +165,8 @@ def finetune(lmdb_train: str, lmdb_val: str, output_dir: str,
         log.error("Run: git clone https://github.com/clovaai/deep-text-recognition-benchmark %s", DTRB_DIR)
         return False
 
-    if not BASE_OCR_MODEL.exists():
-        log.error("Base OCR model not found: %s", BASE_OCR_MODEL)
+    if not _ensure_base_model(BASE_OCR_MODEL):
+        log.error("[OCR] Base model unavailable — cannot fine-tune without pretrained weights.")
         return False
 
     # Write charset file for the training script

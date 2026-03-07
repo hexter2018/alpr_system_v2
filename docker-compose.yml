@@ -222,6 +222,7 @@ services:
       - ./models:/models           # shared models dir กับ production worker
       - ./storage:/storage        # training data
       - trainer_data:/data           # celerybeat schedule
+      - easyocr_models:/root/.EasyOCR  # persist downloaded EasyOCR base models
     depends_on:
       - redis
       - postgres
@@ -267,6 +268,7 @@ volumes:
   pgdata:
   redisdata:
   trainer_data:
+  easyocr_models:   # EasyOCR pretrained weights (th.pth etc.) — persisted across trainer restarts
 
 networks:
   alpr-network:

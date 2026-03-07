@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
+import fcntl
 import os
 import re
 import subprocess
 from pathlib import Path
+
+# Lock file shared across all 3 worker replicas (same /models bind-mount).
+# fcntl.flock() is advisory and works across processes on Linux bind-mounts.
+_ENGINE_LOCK_PATH = Path(os.getenv("MODELS_DIR", "/models")) / ".ensure_engine.lock"
 
 # ---------------------------------------------------------------------------
 # Python TensorRT engine builder
@@ -67,7 +72,25 @@ def _build_engine_python(
         raise RuntimeError("TensorRT engine build failed: build_serialized_network returned None")
 
     engine_path.parent.mkdir(parents=True, exist_ok=True)
-    engine_path.write_bytes(bytes(serialized))
+
+    # Write atomically: stream into a .tmp file first then os.replace() so that
+    # no other process ever reads a half-written engine.  Using f.write(serialized)
+    # with the IHostMemory buffer protocol is safer than bytes(serialized) which
+    # creates an extra full copy in Python memory and can silently truncate on
+    # some TRT 10.x builds.
+    tmp_path = engine_path.with_suffix(".engine.tmp")
+    try:
+        with open(tmp_path, "wb") as f:
+            f.write(serialized)        # IHostMemory → buffer protocol, no copy
+        os.replace(tmp_path, engine_path)   # atomic rename
+    finally:
+        # Clean up temp file if rename failed (e.g. out-of-disk)
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+
     print(f"[ensure_engine] Engine written: {engine_path} ({engine_path.stat().st_size // 1024} KiB)")
 
 def sh(cmd: list[str]) -> str:
@@ -293,31 +316,63 @@ def main():
             f"— forcing engine rebuild ..."
         )
 
-    if engine_path.exists() and not effective_rebuild:
-        ok = try_load_engine(engine_path)
-        if ok:
-            print(f"[ensure_engine] Engine OK (cached): {engine_path}")
-            # export to env file for start.sh
-            (models_dir / ".model_path").write_text(str(engine_path))
-            return 0
-        print("[ensure_engine] Cached engine exists but incompatible -> rebuild")
+    # -----------------------------------------------------------------------
+    # Acquire an exclusive file lock across all 3 worker replicas.
+    # All three containers share the same /models bind-mount, so fcntl.flock()
+    # serialises the build: only the first worker builds the engine; the others
+    # block here and then find the freshly-built engine when they re-check.
+    # -----------------------------------------------------------------------
+    _ENGINE_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    lock_fd = open(_ENGINE_LOCK_PATH, "w")
+    try:
+        print(f"[ensure_engine] Waiting for build lock ({_ENGINE_LOCK_PATH}) ...")
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)   # blocks until no other holder
+        print("[ensure_engine] Build lock acquired.")
 
-    ensure_onnx(pt_path, onnx_path, imgsz)
-    build_engine(
-        onnx_path,
-        engine_path,
-        fp16=fp16,
-        workspace=workspace,
-        workspace_mode=workspace_mode,
-    )
+        # Re-evaluate after acquiring the lock: a sibling worker may have
+        # already built (or invalidated) the engine while we were waiting.
+        onnx_newer_than_engine = (
+            engine_path.exists()
+            and onnx_path.exists()
+            and onnx_path.stat().st_mtime > engine_path.stat().st_mtime
+        )
+        effective_rebuild = force_rebuild or onnx_newer_than_engine
 
-    # Validate
-    if not try_load_engine(engine_path):
-        raise RuntimeError("Engine built but failed to deserialize (still incompatible).")
+        if engine_path.exists() and not effective_rebuild:
+            ok = try_load_engine(engine_path)
+            if ok:
+                print(f"[ensure_engine] Engine OK (cached): {engine_path}")
+                (models_dir / ".model_path").write_text(str(engine_path))
+                return 0
+            # Engine file exists but is corrupt (e.g. partial write from a
+            # previous crashed build).  Delete it so ensure_onnx + build_engine
+            # produce a clean file.
+            print("[ensure_engine] Cached engine is corrupt — deleting and rebuilding")
+            try:
+                engine_path.unlink()
+            except OSError as e:
+                print(f"[ensure_engine] WARNING: could not delete corrupt engine: {e}")
 
-    print(f"[ensure_engine] Engine ready: {engine_path}")
-    (models_dir / ".model_path").write_text(str(engine_path))
-    return 0
+        ensure_onnx(pt_path, onnx_path, imgsz)
+        build_engine(
+            onnx_path,
+            engine_path,
+            fp16=fp16,
+            workspace=workspace,
+            workspace_mode=workspace_mode,
+        )
+
+        # Validate the freshly-built engine
+        if not try_load_engine(engine_path):
+            raise RuntimeError("Engine built but failed to deserialize (still incompatible).")
+
+        print(f"[ensure_engine] Engine ready: {engine_path}")
+        (models_dir / ".model_path").write_text(str(engine_path))
+        return 0
+
+    finally:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        lock_fd.close()
 
 if __name__ == "__main__":
     raise SystemExit(main())
