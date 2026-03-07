@@ -284,6 +284,8 @@ def finetune(lmdb_train: str, lmdb_val: str, output_dir: str,
                 "hidden_size":    OCR_HIDDEN_SIZE,
             },
             "character": THAI_CHARS,
+            "imgH": 32,   # required by EasyOCR 1.7.x: recog_config['imgH'] is read unconditionally
+            "imgW": 100,  # required by EasyOCR 1.7.x: recog_config['imgW'] is read unconditionally
         },
         allow_unicode=True,   # write Thai chars as-is, not \uXXXX
         default_flow_style=False,
