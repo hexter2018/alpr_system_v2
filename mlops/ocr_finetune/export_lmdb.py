@@ -27,12 +27,14 @@ normalised to the empty string '' before any write, ensuring no crash occurs.
 
 Minimum sample requirements
 ----------------------------
-DTRB's DataLoader requires at least 1 sample per split.  We enforce:
-  - MIN_TRAIN_SAMPLES (default 10) in the train split
-  - MIN_VAL_SAMPLES   (default 1)  in the val split
-If either threshold is not met, export_to_lmdb() returns False with a clear
-error log rather than letting PyTorch crash with a confusing num_samples=0
-message deep inside the training script.
+DTRB's DataLoader requires at least 1 sample per split.  We enforce a minimum
+at two levels:
+
+  1. After the Python-side train/val split (MIN_TRAIN_SAMPLES / MIN_VAL_SAMPLES).
+  2. After _write_lmdb() completes, _verify_lmdb() reads the `num-samples` key
+     back from disk — the exact value DTRB will use.  If this is 0 in either
+     split, we abort here with a clear error rather than letting PyTorch crash
+     deep inside train.py with a confusing num_samples=0 traceback.
 """
 import argparse, io, logging, os, sys
 from collections import Counter
@@ -54,33 +56,39 @@ _Session = sessionmaker(bind=_engine, autoflush=False, autocommit=False)
 # Sentinel values that mean "this plate has no province"
 _NO_PROVINCE_SENTINELS = frozenset({"", "N/A", "n/a", "NA", "na", "none", "None", "null", "NULL"})
 
-# Minimum samples required in each split before we allow DTRB to start.
-# These are intentionally conservative — DTRB will crash with a PyTorch
-# DataLoader error if either split has 0 samples, and training is meaningless
-# below a handful of examples.
+# Minimum samples required in each LMDB split.
+# Configurable via env vars so they can be lowered for small test datasets.
 MIN_TRAIN_SAMPLES = int(os.getenv("OCR_MIN_TRAIN_SAMPLES", "10"))
 MIN_VAL_SAMPLES   = int(os.getenv("OCR_MIN_VAL_SAMPLES",   "1"))
 
 
 def _safe_province(value: Optional[str]) -> str:
-    """Normalise a province value that may be NULL, empty, or a sentinel string.
-
-    Always returns a plain str (never None), so downstream code can safely
-    call .encode() or write to a file without an AttributeError / TypeError.
-
-    Rules
-    -----
-    - None / SQL NULL  → ''
-    - ''               → ''
-    - 'N/A' (any case) → ''
-    - Any other string → stripped value as-is
-    """
+    """Normalise a province value that may be NULL, empty, or a sentinel string."""
     if value is None:
         return ""
     stripped = value.strip()
     if stripped in _NO_PROVINCE_SENTINELS:
         return ""
     return stripped
+
+
+def _verify_lmdb(lmdb_dir: Path, split: str) -> int:
+    """Open the written LMDB and return the num-samples value stored on disk.
+
+    This is the exact value DTRB reads via txn.get('num-samples'.encode()).
+    Returns 0 on any error so callers treat it as a failure condition.
+    """
+    try:
+        env = lmdb.open(str(lmdb_dir), readonly=True, lock=False)
+        with env.begin(write=False) as txn:
+            raw = txn.get(b"num-samples")
+            count = int(raw) if raw else 0
+        env.close()
+        log.info("[%s] LMDB verify: num-samples on disk = %d", split, count)
+        return count
+    except Exception as e:
+        log.error("[%s] LMDB verify failed: %s", split, e)
+        return 0
 
 
 def export_to_lmdb(output_dir: Path, limit: int = 10000, val_split: float = 0.1):
@@ -110,32 +118,24 @@ def export_to_lmdb(output_dir: Path, limit: int = 10000, val_split: float = 0.1)
         rows = [dict(r) for r in rows]
         log.info("DB returned: %d rows", len(rows))
 
-        # Normalise province for every row so all downstream code is safe
         for r in rows:
             r["corrected_province"] = _safe_province(r.get("corrected_province"))
 
-        # ── Filter: image file must actually exist on disk ───────────────────
-        # Log every skip individually so path/mount issues are immediately
-        # visible in the worker log rather than silently inflating the
-        # "skipped" counter.
+        # ── Filter: image file must exist on disk ────────────────────────────
+        # Log every skipped file individually so path/volume-mount issues are
+        # immediately visible in worker logs (not just a silent summary count).
         valid = []
         skip_reasons: Counter = Counter()
 
         for r in rows:
             crop = r.get("crop_path")
 
-            # 1. Missing crop_path column value
             if not crop:
-                log.warning(
-                    "Skip id=%s: crop_path is NULL or empty in DB",
-                    r.get("id"),
-                )
+                log.warning("Skip id=%s: crop_path is NULL or empty in DB", r.get("id"))
                 skip_reasons["null_crop_path"] += 1
                 continue
 
             p = Path(crop)
-
-            # 2. Path does not exist inside this container
             if not p.exists():
                 log.warning(
                     "Skip id=%s: file not found on disk — '%s'  "
@@ -152,21 +152,17 @@ def export_to_lmdb(output_dir: Path, limit: int = 10000, val_split: float = 0.1)
             len(valid), len(rows), dict(skip_reasons),
         )
 
-        # ── Diagnose the most common skip reason ────────────────────────────
         if skip_reasons["file_not_found"] > 0:
-            # Surface a concrete example path to help diagnose mount issues.
             example = next(
                 r["crop_path"] for r in rows
                 if r.get("crop_path") and not Path(r["crop_path"]).exists()
             )
             log.error(
-                "⚠️  %d files were not found on disk.  Example missing path: '%s'\n"
+                "⚠️  %d files not found on disk.  Example missing path: '%s'\n"
                 "   Common causes:\n"
-                "     • The crops volume is not mounted into the trainer-worker container.\n"
-                "     • The DB stores paths relative to the API container (e.g. /storage/crops/…)\n"
-                "       but the trainer mounts the same volume at a different prefix.\n"
-                "   Fix: ensure the crops volume is mounted at the same path in both containers,\n"
-                "   or set STORAGE_DIR so that Path(crop_path) resolves correctly.",
+                "     • crops volume not mounted into the trainer-worker container\n"
+                "     • path prefix differs between the API container and trainer container\n"
+                "   Fix: mount the same crops volume at the same path in both containers.",
                 skip_reasons["file_not_found"], example,
             )
 
@@ -174,7 +170,6 @@ def export_to_lmdb(output_dir: Path, limit: int = 10000, val_split: float = 0.1)
             log.error("No valid samples after filtering. Aborting export.")
             return False
 
-        # Log special (no-province) plate count for visibility
         no_province_count = sum(1 for r in valid if not r["corrected_province"])
         if no_province_count:
             log.info(
@@ -184,25 +179,14 @@ def export_to_lmdb(output_dir: Path, limit: int = 10000, val_split: float = 0.1)
             )
 
         # ── Train / val split ────────────────────────────────────────────────
-        # Always keep at least MIN_VAL_SAMPLES in the val split so that
-        # DTRB's DataLoader never receives num_samples=0.
-        n_val      = max(MIN_VAL_SAMPLES, int(len(valid) * val_split))
-        # Guard: we also need enough samples left over for training.
-        n_train    = len(valid) - n_val
+        n_val   = max(MIN_VAL_SAMPLES, int(len(valid) * val_split))
+        n_train = len(valid) - n_val
 
         if n_train < MIN_TRAIN_SAMPLES:
             log.error(
-                "Insufficient training samples after split: train=%d (need >=%d), val=%d.  "
-                "Total valid=%d.  Aborting — increase the feedback dataset before retraining.",
+                "Insufficient training samples after split: train=%d (need >=%d), val=%d, total=%d.  "
+                "Collect more feedback data before retraining.",
                 n_train, MIN_TRAIN_SAMPLES, n_val, len(valid),
-            )
-            return False
-
-        if n_val < MIN_VAL_SAMPLES:
-            # Should not happen given the max() above, but be explicit.
-            log.error(
-                "Insufficient validation samples: val=%d (need >=%d).  Aborting.",
-                n_val, MIN_VAL_SAMPLES,
             )
             return False
 
@@ -214,16 +198,41 @@ def export_to_lmdb(output_dir: Path, limit: int = 10000, val_split: float = 0.1)
             len(train_rows), len(val_rows), val_split * 100,
         )
 
-        # Manifest (human-readable) — tab-separated: crop_path, plate_text, province
-        # Province column is '' for special plates; consumers must tolerate empty fields.
+        # Manifest (human-readable)
         with open(output_dir / "data_list.txt", "w", encoding="utf-8") as f:
             for r in valid:
-                province_field = r["corrected_province"]  # already safe str
-                f.write(f"{r['crop_path']}\t{r['corrected_text']}\t{province_field}\n")
+                f.write(f"{r['crop_path']}\t{r['corrected_text']}\t{r['corrected_province']}\n")
 
         _write_lmdb(train_dir, train_rows, "train")
         _write_lmdb(val_dir,   val_rows,   "val")
-        log.info("✅ Export done — train=%d  val=%d", len(train_rows), len(val_rows))
+
+        # ── Post-write integrity check ───────────────────────────────────────
+        # Read back the num-samples key DTRB will actually use at training time.
+        # If it is 0 in either split, abort here with a clear message rather
+        # than letting DTRB crash deep inside PyTorch with num_samples=0.
+        train_on_disk = _verify_lmdb(train_dir, "train")
+        val_on_disk   = _verify_lmdb(val_dir,   "val")
+
+        if train_on_disk < MIN_TRAIN_SAMPLES:
+            log.error(
+                "LMDB integrity check FAILED: train num-samples on disk = %d (need >=%d).  "
+                "Images were likely skipped during write (PIL errors). Check warnings above.",
+                train_on_disk, MIN_TRAIN_SAMPLES,
+            )
+            return False
+
+        if val_on_disk < MIN_VAL_SAMPLES:
+            log.error(
+                "LMDB integrity check FAILED: val num-samples on disk = %d (need >=%d).  "
+                "DTRB will crash with num_samples=0 if training proceeds.",
+                val_on_disk, MIN_VAL_SAMPLES,
+            )
+            return False
+
+        log.info(
+            "✅ Export done — train=%d  val=%d  (disk-verified: train=%d  val=%d)",
+            len(train_rows), len(val_rows), train_on_disk, val_on_disk,
+        )
         return True
 
     finally:
