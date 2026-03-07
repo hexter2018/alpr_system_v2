@@ -11,9 +11,23 @@ Output:
     /storage/ocr_training/lmdb/train/  ← LMDB database
     /storage/ocr_training/lmdb/val/    ← LMDB database
     /storage/ocr_training/lmdb/data_list.txt
+
+Province handling
+-----------------
+Since v2 of the schema, `corrected_province` in feedback_samples may be:
+  - NULL      (special plates: police, military, test-car)
+  - ''        (empty string – same semantics as NULL)
+  - 'N/A'     (explicit "no province" sentinel set by the reviewer)
+  - A valid Thai province name
+
+The LMDB training format only needs the plate *text* label; province is not
+part of the OCR target.  However province is written to the human-readable
+data_list.txt manifest so it can be inspected.  All three NULL-like values are
+normalised to the empty string '' before any write, ensuring no crash occurs.
 """
 import argparse, io, logging, os, sys
 from pathlib import Path
+from typing import Optional
 
 import lmdb
 from PIL import Image
@@ -27,6 +41,30 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+psycopg2://alpr:alpr@postgr
 _engine  = create_engine(DATABASE_URL, pool_pre_ping=True)
 _Session = sessionmaker(bind=_engine, autoflush=False, autocommit=False)
 
+# Sentinel values that mean "this plate has no province"
+_NO_PROVINCE_SENTINELS = frozenset({"", "N/A", "n/a", "NA", "na", "none", "None", "null", "NULL"})
+
+
+def _safe_province(value: Optional[str]) -> str:
+    """Normalise a province value that may be NULL, empty, or a sentinel string.
+
+    Always returns a plain str (never None), so downstream code can safely
+    call .encode() or write to a file without an AttributeError / TypeError.
+
+    Rules
+    -----
+    - None / SQL NULL  → ''
+    - ''               → ''
+    - 'N/A' (any case) → ''
+    - Any other string → stripped value as-is
+    """
+    if value is None:
+        return ""
+    stripped = value.strip()
+    if stripped in _NO_PROVINCE_SENTINELS:
+        return ""
+    return stripped
+
 
 def export_to_lmdb(output_dir: Path, limit: int = 10000, val_split: float = 0.1):
     output_dir = Path(output_dir)
@@ -38,8 +76,15 @@ def export_to_lmdb(output_dir: Path, limit: int = 10000, val_split: float = 0.1)
     db = _Session()
     try:
         log.info("Fetching up to %d feedback samples...", limit)
+
+        # COALESCE ensures corrected_province is never NULL at the DB level;
+        # _safe_province() then normalises sentinel strings like 'N/A'.
         rows = db.execute(text("""
-            SELECT id, crop_path, corrected_text
+            SELECT
+                id,
+                crop_path,
+                corrected_text,
+                COALESCE(corrected_province, '') AS corrected_province
             FROM feedback_samples
             WHERE corrected_text IS NOT NULL AND corrected_text != ''
             ORDER BY created_at ASC
@@ -47,6 +92,10 @@ def export_to_lmdb(output_dir: Path, limit: int = 10000, val_split: float = 0.1)
         """), {"lim": int(limit)}).mappings().all()
         rows = [dict(r) for r in rows]
         log.info("DB returned: %d rows", len(rows))
+
+        # Normalise province for every row so all downstream code is safe
+        for r in rows:
+            r["corrected_province"] = _safe_province(r.get("corrected_province"))
 
         # Filter: รูปต้องมีอยู่จริง
         valid = [r for r in rows
@@ -57,14 +106,25 @@ def export_to_lmdb(output_dir: Path, limit: int = 10000, val_split: float = 0.1)
             log.error("No valid samples. Aborting.")
             return False
 
+        # Log how many special (no-province) plates are in the export
+        no_province_count = sum(1 for r in valid if not r["corrected_province"])
+        if no_province_count:
+            log.info(
+                "Special plates without province: %d / %d "
+                "(police / military / test-car — province field will be blank in manifest)",
+                no_province_count, len(valid),
+            )
+
         n_val      = max(1, int(len(valid) * val_split))
         train_rows = valid[:-n_val]
         val_rows   = valid[-n_val:]
 
-        # Manifest (human-readable)
+        # Manifest (human-readable) — tab-separated: crop_path, plate_text, province
+        # Province column is '' for special plates; consumers must tolerate empty fields.
         with open(output_dir / "data_list.txt", "w", encoding="utf-8") as f:
             for r in valid:
-                f.write(f"{r['crop_path']}\t{r['corrected_text']}\n")
+                province_field = r["corrected_province"]  # already safe str
+                f.write(f"{r['crop_path']}\t{r['corrected_text']}\t{province_field}\n")
 
         _write_lmdb(train_dir, train_rows, "train")
         _write_lmdb(val_dir,   val_rows,   "val")
@@ -95,8 +155,15 @@ def _write_lmdb(lmdb_dir: Path, rows: list, split: str):
                 log.warning("Skip %s: %s", row["crop_path"], e)
                 continue
 
+            # The LMDB label is only the plate text — province is not part of
+            # the OCR recognition target and is intentionally excluded here.
+            plate_label: str = row.get("corrected_text") or ""
+            if not plate_label:
+                log.warning("Skip row id=%s: empty plate label", row.get("id"))
+                continue
+
             cache[f"image-{cnt:09d}".encode()] = img_bytes
-            cache[f"label-{cnt:09d}".encode()] = row["corrected_text"].encode("utf-8")
+            cache[f"label-{cnt:09d}".encode()] = plate_label.encode("utf-8")
             cnt += 1
 
             if len(cache) >= 1000:

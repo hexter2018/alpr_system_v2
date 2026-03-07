@@ -26,14 +26,65 @@ BASE_OCR_MODEL = Path(os.getenv(
 ))
 MODELS_DIR = Path(os.getenv("MODELS_DIR", "/models"))
 
-# Thai charset (พยัญชนะ + สระ + ตัวเลข + ตัวอักษรทะเบียน)
-THAI_CHARS = (
-    "กขคฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรลวศษสหฬอฮ"
-    "ฤฦาิีึืุูเแโใไำ็่้๊๋์ํ๎"
-    "0123456789"
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    " "
-)
+# ─────────────────────────────────────────────────────────────────────────────
+# OCR character vocabulary
+#
+# The charset must cover every character that can legally appear on a Thai
+# licence plate, including special plate categories introduced in v2:
+#
+#   STANDARD  – Thai consonants + vowel marks + Arabic digits
+#   TEST_CAR  – English uppercase prefix  TC / QC  (e.g. "TC 3337")
+#               Lowercase a-z is also included because EasyOCR may emit lower-
+#               case glyphs before the post-processing normalisation step
+#               converts them to uppercase.  Without a-z in the vocabulary the
+#               model produces OOV (out-of-vocabulary) tokens for these chars,
+#               which then propagate as ??? in the fine-tuned weights.
+#   POLICE    – pure-digit plates (already covered by 0-9)
+#   DIPLOMAT  – Thai-prefix plates (already covered by Thai consonants)
+#
+# Character ordering follows the deep-text-recognition-benchmark convention:
+# the model's softmax head maps output positions to this ordered string.
+# Duplicate characters would shift the mapping and corrupt predictions, so
+# _build_charset() deduplicates while preserving order.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _build_charset() -> str:
+    """Return a deduplicated, ordered character vocabulary string.
+
+    Preserves insertion order so the softmax index mapping is deterministic
+    across runs.  Logs a warning if any duplicates were found (which would
+    indicate a bug in the raw constant below).
+    """
+    raw = (
+        # Thai consonants
+        "กขคฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรลวศษสหฬอฮ"
+        # Thai vowel marks, tone marks, and special signs
+        "ฤฦาิีึืุูเแโใไำ็่้๊๋์ํ๎"
+        # Arabic digits (covers STANDARD, POLICE, TEST_CAR digit suffixes)
+        "0123456789"
+        # Latin uppercase A–Z: required for TC / QC test-car plate prefixes
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        # Latin lowercase a–z: EasyOCR may emit lowercase before normalisation;
+        # including these prevents OOV errors during fine-tuning on TC/QC samples
+        "abcdefghijklmnopqrstuvwxyz"
+        # Space: used as separator in formatted plates (e.g. "TC 3337", "กข 1234")
+        " "
+    )
+    seen: set = set()
+    deduped: list = []
+    for ch in raw:
+        if ch not in seen:
+            seen.add(ch)
+            deduped.append(ch)
+
+    dupes = len(raw) - len(deduped)
+    if dupes:
+        log.warning("THAI_CHARS had %d duplicate character(s) — deduplicated.", dupes)
+
+    return "".join(deduped)
+
+
+THAI_CHARS: str = _build_charset()
 
 
 def finetune(lmdb_train: str, lmdb_val: str, output_dir: str,
@@ -50,10 +101,14 @@ def finetune(lmdb_train: str, lmdb_val: str, output_dir: str,
         log.error("Base OCR model not found: %s", BASE_OCR_MODEL)
         return False
 
-    # สร้าง charset file
+    # Write charset file for the training script
     charset_path = output_path / "charset.txt"
     charset_path.write_text(THAI_CHARS, encoding="utf-8")
-    log.info("Charset: %d characters", len(THAI_CHARS))
+    log.info(
+        "Charset: %d characters  (Thai=%d, digits=10, A-Z=26, a-z=26, space=1)",
+        len(THAI_CHARS),
+        len(THAI_CHARS) - 10 - 26 - 26 - 1,  # rough Thai char count
+    )
 
     # คำนวณ iter จาก epochs (approximate)
     num_iter = epochs * 1000  # ~1000 iters per epoch
