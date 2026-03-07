@@ -108,6 +108,14 @@ def validate_and_deploy(
         os.replace(staging, PRODUCTION_MODEL)  # ✅ atomic — production ไม่ได้รับ half-written file
         log.info("[MLOps] ✅ New model deployed: %s", PRODUCTION_MODEL)
 
+        # ----- Invalidate stale derived artifacts -----
+        # best.onnx and engines/ are compiled from best.pt.  Now that best.pt
+        # has changed they must be regenerated.  Deleting them here forces
+        # ensure_engine.py (run by the worker on next start) to rebuild both.
+        # If deletion fails for any reason we log a warning but continue — the
+        # mtime guards in ensure_engine.py will still catch the staleness.
+        _invalidate_derived_artifacts(MODELS_DIR)
+
         # ----- อัปเดต mAP history -----
         MAP_HISTORY_FILE.write_text(
             json.dumps({
@@ -194,3 +202,54 @@ def _release_lock():
             log.info("[MLOps] Training lock released.")
     except Exception:
         pass
+
+
+def _invalidate_derived_artifacts(models_dir: Path) -> None:
+    """Delete best.onnx and clear engines/ so ensure_engine.py rebuilds from scratch.
+
+    Called immediately after a new best.pt is atomically deployed.  The worker
+    watches reload.sentinel and calls ensure_engine.py before loading the model,
+    so it will always regenerate fresh artifacts from the new .pt file.
+    """
+    # Remove stale ONNX
+    onnx = models_dir / "best.onnx"
+    if onnx.exists():
+        try:
+            onnx.unlink()
+            log.info("[MLOps] Removed stale ONNX: %s", onnx)
+        except Exception as exc:
+            log.warning("[MLOps] Could not remove stale ONNX %s: %s", onnx, exc)
+
+    # Remove any ONNX that ultralytics may have placed beside the .pt
+    pt_side = models_dir / "best.onnx"   # already handled above; kept for clarity
+    alt_onnx = models_dir / "best_opset12.onnx"
+    for extra in (alt_onnx,):
+        if extra.exists():
+            try:
+                extra.unlink()
+                log.info("[MLOps] Removed stale ONNX (alt): %s", extra)
+            except Exception as exc:
+                log.warning("[MLOps] Could not remove %s: %s", extra, exc)
+
+    # Clear engines directory — TensorRT engines are GPU/driver-version specific
+    # and must be rebuilt from the new ONNX anyway.
+    engines_dir = models_dir / "engines"
+    if engines_dir.is_dir():
+        removed = 0
+        for engine_file in list(engines_dir.glob("*.engine")):
+            try:
+                engine_file.unlink()
+                removed += 1
+            except Exception as exc:
+                log.warning("[MLOps] Could not remove engine %s: %s", engine_file, exc)
+        if removed:
+            log.info("[MLOps] Removed %d stale engine file(s) from %s", removed, engines_dir)
+
+    # Remove cached model path pointer so ensure_engine.py writes a fresh one
+    model_path_file = models_dir / ".model_path"
+    if model_path_file.exists():
+        try:
+            model_path_file.unlink()
+            log.info("[MLOps] Removed stale .model_path pointer")
+        except Exception as exc:
+            log.warning("[MLOps] Could not remove .model_path: %s", exc)

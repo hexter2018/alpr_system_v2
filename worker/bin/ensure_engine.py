@@ -36,10 +36,32 @@ def tensorrt_version() -> str:
         return "unknown"
 
 def ensure_onnx(pt_path: Path, onnx_path: Path, imgsz: int) -> None:
+    """Export best.pt → best.onnx if the ONNX is missing or stale.
+
+    Staleness is detected by comparing file modification times: if best.pt is
+    newer than best.onnx the ONNX was built from an older model and must be
+    regenerated.  This is the safety-net path; the primary invalidation happens
+    in mlops/tasks/model_deploy.py which actively deletes best.onnx on deploy.
+    """
     if onnx_path.exists():
-        return
+        if pt_path.exists():
+            pt_mtime   = pt_path.stat().st_mtime
+            onnx_mtime = onnx_path.stat().st_mtime
+            if pt_mtime > onnx_mtime:
+                print(
+                    f"[ensure_engine] best.pt is newer than best.onnx "
+                    f"(Δ={pt_mtime - onnx_mtime:.1f}s) — re-exporting ONNX ..."
+                )
+                onnx_path.unlink()
+                # fall through to export below
+            else:
+                return  # ONNX is up-to-date
+        else:
+            return  # no .pt to compare against; keep existing onnx
+
     if not pt_path.exists():
         raise RuntimeError(f"Missing {pt_path} and {onnx_path}. Provide best.onnx or best.pt.")
+
     print(f"[ensure_engine] Exporting ONNX from {pt_path} -> {onnx_path}")
     # Use ultralytics python API
     from ultralytics import YOLO  # type: ignore
@@ -139,7 +161,26 @@ def main():
     print(f"[ensure_engine] TensorRT={trt_ver} -> {trt_tag}")
     print(f"[ensure_engine] Target engine: {engine_path}")
 
-    if engine_path.exists() and not force_rebuild:
+    # Determine whether the cached engine is still valid.
+    # An engine is considered stale if:
+    #   a) TRT_FORCE_REBUILD=1 (explicit override), or
+    #   b) best.onnx is newer than the engine — meaning a new .pt was deployed
+    #      and the ONNX was already re-exported (or will be shortly below).
+    onnx_newer_than_engine = (
+        engine_path.exists()
+        and onnx_path.exists()
+        and onnx_path.stat().st_mtime > engine_path.stat().st_mtime
+    )
+    effective_rebuild = force_rebuild or onnx_newer_than_engine
+
+    if onnx_newer_than_engine:
+        print(
+            f"[ensure_engine] best.onnx is newer than cached engine "
+            f"(Δ={onnx_path.stat().st_mtime - engine_path.stat().st_mtime:.1f}s) "
+            f"— forcing engine rebuild ..."
+        )
+
+    if engine_path.exists() and not effective_rebuild:
         ok = try_load_engine(engine_path)
         if ok:
             print(f"[ensure_engine] Engine OK (cached): {engine_path}")
