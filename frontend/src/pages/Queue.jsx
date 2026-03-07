@@ -653,12 +653,6 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
           {/* Right: Plate Type, Province, Notes, Actions */}
           <div className="p-5 flex flex-col">
             <div className="space-y-4 flex-1">
-              {/* Plate Type Selector */}
-              <PlateTypeSelector
-                value={plateType}
-                onChange={handlePlateTypeChange}
-              />
-
               {/* Province Combobox — disabled for special plate types */}
               <ProvinceCombobox
                 value={province}
@@ -696,6 +690,12 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
               )}
 
               <Input label="Notes (optional)" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Additional notes" />
+
+              {/* Plate Type Selector */}
+              <PlateTypeSelector
+                value={plateType}
+                onChange={handlePlateTypeChange}
+              />
             </div>
 
             {/* Action Buttons */}
