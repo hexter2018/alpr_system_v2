@@ -20,7 +20,7 @@ api_router.include_router(reads.router, tags=["reads"])
 api_router.include_router(master.router, tags=["master"])
 api_router.include_router(images.router, tags=["images"])
 api_router.include_router(reports.router, tags=["reports"])
-api_router.include_router(reports.router, tags=["monitor"])
+api_router.include_router(monitor.router, tags=["monitor"])
 
 # Management routes
 api_router.include_router(watchlist.router, prefix="/watchlist", tags=["watchlist"])
