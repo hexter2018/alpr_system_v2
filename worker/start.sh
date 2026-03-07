@@ -18,9 +18,18 @@ if command -v nvidia-smi >/dev/null 2>&1; then
   }
 
   if [[ -f /models/.model_path ]]; then
-    export MODEL_PATH="$(cat /models/.model_path)"
-    echo "[worker] MODEL_PATH set to: $MODEL_PATH"
-  else
+    _CANDIDATE="$(cat /models/.model_path)"
+    if [[ -f "$_CANDIDATE" ]]; then
+      export MODEL_PATH="$_CANDIDATE"
+      echo "[worker] MODEL_PATH set to: $MODEL_PATH"
+    else
+      echo "[worker] WARNING: .model_path points to missing file: $_CANDIDATE — ignoring stale pointer"
+      rm -f /models/.model_path
+    fi
+  fi
+
+  # If MODEL_PATH is still unset (engine build failed or .model_path was stale), use fallbacks:
+  if [[ -z "${MODEL_PATH:-}" ]]; then
     echo "[worker] No .model_path file, checking for fallback models..."
     if [[ -f /models/best.engine ]]; then
       export MODEL_PATH="/models/best.engine"

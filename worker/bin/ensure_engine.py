@@ -4,6 +4,72 @@ import re
 import subprocess
 from pathlib import Path
 
+# ---------------------------------------------------------------------------
+# Python TensorRT engine builder
+# Preferred over trtexec subprocess because the Python TRT bindings share
+# the same CUDA context as PyTorch — so they work even in CUDA minor-version
+# compatibility mode where the trtexec C++ binary fails to init CUDA.
+# ---------------------------------------------------------------------------
+
+def _build_engine_python(
+    onnx_path: Path,
+    engine_path: Path,
+    fp16: bool,
+    workspace_mb: int,
+) -> None:
+    """Build a TensorRT engine from an ONNX file using the Python TRT API.
+
+    Supports TensorRT 8, 9 and 10.x.  FP16 is enabled when *fp16* is True and
+    the GPU supports it (TRT will silently fall back to FP32 if not).
+
+    Raises RuntimeError on any build failure.
+    """
+    import tensorrt as trt  # type: ignore
+
+    TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
+
+    builder = trt.Builder(TRT_LOGGER)
+
+    # EXPLICIT_BATCH is always on in TRT 10; keep the flag for TRT 8/9 compat.
+    flags = 0
+    try:
+        flags = 1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+    except AttributeError:
+        pass  # TRT 10+ no longer requires the flag
+    network = builder.create_network(flags)
+
+    parser = trt.OnnxParser(network, TRT_LOGGER)
+    with open(onnx_path, "rb") as f:
+        raw = f.read()
+    if not parser.parse(raw):
+        msgs = [str(parser.get_error(i)) for i in range(parser.num_errors)]
+        raise RuntimeError(f"ONNX parse failed:\n" + "\n".join(msgs))
+
+    config = builder.create_builder_config()
+
+    # Workspace: TRT 10+ uses set_memory_pool_limit; older uses max_workspace_size
+    workspace_bytes = workspace_mb * 1024 * 1024
+    if hasattr(config, "set_memory_pool_limit") and hasattr(trt, "MemoryPoolType"):
+        config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, workspace_bytes)
+    else:
+        config.max_workspace_size = workspace_bytes  # type: ignore[attr-defined]
+
+    if fp16:
+        if builder.platform_has_fast_fp16:
+            config.set_flag(trt.BuilderFlag.FP16)
+            print("[ensure_engine] FP16 enabled")
+        else:
+            print("[ensure_engine] WARNING: GPU does not support fast FP16 — building FP32")
+
+    print(f"[ensure_engine] Building TensorRT engine (Python API) ...")
+    serialized = builder.build_serialized_network(network, config)
+    if serialized is None:
+        raise RuntimeError("TensorRT engine build failed: build_serialized_network returned None")
+
+    engine_path.parent.mkdir(parents=True, exist_ok=True)
+    engine_path.write_bytes(bytes(serialized))
+    print(f"[ensure_engine] Engine written: {engine_path} ({engine_path.stat().st_size // 1024} KiB)")
+
 def sh(cmd: list[str]) -> str:
     p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, check=False)
     return p.stdout.strip()
@@ -71,7 +137,11 @@ def ensure_onnx(pt_path: Path, onnx_path: Path, imgsz: int) -> None:
     try:
         from ultralytics import YOLO  # type: ignore
         model = YOLO(str(pt_path), task="detect")
-        model.export(format="onnx", imgsz=imgsz, opset=12, simplify=True)
+        # opset 18: PyTorch 2.5+ exports at opset 18 internally.  Requesting
+        # opset 12 triggers a version-downgrade pass that fails for modern ops
+        # like Resize (opset 18 → 12 has no adapter).  TensorRT 10.x supports
+        # opset up to 20, so opset 18 is perfectly fine.
+        model.export(format="onnx", imgsz=imgsz, opset=18, simplify=True)
     except Exception as exc:
         # Clean up any partial/empty file that ultralytics or torch may have
         # created before the error so the mtime guard doesn't treat a corrupt
@@ -112,6 +182,34 @@ def build_engine(
     workspace: int,
     workspace_mode: str,
 ) -> None:
+    """Build a TensorRT engine.
+
+    Strategy:
+      1. Try the Python TensorRT API (_build_engine_python).
+         This is preferred because it shares the Python CUDA context and works
+         in CUDA minor-version compatibility mode where the trtexec C++ binary
+         often fails with "no CUDA-capable device is detected".
+      2. Fall back to trtexec subprocess if the Python API is unavailable or
+         raises an unexpected error (e.g. old TRT version without Python bindings).
+    """
+    # --- Attempt 1: Python TRT API ---
+    try:
+        _build_engine_python(onnx_path, engine_path, fp16=fp16, workspace_mb=workspace)
+        if engine_path.exists():
+            return  # success
+        raise RuntimeError("Python TRT build returned without error but engine file missing.")
+    except ImportError:
+        print("[ensure_engine] tensorrt Python package not importable — falling back to trtexec")
+    except Exception as py_exc:
+        print(f"[ensure_engine] Python TRT build failed: {py_exc}  — falling back to trtexec")
+        # Clean up any partial engine file before trying trtexec
+        if engine_path.exists():
+            try:
+                engine_path.unlink()
+            except OSError:
+                pass
+
+    # --- Attempt 2: trtexec subprocess ---
     engine_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
         "trtexec",
@@ -125,10 +223,8 @@ def build_engine(
         cmd.append(f"--workspace={workspace}")
     if fp16:
         cmd.append("--fp16")
-    # Optional: verbose for debugging
-    # cmd.append("--verbose")
 
-    print("[ensure_engine] Building engine via trtexec:")
+    print("[ensure_engine] Building engine via trtexec (fallback):")
     print("  " + " ".join(cmd))
     out = sh(cmd)
     print(out)
