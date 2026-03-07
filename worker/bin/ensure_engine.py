@@ -63,11 +63,28 @@ def ensure_onnx(pt_path: Path, onnx_path: Path, imgsz: int) -> None:
         raise RuntimeError(f"Missing {pt_path} and {onnx_path}. Provide best.onnx or best.pt.")
 
     print(f"[ensure_engine] Exporting ONNX from {pt_path} -> {onnx_path}")
-    # Use ultralytics python API
-    from ultralytics import YOLO  # type: ignore
-    model = YOLO(str(pt_path), task="detect")
-    # export to the same /models dir
-    model.export(format="onnx", imgsz=imgsz, opset=12, simplify=True)
+    # Use ultralytics python API.
+    # NOTE: torch 2.5+ requires the 'onnxscript' package at runtime.
+    # If it is missing the import inside torch/onnx/_internal/exporter/_core.py
+    # raises ModuleNotFoundError before any export code runs.
+    # Fix: ensure onnxscript>=0.1.0 is listed in requirements.txt.
+    try:
+        from ultralytics import YOLO  # type: ignore
+        model = YOLO(str(pt_path), task="detect")
+        model.export(format="onnx", imgsz=imgsz, opset=12, simplify=True)
+    except Exception as exc:
+        # Clean up any partial/empty file that ultralytics or torch may have
+        # created before the error so the mtime guard doesn't treat a corrupt
+        # file as a valid ONNX on the next run.
+        for candidate in (onnx_path, pt_path.with_suffix(".onnx")):
+            if candidate.exists():
+                try:
+                    candidate.unlink()
+                    print(f"[ensure_engine] Removed partial ONNX after failed export: {candidate}")
+                except OSError:
+                    pass
+        raise RuntimeError(f"ONNX export failed: {exc}") from exc
+
     # ultralytics exports beside pt by default; locate generated onnx
     exported = pt_path.with_suffix(".onnx")
     if exported.exists() and exported != onnx_path:

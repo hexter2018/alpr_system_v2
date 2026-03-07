@@ -11,3 +11,9 @@ tzdata>=2024.1
 # Optional (for real YOLO): ultralytics + torch
 ultralytics==8.3.30
 cuda-python>=12.0.0
+# Required by torch 2.5+ for ONNX export (imported at module level in
+# torch/onnx/_internal/exporter/_core.py — missing causes an immediate
+# ModuleNotFoundError even before ultralytics code runs)
+onnxscript>=0.1.0
+# Required by ultralytics when simplify=True during ONNX export
+onnxsim>=0.4.36
