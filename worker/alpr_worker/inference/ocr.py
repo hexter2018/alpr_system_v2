@@ -498,6 +498,14 @@ class PlateOCR:
         return {"texts": texts}
 
     def _plate_format_adjustment(self, text: str) -> float:
+        # Special plate types – give a moderate positive bump
+        if re.match(r"^(TC|QC)\d{1,4}$", text, re.IGNORECASE):
+            return 0.06
+        if re.match(r"^\d{4,5}$", text):          # police / military pure-digit
+            return 0.04
+        if re.match(r"^[ทพอ]\d{2}\d{1,4}$", text):   # diplomat
+            return 0.04
+        # Standard Thai plates
         if re.match(r"^\d[ก-ฮ]{1,2}\d{1,4}$", text):
             return 0.08
         if re.match(r"^[ก-ฮ]{2}\d{1,4}$", text):
@@ -508,10 +516,17 @@ class PlateOCR:
 
     def _format_plate_display(self, text: str) -> str:
         text = text or ""
+        # TC / QC test-car plates: "TC3337" -> "TC 3337"
+        match = re.match(r"^(TC|QC)(\d{1,4})$", text, re.IGNORECASE)
+        if match:
+            prefix, digits = match.groups()
+            return f"{prefix.upper()} {digits}"
+        # Standard digit-prefix format: "1กข1234" -> "1กข 1234"
         match = re.match(r"^(\d)([ก-ฮ]{1,2})(\d{1,4})$", text)
         if match:
             digit, prefix, digits = match.groups()
             return f"{digit}{prefix} {digits}"
+        # Standard Thai prefix: "กข1234" -> "กข 1234"
         match = re.match(r"^([ก-ฮ]{1,2})(\d{1,4})$", text)
         if match:
             prefix, digits = match.groups()
@@ -779,7 +794,13 @@ class PlateOCR:
 
     def _normalize_plate(self, text: str) -> str:
         norm = self._normalize_text(text)
-        norm = re.sub(r"[^0-9ก-๙]", "", norm)
+        # If the raw text looks like a TC/QC test-car plate keep A-Z letters;
+        # otherwise strip them so they don't corrupt standard Thai OCR results.
+        if re.match(r"^(TC|QC)", norm, re.IGNORECASE):
+            # Keep digits and ASCII letters only, uppercase prefix
+            norm = re.sub(r"[^0-9A-Za-z]", "", norm).upper()
+        else:
+            norm = re.sub(r"[^0-9ก-๙]", "", norm)
         return norm
 
     def _expand_confusion_candidates(self, text: str) -> Iterable[Tuple[str, int, float]]:

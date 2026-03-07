@@ -8,6 +8,7 @@ import {
   CheckCircle, Edit3, Trash2, RefreshCw, ZoomIn, ZoomOut,
   RotateCcw, X, Keyboard, Clock, ListChecks, Settings2,
   CalendarClock, Filter, XCircle, ChevronDown, Search,
+  Tag, AlertTriangle,
 } from 'lucide-react'
 
 /* ===== PROVINCES DATA ===== */
@@ -35,6 +36,53 @@ const ALL_PROVINCES = [
   'สุราษฎร์ธานี','สุรินทร์','หนองคาย','หนองบัวลำภู','อ่างทอง',
   'อุดรธานี','อุทัยธานี','อุตรดิตถ์','อุบลราชธานี','อำนาจเจริญ',
 ]
+
+/* ===== PLATE TYPE OPTIONS ===== */
+const PLATE_TYPE_OPTIONS = [
+  {
+    value: 'STANDARD',
+    label: 'มาตรฐาน',
+    labelEn: 'Standard',
+    description: 'ทะเบียนรถทั่วไป',
+    color: 'default',
+    requiresProvince: true,
+  },
+  {
+    value: 'TEST_CAR',
+    label: 'รถทดสอบ (TC/QC)',
+    labelEn: 'Test Car',
+    description: 'ทะเบียน TC หรือ QC สำหรับรถยนต์ทดสอบ',
+    color: 'primary',
+    requiresProvince: false,
+  },
+  {
+    value: 'POLICE',
+    label: 'ตำรวจ / ราชการ',
+    labelEn: 'Police',
+    description: 'ทะเบียนตัวเลขล้วน 4-5 หลัก',
+    color: 'warning',
+    requiresProvince: false,
+  },
+  {
+    value: 'MILITARY',
+    label: 'ทหาร',
+    labelEn: 'Military',
+    description: 'ยานพาหนะทางทหาร',
+    color: 'danger',
+    requiresProvince: false,
+  },
+  {
+    value: 'DIPLOMAT',
+    label: 'นักการทูต',
+    labelEn: 'Diplomat',
+    description: 'ทะเบียนนักการทูต (ท/พ/อ)',
+    color: 'success',
+    requiresProvince: false,
+  },
+]
+
+// Threshold below which province is considered unreliable by OCR
+const LOW_CONF_PROVINCE_THRESHOLD = 0.45
 
 /* ===== CONFUSABLE CHARACTER FIXES ===== */
 const CONFUSION_FIXES = {
@@ -180,15 +228,84 @@ function DeleteConfirmModal({ open, onClose, onConfirm, plate, province, confide
   )
 }
 
+/* ===== PLATE TYPE SELECTOR ===== */
+function PlateTypeSelector({ value, onChange }) {
+  const current = PLATE_TYPE_OPTIONS.find((o) => o.value === value) || PLATE_TYPE_OPTIONS[0]
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handleClick = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [open])
+
+  const variantMap = {
+    default: 'border-border bg-surface text-content',
+    primary: 'border-accent/40 bg-accent/10 text-accent',
+    warning: 'border-warning/40 bg-warning-muted text-warning-content',
+    danger: 'border-danger/40 bg-danger-muted text-danger-content',
+    success: 'border-success/40 bg-success-muted text-success-content',
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <label className="block text-sm font-medium text-content-secondary mb-1.5">
+        <Tag className="w-3.5 h-3.5 inline mr-1 -mt-0.5" />
+        Plate Type
+      </label>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`
+          w-full flex items-center justify-between rounded-xl border px-4 py-2.5 text-sm font-semibold
+          transition-colors hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-accent/30
+          ${variantMap[current.color] || variantMap.default}
+        `}
+      >
+        <span>{current.label}</span>
+        <ChevronDown className={`w-4 h-4 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute z-30 mt-1 w-full rounded-xl border border-border bg-surface-raised shadow-xl overflow-hidden">
+          {PLATE_TYPE_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => { onChange(opt.value); setOpen(false) }}
+              className={`
+                w-full text-left px-4 py-3 text-sm transition-colors hover:bg-accent/10
+                ${value === opt.value ? 'bg-accent/10' : ''}
+              `}
+            >
+              <div className="font-semibold text-content">{opt.label}</div>
+              <div className="text-xs text-content-tertiary mt-0.5">{opt.description}</div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ===== PROVINCE COMBOBOX ===== */
-function ProvinceCombobox({ value, onChange, highlight, missing }) {
+function ProvinceCombobox({ value, onChange, highlight, missing, disabled }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const inputRef = useRef(null)
   const listRef = useRef(null)
 
-  const filtered = ALL_PROVINCES.filter((p) =>
-    p.startsWith(search) || p.includes(search)
+  // "N/A" sentinel value for plates without a province
+  const NA_VALUE = 'N/A'
+  const displayList = [NA_VALUE, ...ALL_PROVINCES]
+  const filtered = displayList.filter((p) =>
+    p === NA_VALUE
+      ? 'n/a'.includes(search.toLowerCase()) || search === ''
+      : (p.startsWith(search) || p.includes(search))
   )
 
   useEffect(() => {
@@ -209,33 +326,39 @@ function ProvinceCombobox({ value, onChange, highlight, missing }) {
   }, [open, search])
 
   const handleSelect = (prov) => {
-    onChange(prov)
+    onChange(prov === NA_VALUE ? '' : prov)
     setSearch('')
     setOpen(false)
   }
 
+  const displayValue = value || (disabled ? 'N/A (ไม่ใช้จังหวัด)' : '')
+
   return (
     <div className="province-combo relative">
-      <label className="block text-sm font-medium text-content-secondary mb-1.5">Province</label>
+      <label className={`block text-sm font-medium mb-1.5 ${disabled ? 'text-content-tertiary' : 'text-content-secondary'}`}>
+        Province {disabled && <span className="text-xs font-normal text-content-tertiary">(ไม่จำเป็นสำหรับทะเบียนประเภทนี้)</span>}
+      </label>
       <button
         type="button"
-        onClick={() => { setOpen((v) => !v); setTimeout(() => inputRef.current?.focus(), 50) }}
+        disabled={disabled}
+        onClick={() => { if (!disabled) { setOpen((v) => !v); setTimeout(() => inputRef.current?.focus(), 50) } }}
         className={`
           w-full flex items-center justify-between rounded-xl border bg-surface px-4 py-2.5 text-sm text-content transition-colors
-          ${missing ? 'border-warning' : 'border-border'} ${highlight ? 'ring-2 ring-accent' : ''}
-          hover:border-accent/40 focus:border-accent focus:ring-2 focus:ring-accent/20
+          ${disabled ? 'opacity-50 cursor-not-allowed border-border' : missing ? 'border-warning' : 'border-border'}
+          ${highlight ? 'ring-2 ring-accent' : ''}
+          ${!disabled ? 'hover:border-accent/40 focus:border-accent focus:ring-2 focus:ring-accent/20' : ''}
         `}
       >
-        <span className={`font-semibold truncate ${value ? 'text-content' : 'text-content-tertiary'}`}>
-          {value || 'Select province...'}
+        <span className={`font-semibold truncate ${displayValue ? 'text-content' : 'text-content-tertiary'}`}>
+          {displayValue || 'Select province...'}
         </span>
-        <ChevronDown className={`w-4 h-4 text-content-tertiary shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+        {!disabled && <ChevronDown className={`w-4 h-4 text-content-tertiary shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />}
       </button>
-      {missing && !open && (
+      {missing && !open && !disabled && (
         <p className="mt-1.5 text-xs text-warning">Province not detected - you can confirm or correct it</p>
       )}
 
-      {open && (
+      {open && !disabled && (
         <div className="absolute z-30 mt-1 w-full rounded-xl border border-border bg-surface-raised shadow-xl overflow-hidden">
           <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
             <Search className="w-4 h-4 text-content-tertiary shrink-0" />
@@ -258,9 +381,13 @@ function ProvinceCombobox({ value, onChange, highlight, missing }) {
                 <button
                   type="button"
                   onClick={() => handleSelect(prov)}
-                  className={`w-full text-left px-4 py-2 text-sm transition-colors hover:bg-accent/10 ${value === prov ? 'bg-accent/10 text-accent font-semibold' : 'text-content'}`}
+                  className={`
+                    w-full text-left px-4 py-2 text-sm transition-colors hover:bg-accent/10
+                    ${prov === NA_VALUE ? 'text-content-tertiary italic' : ''}
+                    ${(prov === NA_VALUE ? !value : value === prov) ? 'bg-accent/10 text-accent font-semibold' : 'text-content'}
+                  `}
                 >
-                  {prov}
+                  {prov === NA_VALUE ? 'N/A — ไม่มีจังหวัด (ตำรวจ / ทหาร / รถทดสอบ)' : prov}
                 </button>
               </li>
             ))}
@@ -275,6 +402,7 @@ function ProvinceCombobox({ value, onChange, highlight, missing }) {
 function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast }) {
   const [plateText, setPlateText] = useState(item.plate_text || '')
   const [province, setProvince] = useState(item.province || '')
+  const [plateType, setPlateType] = useState(item.plate_type || 'STANDARD')
   const [note, setNote] = useState('')
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [viewerOpen, setViewerOpen] = useState(false)
@@ -283,10 +411,32 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
   const [lastChange, setLastChange] = useState(null)
   const [highlightField, setHighlightField] = useState(null)
 
-  const provinceMissing = !province.trim()
+  // Determine if province is required for the selected plate type
+  const currentTypeOpt = PLATE_TYPE_OPTIONS.find((o) => o.value === plateType) || PLATE_TYPE_OPTIONS[0]
+  const provinceRequired = currentTypeOpt.requiresProvince
+
+  // Province is "missing" only when the plate type requires it
+  const provinceMissing = provinceRequired && !province.trim()
+
+  // Is confidence below the province-auto-fill threshold?
+  const lowConfProvince = item.confidence < LOW_CONF_PROVINCE_THRESHOLD
+
   const plateChanged = plateText !== (item.plate_text || '')
   const provinceChanged = province !== (item.province || '')
-  const hasVerificationEdits = plateChanged || provinceChanged
+  const plateTypeChanged = plateType !== (item.plate_type || 'STANDARD')
+  const hasVerificationEdits = plateChanged || provinceChanged || plateTypeChanged
+
+  // When plate type changes, auto-clear province for special types
+  const handlePlateTypeChange = (newType) => {
+    const opt = PLATE_TYPE_OPTIONS.find((o) => o.value === newType)
+    setPlateType(newType)
+    if (opt && !opt.requiresProvince) {
+      setProvince('')
+      onToast?.(`Plate type set to "${opt.labelEn}" — province cleared`, 'info')
+    } else {
+      onToast?.(`Plate type set to "${opt?.labelEn || newType}"`, 'info')
+    }
+  }
 
   useEffect(() => {
     if (!highlightField) return
@@ -297,11 +447,11 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
   const handleKeyDown = useCallback((e) => {
     if (busy) return
     const isTyping = ['INPUT', 'TEXTAREA'].includes(e.target.tagName)
-    if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); onCorrect(plateText, province, note) }
+    if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); onCorrect(plateText, province, plateType, note) }
     else if (e.key === 'Enter' && !e.ctrlKey && !isTyping && !hasVerificationEdits) { e.preventDefault(); onConfirm() }
     else if (e.key === 'Delete' && !isTyping) { e.preventDefault(); setDeleteOpen(true) }
     else if ((e.key === 'n' || e.key === 'N') && !isTyping) { e.preventDefault(); handleNormalize() }
-  }, [busy, plateText, province, note, onConfirm, onCorrect, hasVerificationEdits])
+  }, [busy, plateText, province, plateType, note, onConfirm, onCorrect, hasVerificationEdits])
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown)
@@ -330,6 +480,35 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
     setLastChange(null)
   }
 
+  // Quick fix: Set plate to TC prefix
+  const handleSetTC = () => {
+    const digits = plateText.replace(/\D/g, '')
+    const newText = `TC ${digits}`
+    setLastChange({ field: 'plate', prev: plateText })
+    setPlateText(newText)
+    handlePlateTypeChange('TEST_CAR')
+    setHighlightField('plate')
+    onToast?.('Set to TC format', 'info')
+  }
+
+  // Quick fix: Set plate to QC prefix
+  const handleSetQC = () => {
+    const digits = plateText.replace(/\D/g, '')
+    const newText = `QC ${digits}`
+    setLastChange({ field: 'plate', prev: plateText })
+    setPlateText(newText)
+    handlePlateTypeChange('TEST_CAR')
+    setHighlightField('plate')
+    onToast?.('Set to QC format', 'info')
+  }
+
+  // Quick fix: Clear province (for central / special plates)
+  const handleClearProvince = () => {
+    setProvince('')
+    setHighlightField('province')
+    onToast?.('Province cleared', 'info')
+  }
+
   const openViewer = (src, title) => { setViewerSrc(src); setViewerTitle(title); setViewerOpen(true) }
 
   return (
@@ -343,6 +522,13 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
               <Badge variant={item.confidence >= 0.9 ? 'success' : item.confidence >= 0.7 ? 'warning' : 'danger'} size="sm">
                 {(item.confidence * 100).toFixed(0)}% confidence
               </Badge>
+              {/* Low-confidence province warning badge */}
+              {lowConfProvince && (
+                <Badge variant="warning" size="sm" title="Province auto-fill was disabled due to low OCR confidence. Please set manually.">
+                  <AlertTriangle className="w-3 h-3 mr-1" />
+                  Province needs review
+                </Badge>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <Keyboard className="w-3 h-3 text-content-tertiary" />
@@ -365,8 +551,10 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
               ${highlightField === 'plate' ? 'ring-2 ring-accent' : ''}
             `}
           />
-          {/* Quick Fix Buttons - inline below plate text */}
+
+          {/* Quick Fix Buttons */}
           <div className="flex flex-wrap items-center gap-3 mt-3">
+            {/* Confusion fixes */}
             <div className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-danger" />
               <span className="text-xs font-medium text-content-tertiary">Confusions</span>
@@ -390,6 +578,38 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
                 {fix.from}{'→'}{fix.to}
               </button>
             ))}
+
+            {/* ── Special plate quick-fix buttons ── */}
+            <div className="w-px h-4 bg-border" />
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+              <span className="text-xs font-medium text-content-tertiary">Special</span>
+            </div>
+            <button
+              type="button"
+              title="Convert to TC test-car format"
+              onClick={handleSetTC}
+              className="px-2.5 py-1 text-xs font-medium rounded-lg border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 transition-colors font-mono"
+            >
+              Set TC
+            </button>
+            <button
+              type="button"
+              title="Convert to QC test-car format"
+              onClick={handleSetQC}
+              className="px-2.5 py-1 text-xs font-medium rounded-lg border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 transition-colors font-mono"
+            >
+              Set QC
+            </button>
+            <button
+              type="button"
+              title="Clear province (for police, military, test-car plates)"
+              onClick={handleClearProvince}
+              className="px-2.5 py-1 text-xs font-medium rounded-lg border border-border bg-surface-raised text-content-secondary hover:bg-surface-overlay hover:border-warning/40 transition-colors"
+            >
+              Clear Province
+            </button>
+
             {lastChange && (
               <>
                 <div className="w-px h-4 bg-border" />
@@ -430,29 +650,50 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
             </div>
           </div>
 
-          {/* Right: Province, Notes, Actions */}
+          {/* Right: Plate Type, Province, Notes, Actions */}
           <div className="p-5 flex flex-col">
             <div className="space-y-4 flex-1">
-              {/* Province Combobox */}
+              {/* Plate Type Selector */}
+              <PlateTypeSelector
+                value={plateType}
+                onChange={handlePlateTypeChange}
+              />
+
+              {/* Province Combobox — disabled for special plate types */}
               <ProvinceCombobox
                 value={province}
                 onChange={(v) => { setProvince(v); setHighlightField('province') }}
                 highlight={highlightField === 'province'}
                 missing={provinceMissing}
+                disabled={!provinceRequired}
               />
 
-              <div>
-                <p className="text-xs font-medium text-content-tertiary mb-2">Quick Select Province</p>
-                <div className="flex flex-wrap gap-2">
-                  {POPULAR_PROVINCES.map((prov) => (
-                    <button key={prov.value} type="button" onClick={() => { setProvince(prov.value); setHighlightField('province') }}
-                      className="px-3 py-1.5 text-sm font-medium rounded-lg border border-border bg-surface-raised text-content hover:bg-surface-overlay hover:border-accent/30 transition-colors"
-                    >
-                      {prov.label}
-                    </button>
-                  ))}
+              {/* Low-confidence province notice */}
+              {lowConfProvince && provinceRequired && (
+                <div className="flex items-start gap-2 p-3 rounded-lg border border-warning/30 bg-warning-muted">
+                  <AlertTriangle className="w-4 h-4 text-warning-content shrink-0 mt-0.5" />
+                  <p className="text-xs text-warning-content">
+                    OCR confidence is <strong>{(item.confidence * 100).toFixed(0)}%</strong> — province was not auto-filled.
+                    Please select the correct province manually.
+                  </p>
                 </div>
-              </div>
+              )}
+
+              {/* Quick Select Province (only shown when province is required) */}
+              {provinceRequired && (
+                <div>
+                  <p className="text-xs font-medium text-content-tertiary mb-2">Quick Select Province</p>
+                  <div className="flex flex-wrap gap-2">
+                    {POPULAR_PROVINCES.map((prov) => (
+                      <button key={prov.value} type="button" onClick={() => { setProvince(prov.value); setHighlightField('province') }}
+                        className="px-3 py-1.5 text-sm font-medium rounded-lg border border-border bg-surface-raised text-content hover:bg-surface-overlay hover:border-accent/30 transition-colors"
+                      >
+                        {prov.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <Input label="Notes (optional)" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Additional notes" />
             </div>
@@ -465,7 +706,7 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
                   Confirm
                   <kbd className="ml-1.5 px-1.5 py-0.5 text-[10px] font-mono bg-white/20 rounded hidden sm:inline-block">Enter</kbd>
                 </Button>
-                <Button variant="secondary" disabled={busy} onClick={() => onCorrect(plateText, province, note)} className="flex-1 min-w-0"
+                <Button variant="secondary" disabled={busy} onClick={() => onCorrect(plateText, province, plateType, note)} className="flex-1 min-w-0"
                   icon={<Edit3 className="w-4 h-4" />}>
                   Save Edit
                   <kbd className="ml-1.5 px-1.5 py-0.5 text-[10px] font-mono bg-surface-overlay rounded hidden sm:inline-block">Ctrl+Enter</kbd>
@@ -479,7 +720,7 @@ function VerificationItem({ item, busy, onConfirm, onCorrect, onDelete, onToast 
               </div>
               {hasVerificationEdits && (
                 <p className="mt-2 text-xs text-content-tertiary">
-                  Confirm is disabled because plate/province was edited. Use <span className="font-semibold">Save Edit</span> instead.
+                  Confirm is disabled because plate/province/type was edited. Use <span className="font-semibold">Save Edit</span> instead.
                 </p>
               )}
             </div>
@@ -635,10 +876,17 @@ export default function Queue() {
     } catch (e) { setError(String(e)) } finally { setBusyId(null) }
   }, [refresh, addToast])
 
-  const handleCorrect = useCallback(async (id, corrected_text, corrected_province, note) => {
+  const handleCorrect = useCallback(async (id, corrected_text, corrected_province, corrected_plate_type, note) => {
     setBusyId(id)
     try {
-      await verifyRead(id, { action: 'correct', corrected_text, corrected_province, note, user: 'reviewer' })
+      await verifyRead(id, {
+        action: 'correct',
+        corrected_text,
+        corrected_province,
+        corrected_plate_type,
+        note,
+        user: 'reviewer',
+      })
       await refresh()
       addToast('Correction saved', 'success')
     } catch (e) { setError(String(e)) } finally { setBusyId(null) }
@@ -750,7 +998,7 @@ export default function Queue() {
               item={item}
               busy={busyId === item.id}
               onConfirm={() => handleConfirm(item.id)}
-              onCorrect={(text, prov, note) => handleCorrect(item.id, text, prov, note)}
+              onCorrect={(text, prov, type, note) => handleCorrect(item.id, text, prov, type, note)}
               onDelete={() => handleDelete(item.id)}
               onToast={addToast}
             />

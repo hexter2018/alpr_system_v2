@@ -19,6 +19,7 @@ from .rtsp_control import should_stop  # worker/rtsp_control.py
 from .inference.detector import PlateDetector
 from .inference.ocr import PlateOCR  # ใช้ OCR / parser ที่คุณมีอยู่แล้ว
 from .inference.master_lookup import assist_with_master
+from .inference.validate import classify_plate_type
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +32,10 @@ STORAGE_DIR = Path(os.getenv("STORAGE_DIR", "./storage"))
 MASTER_CONF_THRESHOLD = float(os.getenv("MASTER_CONF_THRESHOLD", "0.95"))
 FEEDBACK_EXPORT_LIMIT = int(os.getenv("FEEDBACK_EXPORT_LIMIT", "200"))
 TRAINING_DIR = Path(os.getenv("TRAINING_DIR", str(STORAGE_DIR / "training")))
+
+# Below this confidence the province returned by OCR is unreliable;
+# we leave it blank and let the human reviewer fill it in manually.
+PROVINCE_CONF_THRESHOLD = float(os.getenv("PROVINCE_CONF_THRESHOLD", "0.45"))
 
 # RTSP defaults
 DEFAULT_RTSP_FPS = float(os.getenv("RTSP_FPS", "2.0"))
@@ -123,6 +128,21 @@ def process_capture(capture_id: int, image_path: str):
         province = assisted["province"]
         conf = float(assisted["confidence"])
 
+        # ── Province confidence gate ──────────────────────────────────────
+        # When OCR confidence is below the threshold the province prediction
+        # is unreliable.  Clear it so the human reviewer fills it in rather
+        # than persisting a wrong value (e.g. "สุราษฎร์ธานี" at 24 %).
+        if conf < PROVINCE_CONF_THRESHOLD and province:
+            log.info(
+                "Skipping province auto-fill for capture_id=%s: "
+                "confidence %.2f < threshold %.2f (was: %r)",
+                capture_id, conf, PROVINCE_CONF_THRESHOLD, province,
+            )
+            province = ""
+
+        # ── Classify plate type ───────────────────────────────────────────
+        plate_type = classify_plate_type(plate_text_norm)
+
         if conf < 0.6:
             log.warning(
                 "Low OCR confidence for capture_id=%s variant=%s candidates=%s",
@@ -165,6 +185,7 @@ def process_capture(capture_id: int, image_path: str):
                 plate_text,
                 plate_text_norm,
                 province,
+                plate_type,
                 confidence,
                 status,
                 created_at
@@ -174,6 +195,7 @@ def process_capture(capture_id: int, image_path: str):
                 :plate_text,
                 :plate_text_norm,
                 :province,
+                :plate_type,
                 :confidence,
                 :status,
                 :created_at
@@ -186,6 +208,7 @@ def process_capture(capture_id: int, image_path: str):
             "plate_text": (plate_text[:32] if plate_text else ""),
             "plate_text_norm": (plate_text_norm[:32] if plate_text_norm else ""),
             "province": (province[:64] if province else ""),
+            "plate_type": plate_type,
             "confidence": conf,
             "status": "PENDING",  # enum readstatus
             "created_at": datetime.now(timezone.utc),
@@ -247,6 +270,7 @@ def process_capture(capture_id: int, image_path: str):
             "plate_text": plate_text,
             "plate_text_norm": plate_text_norm,
             "province": province,
+            "plate_type": plate_type,
             "confidence": conf,
             "master_assisted": assisted.get("assisted", False),
             "crop_path": str(crop_path),
