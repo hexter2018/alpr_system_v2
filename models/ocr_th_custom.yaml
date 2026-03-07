@@ -1,7 +1,10 @@
+imgH: 32
+imgW: 100
+lang_list:
+- th
+- en
+character: 'กขคฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรลวศษสหฬอฮฤฦาิีึืุูเแโใไำ็่้๊๋์ํ๎0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz '
 network_params:
   input_channel: 1
   output_channel: 512
   hidden_size: 512
-character: 'กขคฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรลวศษสหฬอฮฤฦาิีึืุูเแโใไำ็่้๊๋์ํ๎0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz '
-imgH: 32
-imgW: 100

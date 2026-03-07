@@ -261,33 +261,42 @@ def finetune(lmdb_train: str, lmdb_val: str, output_dir: str,
     log.info("✅ OCR model deployed: %s", deploy_path)
 
     # ── Write EasyOCR YAML config so workers can load the model ──────────────
-    # EasyOCR reads {user_network_directory}/{recog_network}.yaml to determine
-    # the network architecture.  Without this file the Reader falls back to its
-    # built-in model catalogue and ignores the custom .pth entirely.
+    # EasyOCR 1.7.x reads {user_network_directory}/{recog_network}.yaml to
+    # determine network architecture.  Without this file the Reader ignores the
+    # custom .pth entirely and falls back to built-in models.
     #
-    # Architecture notes:
-    #   output_channel  = ResNet backbone output feature channels.
-    #                     DTRB ResNet always outputs 512 regardless of hidden_size;
-    #                     this is NOT the same as hidden_size and must not change.
-    #   hidden_size     = BiLSTM hidden dimension.
-    #                     Must match the pretrained thai.pth (512).
-    #   character       = Vocabulary string — len() gives num output classes.
-    #                     Use PyYAML (allow_unicode=True) so Thai chars are
-    #                     written verbatim instead of escaped \uXXXX sequences.
+    # ALL keys below are required by easyocr.py — missing any one causes a
+    # bare KeyError crash (no fallback, no helpful message):
+    #
+    #   imgH            recog_config['imgH']  — input image height (px)
+    #   imgW            recog_config['imgW']  — input image width  (px)
+    #   lang_list       recog_config['lang_list']
+    #                   → Languages this custom model supports.  Must be a
+    #                     superset of the lang_list passed to Reader().
+    #                     We use ['th', 'en'] so both Reader(["th","en"]) and
+    #                     Reader(["th"]) calls in ocr.py succeed from one file.
+    #   character       Full vocabulary string; len() → Attn head output size.
+    #                   Use allow_unicode=True so Thai chars write as-is.
+    #   network_params  Architecture dict consumed by the model builder:
+    #     input_channel   1  (greyscale)
+    #     output_channel  ResNet backbone output channels — always 512 for
+    #                     DTRB ResNet; NOT the same as hidden_size.
+    #     hidden_size     BiLSTM hidden dim — must match thai.pth checkpoint.
     _OCR_RESNET_OUTPUT_CHANNEL = 512  # fixed for DTRB ResNet — never changes
     yaml_path = MODELS_DIR / "ocr_th_custom.yaml"
     yaml_doc = _yaml.dump(
         {
+            "imgH": 32,
+            "imgW": 100,
+            "lang_list": ["th", "en"],  # superset of both Reader() call sites
+            "character": THAI_CHARS,
             "network_params": {
                 "input_channel":  1,
                 "output_channel": _OCR_RESNET_OUTPUT_CHANNEL,
                 "hidden_size":    OCR_HIDDEN_SIZE,
             },
-            "character": THAI_CHARS,
-            "imgH": 32,   # required by EasyOCR 1.7.x: recog_config['imgH'] is read unconditionally
-            "imgW": 100,  # required by EasyOCR 1.7.x: recog_config['imgW'] is read unconditionally
         },
-        allow_unicode=True,   # write Thai chars as-is, not \uXXXX
+        allow_unicode=True,   # write Thai chars verbatim, not \uXXXX
         default_flow_style=False,
         sort_keys=False,
     )
