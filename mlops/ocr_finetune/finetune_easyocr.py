@@ -307,6 +307,37 @@ def finetune(lmdb_train: str, lmdb_val: str, output_dir: str,
         yaml_path, _OCR_RESNET_OUTPUT_CHANNEL, OCR_HIDDEN_SIZE, len(THAI_CHARS),
     )
 
+    # ── Write ocr_th_custom.py architecture stub ──────────────────────────────
+    # EasyOCR 1.7.x custom model loading calls:
+    #   sys.path.insert(0, user_network_directory)
+    #   model_pkg = importlib.import_module('ocr_th_custom')   ← needs this .py
+    #   model = model_pkg.Model(input_channel, output_channel, hidden_size, num_class)
+    #
+    # Our weights use the DTRB TPS+ResNet+BiLSTM+Attn architecture — the same
+    # as EasyOCR's built-in generation2 — so we simply re-export that Model.
+    # The fallback chain handles different EasyOCR packaging layouts.
+    py_path = MODELS_DIR / "ocr_th_custom.py"
+    py_path.write_text(
+        '"""\n'
+        'ocr_th_custom.py — EasyOCR user_network_directory architecture stub.\n'
+        'Re-exports EasyOCR generation2 (DTRB TPS+ResNet+BiLSTM+Attn) Model.\n'
+        '"""\n'
+        "try:\n"
+        "    from easyocr.model import Model\n"
+        "except ImportError:\n"
+        "    try:\n"
+        "        from easyocr.model.vgg_model import Model\n"
+        "    except ImportError:\n"
+        "        import os, sys as _sys\n"
+        '        _dtrb = os.getenv("DTRB_DIR", "/opt/deep-text-recognition-benchmark")\n'
+        "        if _dtrb not in _sys.path:\n"
+        "            _sys.path.insert(0, _dtrb)\n"
+        "        from model import Model\n"
+        '\n__all__ = ["Model"]\n',
+        encoding="utf-8",
+    )
+    log.info("[OCR] Architecture stub written: %s", py_path)
+
     sentinel = MODELS_DIR / "reload.sentinel"
     sentinel.touch()
     log.info("Sentinel touched → worker will reload OCR model")
