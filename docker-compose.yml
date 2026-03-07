@@ -218,12 +218,28 @@ services:
       # CUDA_VISIBLE_DEVICES: ถ้ามี 2 GPU → ใช้ GPU 1, production ใช้ GPU 0
       # ถ้ามี 1 GPU → ใช้ร่วมกัน (batch เล็กป้องกัน OOM)
       - CUDA_VISIBLE_DEVICES=${TRAINER_GPU:-0}
+      # ── Auto-restart config ──────────────────────────────────────────────
+      # COMPOSE_PROJECT_NAME must match the Docker Compose project name on the
+      # host (default = parent directory name, e.g. "alpr_system_v2").
+      # worker_restart.py uses this to scope container discovery to THIS stack,
+      # preventing accidental restarts of other Compose stacks on the same host.
+      - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-alpr_system_v2}
+      # Name of the Compose service to restart after each model deploy.
+      - DOCKER_WORKER_SERVICE=worker-gpu-1
+      # Graceful stop timeout (s) before Docker sends SIGKILL.
+      - WORKER_RESTART_TIMEOUT=30
     volumes:
       - ./mlops:/app/mlops:ro        # source code (read-only)
       - ./models:/models           # shared models dir กับ production worker
       - ./storage:/storage        # training data
       - trainer_data:/data           # celerybeat schedule
       - easyocr_models:/root/.EasyOCR  # persist downloaded EasyOCR base models
+      # ── Docker socket — required for worker_restart.py ───────────────────
+      # Grants this container the ability to restart the inference workers via
+      # the Docker API.  Mount is read-write (Docker SDK needs it) but access
+      # is limited to trainer-worker only.  Do NOT add this mount to the
+      # inference workers (worker-gpu-1).
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - redis
       - postgres

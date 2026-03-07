@@ -48,4 +48,31 @@ def run_ocr_finetune(self, limit: int = 7000, epochs: int = 10):
         return {"ok": False, "step": "finetune"}
 
     log.info("[OCR] ✅ Pipeline complete. Model at /models/ocr_th_custom.pth")
-    return {"ok": True, "lmdb_dir": str(lmdb_dir), "output_dir": str(output_dir)}
+
+    # ── Restart inference workers so they load the new OCR model ──────────────
+    # The fine-tuning pipeline has deployed:
+    #   /models/ocr_th_custom.pth  — DTRB fine-tuned weights
+    #   /models/ocr_th_custom.yaml — EasyOCR architecture config
+    # Workers only load these files on startup (PlateOCR.__init__).
+    # Restarting the containers forces an immediate reload with zero manual steps.
+    restart_result: dict = {"ok": False, "error": "not_attempted"}
+    try:
+        from mlops.tasks.worker_restart import restart_inference_workers
+        restart_result = restart_inference_workers()
+        log.info("[OCR] Worker restart result: %s", restart_result)
+    except Exception as _exc:
+        # Non-fatal — the sentinel watcher (worker/start.sh) will still detect
+        # the new reload.sentinel within 30 s and trigger a graceful reload.
+        restart_result = {"ok": False, "error": str(_exc)}
+        log.warning(
+            "[OCR] Docker restart failed (non-fatal): %s.  "
+            "Workers will reload via sentinel watcher within 30 s.",
+            _exc,
+        )
+
+    return {
+        "ok": True,
+        "lmdb_dir": str(lmdb_dir),
+        "output_dir": str(output_dir),
+        "restart": restart_result,
+    }

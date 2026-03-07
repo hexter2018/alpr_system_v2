@@ -127,9 +127,26 @@ def validate_and_deploy(
             }, ensure_ascii=False, indent=2)
         )
 
-        # ----- Touch sentinel file → production worker reload -----
+        # ----- Touch sentinel file (backward-compat / monitoring) -----
         SENTINEL_FILE.touch()
         log.info("[MLOps] Sentinel file touched: %s", SENTINEL_FILE)
+
+        # ----- Restart inference workers via Docker socket -----
+        # Immediately restarts all worker-gpu containers so they pick up the
+        # new YOLO engine on next start.sh initialisation.  Rolling restart
+        # (3 s stagger) keeps at least 2 of 3 replicas handling traffic.
+        try:
+            from mlops.tasks.worker_restart import restart_inference_workers
+            restart_result = restart_inference_workers()
+            log.info("[MLOps] Worker restart result: %s", restart_result)
+        except Exception as _restart_exc:
+            # Non-fatal — the sentinel watcher will still trigger a reload
+            # within 30 s.  Log and continue so the deploy is not rolled back.
+            log.warning(
+                "[MLOps] Docker restart failed (non-fatal): %s.  "
+                "Workers will reload via sentinel watcher within 30 s.",
+                _restart_exc,
+            )
 
         # ----- Mark samples ว่าใช้แล้ว (เฉพาะ deploy สำเร็จ) -----
         deployed_ids = _mark_samples_used(sample_ids)

@@ -9,3 +9,4 @@ opencv-python-headless>=4.8.0
 easyocr>=1.7.1
 torch>=2.1.0
 torchvision>=0.16.0
+docker>=6.1.0  # Python Docker SDK — used by worker_restart.py via /var/run/docker.sock

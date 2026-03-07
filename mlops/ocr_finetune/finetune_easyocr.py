@@ -51,6 +51,8 @@ step; --character is still passed so the softmax head is correctly sized.
 import argparse, logging, os, shutil, subprocess, sys
 from pathlib import Path
 
+import yaml as _yaml  # PyYAML — already in mlops/requirements.txt
+
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -262,16 +264,36 @@ def finetune(lmdb_train: str, lmdb_val: str, output_dir: str,
     # EasyOCR reads {user_network_directory}/{recog_network}.yaml to determine
     # the network architecture.  Without this file the Reader falls back to its
     # built-in model catalogue and ignores the custom .pth entirely.
+    #
+    # Architecture notes:
+    #   output_channel  = ResNet backbone output feature channels.
+    #                     DTRB ResNet always outputs 512 regardless of hidden_size;
+    #                     this is NOT the same as hidden_size and must not change.
+    #   hidden_size     = BiLSTM hidden dimension.
+    #                     Must match the pretrained thai.pth (512).
+    #   character       = Vocabulary string — len() gives num output classes.
+    #                     Use PyYAML (allow_unicode=True) so Thai chars are
+    #                     written verbatim instead of escaped \uXXXX sequences.
+    _OCR_RESNET_OUTPUT_CHANNEL = 512  # fixed for DTRB ResNet — never changes
     yaml_path = MODELS_DIR / "ocr_th_custom.yaml"
-    yaml_content = (
-        "network_params:\n"
-        "  input_channel: 1\n"
-        f"  output_channel: {OCR_HIDDEN_SIZE}\n"
-        f"  hidden_size: {OCR_HIDDEN_SIZE}\n"
-        f"character: {repr(THAI_CHARS)}\n"
+    yaml_doc = _yaml.dump(
+        {
+            "network_params": {
+                "input_channel":  1,
+                "output_channel": _OCR_RESNET_OUTPUT_CHANNEL,
+                "hidden_size":    OCR_HIDDEN_SIZE,
+            },
+            "character": THAI_CHARS,
+        },
+        allow_unicode=True,   # write Thai chars as-is, not \uXXXX
+        default_flow_style=False,
+        sort_keys=False,
     )
-    yaml_path.write_text(yaml_content, encoding="utf-8")
-    log.info("[OCR] YAML config written: %s  (%d chars in vocabulary)", yaml_path, len(THAI_CHARS))
+    yaml_path.write_text(yaml_doc, encoding="utf-8")
+    log.info(
+        "[OCR] YAML config written: %s  (output_channel=%d, hidden_size=%d, vocab=%d chars)",
+        yaml_path, _OCR_RESNET_OUTPUT_CHANNEL, OCR_HIDDEN_SIZE, len(THAI_CHARS),
+    )
 
     sentinel = MODELS_DIR / "reload.sentinel"
     sentinel.touch()
