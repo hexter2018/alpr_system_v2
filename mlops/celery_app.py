@@ -13,6 +13,8 @@ celery_app = Celery(
         "mlops.tasks.yolo_retrain",
         "mlops.tasks.model_deploy",
         "mlops.ocr_finetune.celery_tasks",
+        "mlops.tasks.province_dataset",   # province-band image export
+        "mlops.tasks.province_retrain",   # YOLOv8n-cls training + deploy
     ],
 )
 
@@ -24,12 +26,15 @@ celery_app.conf.update(
     enable_utc=True,
     task_default_queue="training",
     task_routes={
-        "mlops.tasks.check_retrain.check_retrain_trigger": {"queue": "training"},
-        "mlops.tasks.yolo_retrain.export_yolo_dataset":    {"queue": "training"},
-        "mlops.tasks.yolo_retrain.run_yolo_train":         {"queue": "training"},
-        "mlops.tasks.model_deploy.validate_and_deploy":    {"queue": "training"},
-        # OCR fine-tuning pipeline (task name declared in celery_tasks.py)
-        "mlops.tasks.ocr_pipeline.run_ocr_finetune":       {"queue": "training"},
+        "mlops.tasks.check_retrain.check_retrain_trigger":              {"queue": "training"},
+        "mlops.tasks.yolo_retrain.export_yolo_dataset":                 {"queue": "training"},
+        "mlops.tasks.yolo_retrain.run_yolo_train":                      {"queue": "training"},
+        "mlops.tasks.model_deploy.validate_and_deploy":                 {"queue": "training"},
+        # OCR fine-tuning pipeline
+        "mlops.tasks.ocr_pipeline.run_ocr_finetune":                    {"queue": "training"},
+        # Province classifier pipeline
+        "mlops.tasks.province_pipeline.export_province_dataset":        {"queue": "training"},
+        "mlops.tasks.province_pipeline.run_province_train":             {"queue": "training"},
     },
     beat_schedule={
         "check-retrain-trigger": {

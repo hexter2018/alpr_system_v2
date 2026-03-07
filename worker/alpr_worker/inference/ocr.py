@@ -15,6 +15,7 @@ import numpy as np
 import torch
 
 from .provinces import match_province, normalize_province, province_candidates
+from .province_classifier import ProvinceClassifier
 from .postprocess_thai_plate import (
     load_province_prior,
     normalize_plate_text,
@@ -24,6 +25,15 @@ from .postprocess_thai_plate import (
 from .validate import is_valid_plate
 
 log = logging.getLogger(__name__)
+
+# ── Province band split fraction ─────────────────────────────────────────────
+# When the province classifier model exists, the plate image is split at this
+# Y-ratio before inference:
+#   top  (1 - PROVINCE_BAND_FRAC)  → EasyOCR  (plate characters / numbers)
+#   bottom PROVINCE_BAND_FRAC      → YOLOv8-cls (province prediction)
+# Must match the PROVINCE_BAND_FRAC used during dataset export and training.
+_PROVINCE_BAND_FRAC = float(os.getenv("PROVINCE_BAND_FRAC", "0.30"))
+_PLATE_TEXT_FRAC    = 1.0 - _PROVINCE_BAND_FRAC   # default 0.70
 
 # ── Custom fine-tuned OCR model ───────────────────────────────────────────────
 # The MLOps trainer deploys to /models/ocr_th_custom.pth + ocr_th_custom.yaml
@@ -180,6 +190,22 @@ class PlateOCR:
             self.reader = easyocr.Reader(["th", "en"], gpu=use_gpu, verbose=False)
             self.thai_reader = easyocr.Reader(["th"], gpu=use_gpu, verbose=False)
 
+        # ── Province classifier (YOLOv8-cls) ─────────────────────────────────
+        # When province_classifier.pt exists, the plate is split into a top band
+        # (plate characters → EasyOCR) and a bottom band (province → YOLO-cls).
+        # Falls back gracefully to fuzzy-match OCR when model is not deployed.
+        self.province_classifier = ProvinceClassifier()
+        if self.province_classifier.available:
+            log.info(
+                "[OCR] Province classifier active (%d classes) — "
+                "plate will be split %.0f%%/%.0f%% for text/province.",
+                self.province_classifier.num_classes,
+                _PLATE_TEXT_FRAC * 100,
+                _PROVINCE_BAND_FRAC * 100,
+            )
+        else:
+            log.info("[OCR] Province classifier not available — using fuzzy OCR matching.")
+
         self.variant_names = self._load_variant_names()
         self.variant_limit = int(os.getenv("OCR_VARIANT_LIMIT", str(_DEFAULT_VARIANT_LIMIT)))
 
@@ -207,27 +233,76 @@ class PlateOCR:
         if img is None:
             raise RuntimeError(f"Cannot read crop: {crop_path}")
 
+        # ── Image split ───────────────────────────────────────────────────────
+        # When the province classifier is deployed, divide the plate into:
+        #   • ocr_band      (top _PLATE_TEXT_FRAC, default 70%)
+        #                   → EasyOCR reads plate characters without province
+        #                      text bleeding into the transcript.
+        #   • province_band (bottom _PROVINCE_BAND_FRAC, default 30%)
+        #                   → YOLOv8-cls predicts province directly from the
+        #                      visual shape/appearance of the province text.
+        # When the classifier is NOT available (model not yet trained) we
+        # keep the original behaviour: EasyOCR runs on the full plate and
+        # province is extracted via RapidFuzz matching on the detected text.
+        h, w = img.shape[:2]
+        use_classifier = self.province_classifier.available
+
+        if use_classifier:
+            split_y      = max(1, int(h * _PLATE_TEXT_FRAC))
+            ocr_band     = img[:split_y, :]          # top ~70%
+            province_band = img[split_y:, :]          # bottom ~30%
+        else:
+            ocr_band      = img
+            province_band = None
+
+        # ── Plate-text OCR variants ───────────────────────────────────────────
         variant_results: List[Dict[str, Any]] = []
-        for variant_name, variant_img in self._build_variants(img):
+        for variant_name, variant_img in self._build_variants(ocr_band):
             detections = self.reader.readtext(variant_img, detail=1, allowlist=_THAI_ALLOWLIST)
             candidate = self._evaluate_variant(variant_name, detections)
             variant_results.append(candidate)
 
-        topline_variant = self._topline_roi_pass(img)
+        topline_variant = self._topline_roi_pass(ocr_band)
         if topline_variant:
             variant_results.append(topline_variant)
 
         aggregated = self._aggregate_plate_candidates(variant_results)
         best = aggregated["best"]
 
-        roi_province = self._province_roi_pass(img)
-        line_province = self._province_line_pass(img)
-        province_info = self._aggregate_province_candidates(
-            variant_results,
-            roi_province=roi_province,
-            line_texts=line_province["texts"],
-        )
-        final_province = province_info["province"]
+        # ── Province detection ────────────────────────────────────────────────
+        if use_classifier and province_band is not None and province_band.size > 0:
+            # Primary path: YOLO-cls on the pre-cropped province band.
+            # No text recognition needed — the model reads visual patterns.
+            cls_province, cls_conf = self.province_classifier.predict(province_band)
+            cls_top_k = self.province_classifier.top_k(province_band, k=3)
+
+            province_info = {
+                "province":          cls_province,
+                "candidates":        [
+                    {"name": name, "score": round(conf * 100, 1)}
+                    for name, conf in cls_top_k
+                ] if cls_top_k else (
+                    [{"name": cls_province, "score": round(cls_conf * 100, 1)}]
+                    if cls_province else []
+                ),
+                "line_province":     cls_province,
+                "line_province_score": round(cls_conf * 100, 1),
+                "source":            "province_classifier",
+            }
+            final_province = cls_province
+            log.debug(
+                "[OCR] Province classifier: %r  conf=%.3f", cls_province, cls_conf
+            )
+        else:
+            # Fallback path: OCR province ROI + RapidFuzz matching.
+            roi_province  = self._province_roi_pass(img)
+            line_province = self._province_line_pass(img)
+            province_info = self._aggregate_province_candidates(
+                variant_results,
+                roi_province=roi_province,
+                line_texts=line_province["texts"],
+            )
+            final_province = province_info["province"]
 
         flags: List[str] = []
         if best["consensus_ratio"] < self.consensus_min or best["margin_ratio"] < self.margin_min:
@@ -284,7 +359,7 @@ class PlateOCR:
                 "line_province": province_info.get("line_province", ""),
                 "line_province_score": province_info.get("line_province_score", 0.0),
                 "roi_province": roi_province,
-                "province_source": province_info.get("source", ""),
+                "province_source": province_info.get("source", "ocr_fuzzy"),
                 "plate_candidates": plate_candidates[: self.top_k],
                 "province_candidates": province_info["candidates"][: self.top_k],
                 "plate_suggestions": aggregated.get("suggestions", []),

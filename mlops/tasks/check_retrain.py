@@ -2,12 +2,14 @@
 mlops/tasks/check_retrain.py
 ============================
 Celery Beat task: เช็ค feedback_samples threshold ทุก 1 ชั่วโมง
-ถ้าครบ threshold → trigger YOLO retrain + OCR finetune พร้อมกัน (parallel)
+ถ้าครบ threshold → trigger YOLO retrain + OCR finetune + Province classifier
+                   พร้อมกัน (parallel) บน queue "training"
 
 กฎเหล็ก:
   - ทำงานใน queue "training" เท่านั้น → production ไม่กระทบ
   - ถ้า error → log + หยุดเงียบ production ทำงานต่อด้วยโมเดลเดิม
-  - OCR_RETRAIN_THRESHOLD แยกจาก RETRAIN_THRESHOLD ได้ (default: เท่ากัน)
+  - OCR_RETRAIN_THRESHOLD / PROVINCE_RETRAIN_THRESHOLD
+    แยกจาก RETRAIN_THRESHOLD ได้ (default: เท่ากัน)
 """
 import os
 import logging
@@ -23,11 +25,13 @@ log = logging.getLogger(__name__)
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+psycopg2://alpr:alpr@postgres:5432/alpr")
 
 # ── Thresholds ──────────────────────────────────────────────────────────────
-# RETRAIN_THRESHOLD     : จำนวน samples ขั้นต่ำที่จะ trigger YOLO retrain
-# OCR_RETRAIN_THRESHOLD : จำนวน samples ขั้นต่ำที่จะ trigger OCR finetune
-#   (default: ใช้ค่าเดียวกับ RETRAIN_THRESHOLD เพื่อ trigger ทั้งคู่พร้อมกัน)
-RETRAIN_THRESHOLD     = int(os.getenv("RETRAIN_THRESHOLD",     "1000"))
-OCR_RETRAIN_THRESHOLD = int(os.getenv("OCR_RETRAIN_THRESHOLD", str(RETRAIN_THRESHOLD)))
+# RETRAIN_THRESHOLD          : จำนวน samples ขั้นต่ำที่จะ trigger YOLO retrain
+# OCR_RETRAIN_THRESHOLD      : จำนวน samples ขั้นต่ำที่จะ trigger OCR finetune
+# PROVINCE_RETRAIN_THRESHOLD : จำนวน samples ขั้นต่ำที่จะ trigger Province classifier
+#   (defaults: ใช้ค่าเดียวกับ RETRAIN_THRESHOLD เพื่อ trigger ทุก pipeline พร้อมกัน)
+RETRAIN_THRESHOLD          = int(os.getenv("RETRAIN_THRESHOLD",          "1000"))
+OCR_RETRAIN_THRESHOLD      = int(os.getenv("OCR_RETRAIN_THRESHOLD",      str(RETRAIN_THRESHOLD)))
+PROVINCE_RETRAIN_THRESHOLD = int(os.getenv("PROVINCE_RETRAIN_THRESHOLD", str(RETRAIN_THRESHOLD)))
 
 LOCK_FILE = "/tmp/mlops_training.lock"
 
@@ -44,9 +48,10 @@ _Session = sessionmaker(bind=_engine, autoflush=False, autocommit=False)
 def check_retrain_trigger(self):
     """
     เช็คจำนวน feedback_samples ที่ยังไม่ได้ train
-    ถ้า >= RETRAIN_THRESHOLD     → dispatch export_yolo_dataset  (YOLO pipeline)
-    ถ้า >= OCR_RETRAIN_THRESHOLD → dispatch run_ocr_finetune     (OCR pipeline)
-    ทั้งสองรัน parallel กันบน queue "training"
+    ถ้า >= RETRAIN_THRESHOLD          → dispatch export_yolo_dataset   (YOLO pipeline)
+    ถ้า >= OCR_RETRAIN_THRESHOLD      → dispatch run_ocr_finetune      (OCR pipeline)
+    ถ้า >= PROVINCE_RETRAIN_THRESHOLD → dispatch run_province_train    (Province classifier)
+    ทุก pipeline รัน parallel กันบน queue "training"
     """
     log.info(
         "[MLOps] Checking retrain trigger (yolo_threshold=%d, ocr_threshold=%d)...",
@@ -74,10 +79,11 @@ def check_retrain_trigger(self):
 
         triggered = []
 
-        yolo_ready = count >= RETRAIN_THRESHOLD
-        ocr_ready  = count >= OCR_RETRAIN_THRESHOLD
+        yolo_ready     = count >= RETRAIN_THRESHOLD
+        ocr_ready      = count >= OCR_RETRAIN_THRESHOLD
+        province_ready = count >= PROVINCE_RETRAIN_THRESHOLD
 
-        if yolo_ready or ocr_ready:
+        if yolo_ready or ocr_ready or province_ready:
             # สร้าง lock file ก่อน dispatch — ป้องกัน beat check รอบถัดไป re-trigger
             with open(LOCK_FILE, "w") as f:
                 f.write(datetime.now(timezone.utc).isoformat())
@@ -105,6 +111,18 @@ def check_retrain_trigger(self):
                 queue="training",
             )
             triggered.append("ocr_finetune")
+
+        if province_ready:
+            log.info(
+                "[MLOps] Province threshold reached (%d >= %d). Dispatching run_province_train...",
+                count, PROVINCE_RETRAIN_THRESHOLD,
+            )
+            from mlops.tasks.province_retrain import run_province_train
+            run_province_train.apply_async(
+                kwargs={"limit": count},
+                queue="training",
+            )
+            triggered.append("province_retrain")
 
         if triggered:
             return {
