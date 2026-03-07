@@ -24,8 +24,18 @@ The LMDB training format only needs the plate *text* label; province is not
 part of the OCR target.  However province is written to the human-readable
 data_list.txt manifest so it can be inspected.  All three NULL-like values are
 normalised to the empty string '' before any write, ensuring no crash occurs.
+
+Minimum sample requirements
+----------------------------
+DTRB's DataLoader requires at least 1 sample per split.  We enforce:
+  - MIN_TRAIN_SAMPLES (default 10) in the train split
+  - MIN_VAL_SAMPLES   (default 1)  in the val split
+If either threshold is not met, export_to_lmdb() returns False with a clear
+error log rather than letting PyTorch crash with a confusing num_samples=0
+message deep inside the training script.
 """
 import argparse, io, logging, os, sys
+from collections import Counter
 from pathlib import Path
 from typing import Optional
 
@@ -43,6 +53,13 @@ _Session = sessionmaker(bind=_engine, autoflush=False, autocommit=False)
 
 # Sentinel values that mean "this plate has no province"
 _NO_PROVINCE_SENTINELS = frozenset({"", "N/A", "n/a", "NA", "na", "none", "None", "null", "NULL"})
+
+# Minimum samples required in each split before we allow DTRB to start.
+# These are intentionally conservative — DTRB will crash with a PyTorch
+# DataLoader error if either split has 0 samples, and training is meaningless
+# below a handful of examples.
+MIN_TRAIN_SAMPLES = int(os.getenv("OCR_MIN_TRAIN_SAMPLES", "10"))
+MIN_VAL_SAMPLES   = int(os.getenv("OCR_MIN_VAL_SAMPLES",   "1"))
 
 
 def _safe_province(value: Optional[str]) -> str:
@@ -97,16 +114,67 @@ def export_to_lmdb(output_dir: Path, limit: int = 10000, val_split: float = 0.1)
         for r in rows:
             r["corrected_province"] = _safe_province(r.get("corrected_province"))
 
-        # Filter: รูปต้องมีอยู่จริง
-        valid = [r for r in rows
-                 if r.get("crop_path") and Path(r["crop_path"]).exists()]
-        log.info("Valid (file exists): %d / %d", len(valid), len(rows))
+        # ── Filter: image file must actually exist on disk ───────────────────
+        # Log every skip individually so path/mount issues are immediately
+        # visible in the worker log rather than silently inflating the
+        # "skipped" counter.
+        valid = []
+        skip_reasons: Counter = Counter()
+
+        for r in rows:
+            crop = r.get("crop_path")
+
+            # 1. Missing crop_path column value
+            if not crop:
+                log.warning(
+                    "Skip id=%s: crop_path is NULL or empty in DB",
+                    r.get("id"),
+                )
+                skip_reasons["null_crop_path"] += 1
+                continue
+
+            p = Path(crop)
+
+            # 2. Path does not exist inside this container
+            if not p.exists():
+                log.warning(
+                    "Skip id=%s: file not found on disk — '%s'  "
+                    "(check volume mount; DB stores path as seen by the API container)",
+                    r.get("id"), crop,
+                )
+                skip_reasons["file_not_found"] += 1
+                continue
+
+            valid.append(r)
+
+        log.info(
+            "Valid (file exists): %d / %d  |  skipped breakdown: %s",
+            len(valid), len(rows), dict(skip_reasons),
+        )
+
+        # ── Diagnose the most common skip reason ────────────────────────────
+        if skip_reasons["file_not_found"] > 0:
+            # Surface a concrete example path to help diagnose mount issues.
+            example = next(
+                r["crop_path"] for r in rows
+                if r.get("crop_path") and not Path(r["crop_path"]).exists()
+            )
+            log.error(
+                "⚠️  %d files were not found on disk.  Example missing path: '%s'\n"
+                "   Common causes:\n"
+                "     • The crops volume is not mounted into the trainer-worker container.\n"
+                "     • The DB stores paths relative to the API container (e.g. /storage/crops/…)\n"
+                "       but the trainer mounts the same volume at a different prefix.\n"
+                "   Fix: ensure the crops volume is mounted at the same path in both containers,\n"
+                "   or set STORAGE_DIR so that Path(crop_path) resolves correctly.",
+                skip_reasons["file_not_found"], example,
+            )
 
         if not valid:
-            log.error("No valid samples. Aborting.")
+            log.error("No valid samples after filtering. Aborting export.")
             return False
 
-        # Log how many special (no-province) plates are in the export
+        # Log special (no-province) plate count for visibility
         no_province_count = sum(1 for r in valid if not r["corrected_province"])
         if no_province_count:
             log.info(
@@ -115,9 +183,36 @@ def export_to_lmdb(output_dir: Path, limit: int = 10000, val_split: float = 0.1)
                 no_province_count, len(valid),
             )
 
-        n_val      = max(1, int(len(valid) * val_split))
+        # ── Train / val split ────────────────────────────────────────────────
+        # Always keep at least MIN_VAL_SAMPLES in the val split so that
+        # DTRB's DataLoader never receives num_samples=0.
+        n_val      = max(MIN_VAL_SAMPLES, int(len(valid) * val_split))
+        # Guard: we also need enough samples left over for training.
+        n_train    = len(valid) - n_val
+
+        if n_train < MIN_TRAIN_SAMPLES:
+            log.error(
+                "Insufficient training samples after split: train=%d (need >=%d), val=%d.  "
+                "Total valid=%d.  Aborting — increase the feedback dataset before retraining.",
+                n_train, MIN_TRAIN_SAMPLES, n_val, len(valid),
+            )
+            return False
+
+        if n_val < MIN_VAL_SAMPLES:
+            # Should not happen given the max() above, but be explicit.
+            log.error(
+                "Insufficient validation samples: val=%d (need >=%d).  Aborting.",
+                n_val, MIN_VAL_SAMPLES,
+            )
+            return False
+
         train_rows = valid[:-n_val]
         val_rows   = valid[-n_val:]
+
+        log.info(
+            "Split: train=%d  val=%d  (val_split=%.0f%%)",
+            len(train_rows), len(val_rows), val_split * 100,
+        )
 
         # Manifest (human-readable) — tab-separated: crop_path, plate_text, province
         # Province column is '' for special plates; consumers must tolerate empty fields.
