@@ -13,34 +13,40 @@ Fine-tune EasyOCR Thai model using deep-text-recognition-benchmark
     - base model: EasyOCR pretrained Thai (/root/.EasyOCR/model/th.pth หรือ custom)
     - output: best_accuracy.pth → deploy ไปที่ /models/ocr_th_custom.pth
 
-Architecture alignment with EasyOCR thai.pth
+WHY --sensitive IS NOT PASSED
+------------------------------
+DTRB's train.py contains this hardcoded block:
+
+    if opt.sensitive:
+        opt.character = string.printable[:-6]   # 94 ASCII printable chars
+
+This unconditionally replaces opt.character with ASCII-only content,
+silently discarding every Thai character we pass via --character.  The
+--sensitive flag was originally designed for case-sensitive ASCII models
+(ASTER benchmark); it is meaningless and destructive for Thai.
+
+Fix: do NOT pass --sensitive.  Case sensitivity for our A-Z characters is
+handled by including both uppercase and lowercase explicitly in THAI_CHARS.
+The Dockerfile patches dataset.py for PyTorch 2.x compatibility; the
+sensitive block in train.py is patched via sed in the same RUN layer
+(see Dockerfile).
+
+ARCHITECTURE ALIGNMENT WITH EasyOCR thai.pth
 ---------------------------------------------
-EasyOCR's pretrained Thai model (thai.pth / th.pth) was trained with
-hidden_size=512.  This means its BiLSTM layers have weight matrices shaped
-[4*512, input] = [2048, *].
+EasyOCR's pretrained Thai model was trained with hidden_size=512.
+DTRB defaults to 256, which causes a RuntimeError on every BiLSTM weight
+even with strict=False (size mismatches are always fatal in load_state_dict).
+We pass --hidden_size 512 to match the checkpoint exactly.
+Override via OCR_HIDDEN_SIZE env var if you use a different base model.
 
-DTRB's --hidden_size default is 256, producing [4*256, input] = [1024, *]
-matrices.  PyTorch's load_state_dict rejects *size* mismatches unconditionally
-— strict=False only allows missing or extra keys, not dimension differences.
-The result is a RuntimeError listing every SequenceModeling weight.
-
-Fix: always pass --hidden_size 512 so DTRB constructs a model whose BiLSTM
-dimensions match the pretrained checkpoint exactly.
-
-If you switch to a different base model with a different hidden size, set the
-OCR_HIDDEN_SIZE environment variable accordingly.
-
-DTRB character filtering
+DTRB CHARACTER FILTERING
 -------------------------
-By default DTRB applies re.search(f'[^{opt.character}]', label.lower()) to
-every sample and discards any label containing out-of-vocabulary characters.
-Because the regex operates on label.lower(), uppercase plate prefixes (TC, QC)
-are downcased before matching.  Our charset already includes a-z, but edge
-cases in regex compilation with multi-byte Thai characters can silently drop
-valid samples, reducing a split to 0 and crashing the DataLoader.
-
-Fix: pass --data_filtering_off.  Our labels are human-verified; the charset is
-still passed via --character so the softmax output head is correctly sized.
+DTRB filters samples whose label contains chars outside --character by running
+re.search(f'[^{opt.character}]', label.lower()).  The .lower() means uppercase
+plate prefixes (TC, QC) are downcased before matching — edge cases in the
+compiled regex with multi-byte Thai chars can silently drop valid samples.
+Our labels are human-verified.  We pass --data_filtering_off to skip this
+step; --character is still passed so the softmax head is correctly sized.
 """
 import argparse, logging, os, shutil, subprocess, sys
 from pathlib import Path
@@ -56,9 +62,7 @@ BASE_OCR_MODEL = Path(os.getenv(
 MODELS_DIR = Path(os.getenv("MODELS_DIR", "/models"))
 
 # Must match the hidden_size used when the base model was originally trained.
-# EasyOCR's official Thai model (thai.pth / th.pth) uses 512.
-# Override via env var if you supply a custom base model trained with a
-# different hidden size.
+# EasyOCR's official Thai model (thai.pth / th.pth) was trained with 512.
 OCR_HIDDEN_SIZE = int(os.getenv("OCR_HIDDEN_SIZE", "512"))
 
 _CRAFT_MODEL_NAME = "craft_mlt_25k.pth"
@@ -77,11 +81,13 @@ def _build_charset() -> str:
         "ฤฦาิีึืุูเแโใไำ็่้๊๋์ํ๎"
         # Arabic digits
         "0123456789"
-        # Latin uppercase A–Z: required for TC / QC test-car plate prefixes
+        # Latin uppercase A–Z: required for TC / QC test-car plate prefixes.
+        # We do NOT rely on --sensitive for case handling — see module docstring.
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         # Latin lowercase a–z: DTRB applies the charset filter to label.lower(),
-        # so uppercase chars are downcased before matching — a-z must be present.
-        # Also covers any EasyOCR pre-normalisation lowercase emission.
+        # so uppercase chars are downcased before matching.  a-z must be present
+        # to avoid OOV errors even though --data_filtering_off is set, because
+        # the Attn decoder's output vocabulary is built from this string.
         "abcdefghijklmnopqrstuvwxyz"
         # Space: separator in formatted plates (e.g. "TC 3337", "กข 1234")
         " "
@@ -104,18 +110,11 @@ THAI_CHARS: str = _build_charset()
 
 
 def _ensure_base_model(base_model_path: Path) -> "Path | None":
-    """Ensure the EasyOCR Thai recognition model exists, downloading if needed.
-
-    Returns the resolved Path (which may differ in name from base_model_path
-    if EasyOCR downloaded 'thai.pth' instead of 'th.pth'), or None on failure.
-    """
+    """Ensure the EasyOCR Thai recognition model exists, downloading if needed."""
     if base_model_path.exists():
         return base_model_path
 
-    log.info(
-        "[OCR] Base model not found at %s — downloading via EasyOCR...",
-        base_model_path,
-    )
+    log.info("[OCR] Base model not found at %s — downloading via EasyOCR...", base_model_path)
     try:
         import easyocr  # type: ignore
 
@@ -130,13 +129,10 @@ def _ensure_base_model(base_model_path: Path) -> "Path | None":
 
         if base_model_path.exists():
             log.info("[OCR] ✅ Base model ready: %s  (%d MiB)",
-                     base_model_path,
-                     base_model_path.stat().st_size // (1024 * 1024))
+                     base_model_path, base_model_path.stat().st_size // (1024 * 1024))
             return base_model_path
 
-        # EasyOCR may have saved the file as thai.pth instead of th.pth.
-        # Exclude craft_mlt_25k.pth — that is the text detector, not the
-        # recognition model, and has a completely different architecture.
+        # EasyOCR may have saved the file as thai.pth instead of th.pth
         candidates = [
             p for p in sorted(model_dir.glob("*.pth"))
             if p.name != _CRAFT_MODEL_NAME
@@ -172,53 +168,46 @@ def finetune(lmdb_train: str, lmdb_val: str, output_dir: str,
         log.error("[OCR] Base model unavailable — cannot fine-tune without pretrained weights.")
         return False
     log.info("[OCR] Using base model: %s", resolved_base_model)
-    log.info("[OCR] hidden_size=%d (must match the architecture the base model was trained with)", OCR_HIDDEN_SIZE)
+    log.info("[OCR] hidden_size=%d", OCR_HIDDEN_SIZE)
 
-    # Write charset file for reference / debugging
     charset_path = output_path / "charset.txt"
     charset_path.write_text(THAI_CHARS, encoding="utf-8")
     log.info("Charset: %d characters  (Thai + digits + A-Z + a-z + space)", len(THAI_CHARS))
 
-    num_iter  = epochs * 1000
-    exp_name  = "th_finetune"
+    num_iter      = epochs * 1000
+    exp_name      = "th_finetune"
     dtrb_save_dir = output_path / "saved_models" / exp_name
 
     cmd = [
         "python", str(DTRB_DIR / "train.py"),
-        "--train_data",      lmdb_train,
-        "--valid_data",      lmdb_val,
-        "--select_data",     "/",
-        "--batch_ratio",     "1.0",
-        "--Transformation",  "TPS",
+        "--train_data",       lmdb_train,
+        "--valid_data",       lmdb_val,
+        "--select_data",      "/",
+        "--batch_ratio",      "1.0",
+        "--Transformation",   "TPS",
         "--FeatureExtraction","ResNet",
-        "--SequenceModeling","BiLSTM",
-        "--Prediction",      "Attn",
-        "--saved_model",     str(resolved_base_model),
-        "--FT",              # fine-tune: loads weights with strict=False
-        "--exp_name",        exp_name,
-        "--num_iter",        str(num_iter),
-        "--batch_size",      str(batch_size),
-        "--workers",         "2",
-        "--character",       THAI_CHARS,
-        "--sensitive",
-        "--imgH",            "32",
-        "--imgW",            "100",
-        "--lr",              "1e-4",
-        # ── Architecture: must match the pretrained checkpoint ───────────────
-        # EasyOCR thai.pth was trained with hidden_size=512.
-        # DTRB default is 256, causing a RuntimeError on every BiLSTM weight
-        # when load_state_dict is called (even with strict=False).
-        "--hidden_size",     str(OCR_HIDDEN_SIZE),
-        # ── Label length cap ─────────────────────────────────────────────────
-        # Thai plates are short; 25 is safe and matches DTRB's default.
-        # Made explicit here so it's visible and auditable.
-        "--batch_max_length","25",
-        # ── Disable character-set filter ─────────────────────────────────────
-        # DTRB filters labels using re.search('[^charset]', label.lower()).
-        # Because it lowercases first, uppercase TC/QC labels can be silently
-        # dropped, collapsing a split to 0 samples → PyTorch num_samples=0.
-        # Our labels are human-verified; filtering adds no value and breaks
-        # edge-case plates.
+        "--SequenceModeling", "BiLSTM",
+        "--Prediction",       "Attn",
+        "--saved_model",      str(resolved_base_model),
+        "--FT",
+        "--exp_name",         exp_name,
+        "--num_iter",         str(num_iter),
+        "--batch_size",       str(batch_size),
+        "--workers",          "2",
+        "--character",        THAI_CHARS,
+        # ── DO NOT pass --sensitive ──────────────────────────────────────────
+        # DTRB's train.py hardcodes:
+        #   if opt.sensitive: opt.character = string.printable[:-6]
+        # This silently replaces our entire Thai charset with 94 ASCII chars.
+        # Case sensitivity for A-Z is handled by including both cases in
+        # THAI_CHARS above.  The Dockerfile patches this line via sed so it
+        # becomes a no-op; but we also omit the flag here as a second defence.
+        # ────────────────────────────────────────────────────────────────────
+        "--imgH",             "32",
+        "--imgW",             "100",
+        "--lr",               "1e-4",
+        "--hidden_size",      str(OCR_HIDDEN_SIZE),
+        "--batch_max_length", "25",
         "--data_filtering_off",
     ]
 
@@ -229,7 +218,7 @@ def finetune(lmdb_train: str, lmdb_val: str, output_dir: str,
 
     result = subprocess.run(
         cmd,
-        cwd=str(output_path),   # DTRB writes saved_models/ relative to cwd
+        cwd=str(output_path),
         env={**os.environ, "CUDA_VISIBLE_DEVICES": device},
     )
 
@@ -237,7 +226,6 @@ def finetune(lmdb_train: str, lmdb_val: str, output_dir: str,
         log.error("Fine-tuning FAILED (rc=%d)", result.returncode)
         return False
 
-    # DTRB saves best_accuracy.pth inside saved_models/{exp_name}/
     best_pt = dtrb_save_dir / "best_accuracy.pth"
     if not best_pt.exists():
         pts = sorted(dtrb_save_dir.glob("*.pth"))
@@ -250,12 +238,10 @@ def finetune(lmdb_train: str, lmdb_val: str, output_dir: str,
             log.error("No .pth model found under %s", dtrb_save_dir)
             return False
 
-    # Deploy to production path
     deploy_path = MODELS_DIR / "ocr_th_custom.pth"
     shutil.copy2(best_pt, deploy_path)
     log.info("✅ OCR model deployed: %s", deploy_path)
 
-    # Touch sentinel → worker reload
     sentinel = MODELS_DIR / "reload.sentinel"
     sentinel.touch()
     log.info("Sentinel touched → worker will reload OCR model")
