@@ -163,11 +163,24 @@ def finetune(lmdb_train: str, lmdb_val: str, output_dir: str,
         log.error("Run: git clone https://github.com/clovaai/deep-text-recognition-benchmark %s", DTRB_DIR)
         return False
 
-    resolved_base_model = _ensure_base_model(BASE_OCR_MODEL)
-    if resolved_base_model is None:
-        log.error("[OCR] Base model unavailable — cannot fine-tune without pretrained weights.")
-        return False
-    log.info("[OCR] Using base model: %s", resolved_base_model)
+    # ── Prefer the previously fine-tuned custom model for incremental training ──
+    # When a custom model already exists (e.g. from the last fine-tuning run),
+    # use it as the starting checkpoint so each training session builds on the
+    # accumulated improvements rather than reverting to the base thai.pth.
+    custom_model = MODELS_DIR / "ocr_th_custom.pth"
+    if custom_model.exists():
+        resolved_base_model: "Path | None" = custom_model
+        log.info(
+            "[OCR] Incremental training: using previously fine-tuned model as base: %s",
+            resolved_base_model,
+        )
+    else:
+        resolved_base_model = _ensure_base_model(BASE_OCR_MODEL)
+        if resolved_base_model is None:
+            log.error("[OCR] Base model unavailable — cannot fine-tune without pretrained weights.")
+            return False
+        log.info("[OCR] Using base model: %s", resolved_base_model)
+
     log.info("[OCR] hidden_size=%d", OCR_HIDDEN_SIZE)
 
     charset_path = output_path / "charset.txt"
@@ -244,6 +257,21 @@ def finetune(lmdb_train: str, lmdb_val: str, output_dir: str,
     deploy_path = MODELS_DIR / "ocr_th_custom.pth"
     shutil.copy2(best_pt, deploy_path)
     log.info("✅ OCR model deployed: %s", deploy_path)
+
+    # ── Write EasyOCR YAML config so workers can load the model ──────────────
+    # EasyOCR reads {user_network_directory}/{recog_network}.yaml to determine
+    # the network architecture.  Without this file the Reader falls back to its
+    # built-in model catalogue and ignores the custom .pth entirely.
+    yaml_path = MODELS_DIR / "ocr_th_custom.yaml"
+    yaml_content = (
+        "network_params:\n"
+        "  input_channel: 1\n"
+        f"  output_channel: {OCR_HIDDEN_SIZE}\n"
+        f"  hidden_size: {OCR_HIDDEN_SIZE}\n"
+        f"character: {repr(THAI_CHARS)}\n"
+    )
+    yaml_path.write_text(yaml_content, encoding="utf-8")
+    log.info("[OCR] YAML config written: %s  (%d chars in vocabulary)", yaml_path, len(THAI_CHARS))
 
     sentinel = MODELS_DIR / "reload.sentinel"
     sentinel.touch()

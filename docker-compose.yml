@@ -111,6 +111,7 @@ services:
     volumes:
       - ./storage:/storage
       - ./models:/models
+      - easyocr_models:/root/.EasyOCR  # persist EasyOCR weights (th.pth) — shared with trainer
     depends_on:
       postgres:
         condition: service_healthy

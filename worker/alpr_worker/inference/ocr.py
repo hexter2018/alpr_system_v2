@@ -25,6 +25,15 @@ from .validate import is_valid_plate
 
 log = logging.getLogger(__name__)
 
+# ── Custom fine-tuned OCR model ───────────────────────────────────────────────
+# The MLOps trainer deploys to /models/ocr_th_custom.pth + ocr_th_custom.yaml
+# after each successful fine-tuning run.  When both files exist the workers use
+# the custom model (loaded via EasyOCR's user_network_directory API); otherwise
+# they fall back to the standard pretrained Thai model.
+_MODELS_DIR = Path(os.getenv("MODELS_DIR", "/models"))
+_CUSTOM_OCR_PTH  = _MODELS_DIR / "ocr_th_custom.pth"
+_CUSTOM_OCR_YAML = _MODELS_DIR / "ocr_th_custom.yaml"
+
 _THAI_DIGIT_MAP = str.maketrans("๐๑๒๓๔๕๖๗๘๙", "0123456789")
 _THAI_ALLOWLIST = "กขฃคฅฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรฤลฦวศษสหฬอฮะาำิีึืุูเแโใไั่้๊๋์ฯ0123456789"
 _THAI_ONLY_ALLOWLIST = "กขฃคฅฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรฤลฦวศษสหฬอฮะาำิีึืุูเแโใไั่้๊๋์ฯ"
@@ -131,8 +140,45 @@ class OCRResult:
 class PlateOCR:
     def __init__(self) -> None:
         use_gpu = torch.cuda.is_available()
-        self.reader = easyocr.Reader(["th", "en"], gpu=use_gpu, verbose=False)
-        self.thai_reader = easyocr.Reader(["th"], gpu=use_gpu, verbose=False)
+
+        if _CUSTOM_OCR_PTH.exists() and _CUSTOM_OCR_YAML.exists():
+            log.info(
+                "[OCR] Loading custom fine-tuned Thai model: %s  (%.1f MiB)",
+                _CUSTOM_OCR_PTH,
+                _CUSTOM_OCR_PTH.stat().st_size / (1024 * 1024),
+            )
+            # EasyOCR loads the YAML from user_network_directory/{recog_network}.yaml
+            # to determine architecture params (hidden_size, output_channel, character).
+            # The .pth weights are loaded from the same directory.
+            self.reader = easyocr.Reader(
+                ["th", "en"],
+                gpu=use_gpu,
+                verbose=False,
+                user_network_directory=str(_MODELS_DIR),
+                recog_network="ocr_th_custom",
+            )
+            self.thai_reader = easyocr.Reader(
+                ["th"],
+                gpu=use_gpu,
+                verbose=False,
+                user_network_directory=str(_MODELS_DIR),
+                recog_network="ocr_th_custom",
+            )
+        else:
+            if _CUSTOM_OCR_PTH.exists() and not _CUSTOM_OCR_YAML.exists():
+                log.warning(
+                    "[OCR] Custom model found at %s but YAML config is missing — "
+                    "falling back to standard EasyOCR Thai model.  "
+                    "Re-run the fine-tuning pipeline to regenerate both files.",
+                    _CUSTOM_OCR_PTH,
+                )
+            else:
+                log.info(
+                    "[OCR] No custom model at %s — using standard EasyOCR Thai model",
+                    _CUSTOM_OCR_PTH,
+                )
+            self.reader = easyocr.Reader(["th", "en"], gpu=use_gpu, verbose=False)
+            self.thai_reader = easyocr.Reader(["th"], gpu=use_gpu, verbose=False)
 
         self.variant_names = self._load_variant_names()
         self.variant_limit = int(os.getenv("OCR_VARIANT_LIMIT", str(_DEFAULT_VARIANT_LIMIT)))
