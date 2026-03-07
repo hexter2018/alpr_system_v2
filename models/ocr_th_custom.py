@@ -1,56 +1,106 @@
 """
 ocr_th_custom.py — EasyOCR user_network_directory architecture stub.
 
-EasyOCR 1.7.x custom model loading:
-  1. sys.path.insert(0, user_network_directory)   ← adds /models/ to sys.path
+EasyOCR 1.7.x custom model loading (recognition.py ~line 160-182):
+  1. sys.path.insert(0, user_network_directory)   <- /models/ added to sys.path
   2. model_pkg = importlib.import_module('ocr_th_custom')
   3. model = model_pkg.Model(input_channel, output_channel, hidden_size, num_class)
+  4. model.load_state_dict(torch.load(model_path, ...))
 
-Our fine-tuned .pth was trained with DTRB TPS+ResNet+BiLSTM+Attn.
-EasyOCR's generic Model class defaults to the VGG (generation1) backbone,
-which does NOT match these weights.  We must explicitly build the generation2
-(ResNet) model.
+WHY A WRAPPER CLASS IS NEEDED
+------------------------------
+EasyOCR calls Model(input_channel, output_channel, hidden_size, num_class) with
+four positional integers.
 
-WHY NOT easyocr.model.Model
-----------------------------
-easyocr.model.Model is the generation1 VGG model.  Importing it here causes
-a state_dict mismatch: the .pth has ResNet keys (ConvNet.conv0_1, layer1…)
-but the VGG model expects flat sequential keys (ConvNet.0, ConvNet.3…).
+DTRB's model.py defines Model(opt) where opt is a Namespace object with
+attributes: Transformation, FeatureExtraction, SequenceModeling, Prediction,
+input_channel, output_channel, hidden_size, num_class.
 
-CORRECT APPROACH
-----------------
-Build the model directly using DTRB's model.py from
-/opt/deep-text-recognition-benchmark, which is the same code used during
-fine-tuning.  This is the only guaranteed-correct architecture match.
+These signatures are incompatible.  This file provides a thin Model class that:
+  1. Accepts EasyOCR's (input_channel, output_channel, hidden_size, num_class) call
+  2. Builds a synthetic opt Namespace with the correct DTRB architecture flags
+  3. Delegates to DTRB's Model(opt) internally
 
-Fallback chain:
-  1. DTRB model.py            — the canonical source (always correct)
-  2. easyocr.model.STRModel   — EasyOCR 1.7.x generation2 wrapper (if present)
-  3. easyocr.model.Model      — last resort; may mismatch for older easyocr builds
+ARCHITECTURE (must match the fine-tuned .pth exactly)
+------------------------------------------------------
+  Transformation    = TPS
+  FeatureExtraction = ResNet
+  SequenceModeling  = BiLSTM
+  Prediction        = Attn
+
+These match the flags used in finetune_easyocr.py:
+  --Transformation TPS --FeatureExtraction ResNet
+  --SequenceModeling BiLSTM --Prediction Attn
 """
 
 import os
 import sys
+import types
 
-# ── Primary: DTRB model.py ────────────────────────────────────────────────────
-# This is the exact code used during fine-tuning so the architecture is
-# guaranteed to match the saved weights.
+import torch.nn as nn
+
+# Ensure DTRB is on sys.path
 _DTRB = os.getenv("DTRB_DIR", "/opt/deep-text-recognition-benchmark")
 if _DTRB not in sys.path:
     sys.path.insert(0, _DTRB)
 
-try:
-    from model import Model  # DTRB model.py  (TPS+ResNet+BiLSTM+Attn)
-except ImportError:
-    # ── Fallback 1: EasyOCR generation2 STRModel ─────────────────────────────
-    # Present in some easyocr builds as easyocr.model.STRModel
-    try:
-        from easyocr.model import STRModel as Model  # type: ignore
-    except ImportError:
-        # ── Fallback 2: easyocr.model.Model ──────────────────────────────────
-        # WARNING: this is the VGG generation1 model and will raise a
-        # state_dict mismatch at load time if the .pth uses ResNet weights.
-        # Only reaches here if DTRB is not cloned and easyocr has no STRModel.
-        from easyocr.model import Model  # type: ignore
+
+def _make_opt(input_channel: int, output_channel: int,
+              hidden_size: int, num_class: int) -> types.SimpleNamespace:
+    """Build a minimal DTRB opt Namespace from EasyOCR's four positional args."""
+    opt = types.SimpleNamespace()
+    # Architecture flags — must match finetune_easyocr.py training command
+    opt.Transformation    = "TPS"
+    opt.FeatureExtraction = "ResNet"
+    opt.SequenceModeling  = "BiLSTM"
+    opt.Prediction        = "Attn"
+    # Numeric params passed in by EasyOCR from the YAML network_params
+    opt.input_channel  = input_channel
+    opt.output_channel = output_channel
+    opt.hidden_size    = hidden_size
+    opt.num_class      = num_class
+    # TPS spatial transformer params (DTRB defaults, match EasyOCR Thai model)
+    opt.num_fiducial = 20
+    opt.imgH = 32
+    opt.imgW = 100
+    return opt
+
+
+class Model(nn.Module):
+    """
+    Adapter: bridges EasyOCR's 4-arg call convention to DTRB's opt-based Model.
+
+    EasyOCR calls:  Model(input_channel, output_channel, hidden_size, num_class)
+    DTRB expects:   Model(opt)  where opt is a Namespace with architecture flags
+
+    The inner _model is a genuine DTRB Model(opt) so its state_dict keys match
+    the fine-tuned .pth checkpoint exactly.
+    """
+
+    def __init__(self, input_channel: int, output_channel: int,
+                 hidden_size: int, num_class: int):
+        super().__init__()
+        opt = _make_opt(input_channel, output_channel, hidden_size, num_class)
+        try:
+            from model import Model as _DTRBModel  # noqa: PLC0415
+        except ImportError as exc:
+            raise ImportError(
+                f"Cannot import DTRB model.py from {_DTRB!r}. "
+                "Ensure DTRB_DIR env var is correct and the repo is cloned there. "
+                "In the mlops container this is /opt/deep-text-recognition-benchmark."
+            ) from exc
+        self._inner = _DTRBModel(opt)
+
+    def forward(self, *args, **kwargs):
+        return self._inner(*args, **kwargs)
+
+    # EasyOCR calls load_state_dict directly on the object returned by Model().
+    # Delegate to the inner DTRB model so key names align with the checkpoint.
+    def load_state_dict(self, state_dict, strict: bool = True):
+        return self._inner.load_state_dict(state_dict, strict=strict)
+
+    def state_dict(self, *args, **kwargs):
+        return self._inner.state_dict(*args, **kwargs)
+
 
 __all__ = ["Model"]
