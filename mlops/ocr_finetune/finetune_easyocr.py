@@ -275,7 +275,8 @@ def finetune(lmdb_train: str, lmdb_val: str, output_dir: str,
     #                     superset of the lang_list passed to Reader().
     #                     We use ['th', 'en'] so both Reader(["th","en"]) and
     #                     Reader(["th"]) calls in ocr.py succeed from one file.
-    #   character       Full vocabulary string; len() → Attn head output size.
+    #   character_list  Full vocabulary string; len() → Attn head output size.
+    #                   Key name is 'character_list' in EasyOCR 1.7.x (NOT 'character').
     #                   Use allow_unicode=True so Thai chars write as-is.
     #   network_params  Architecture dict consumed by the model builder:
     #     input_channel   1  (greyscale)
@@ -289,7 +290,7 @@ def finetune(lmdb_train: str, lmdb_val: str, output_dir: str,
             "imgH": 32,
             "imgW": 100,
             "lang_list": ["th", "en"],  # superset of both Reader() call sites
-            "character": THAI_CHARS,
+            "character_list": THAI_CHARS,  # EasyOCR 1.7.x key name (NOT 'character')
             "network_params": {
                 "input_channel":  1,
                 "output_channel": _OCR_RESNET_OUTPUT_CHANNEL,
