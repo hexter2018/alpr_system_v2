@@ -165,6 +165,7 @@ class PlateOCR:
                 gpu=use_gpu,
                 verbose=False,
                 user_network_directory=str(_MODELS_DIR),
+                model_storage_directory=str(_MODELS_DIR),   # ← add this
                 recog_network="ocr_th_custom",
             )
             self.thai_reader = easyocr.Reader(
@@ -172,6 +173,7 @@ class PlateOCR:
                 gpu=use_gpu,
                 verbose=False,
                 user_network_directory=str(_MODELS_DIR),
+                model_storage_directory=str(_MODELS_DIR),   # ← add this
                 recog_network="ocr_th_custom",
             )
         else:
