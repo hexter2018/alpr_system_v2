@@ -44,7 +44,7 @@ RUN sed -i \
 # layer of defence, but this patch makes the container itself safe
 # regardless of how train.py is invoked.
 RUN sed -i \
-    's/opt\.character = string\.printable\[:-6\].*$/# (patched) do not override opt.character — preserves custom Thai charset/' \
+    's/opt\.character = string\.printable\[:-6\]/pass  # (patched) do not override opt.character — preserves custom Thai charset/' \
     /opt/deep-text-recognition-benchmark/train.py
 
 COPY . /app/mlops
