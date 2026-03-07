@@ -205,6 +205,9 @@ def finetune(lmdb_train: str, lmdb_val: str, output_dir: str,
         # ────────────────────────────────────────────────────────────────────
         "--imgH",             "32",
         "--imgW",             "100",
+        "--adam",             # Adam optimizer — requires lr ~1e-4 (Adadelta default of lr=1.0
+                             #   makes Adam diverge; conversely Adadelta needs lr=1.0 not 1e-4).
+                             #   Adam converges significantly faster for fine-tuning tasks.
         "--lr",               "1e-4",
         "--hidden_size",      str(OCR_HIDDEN_SIZE),
         "--batch_max_length", "25",
