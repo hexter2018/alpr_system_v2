@@ -6,6 +6,10 @@
 # ====================================================================
 set -euo pipefail
 
+# Always clean up the pidfile on script exit — catches every path:
+#   • normal Celery exit  • SIGTERM from Docker  • set -e early-exit
+trap 'rm -f /tmp/celery_worker.pid' EXIT INT TERM HUP
+
 export PYTHONPATH=/app
 
 echo "[worker] python:" && python -V
@@ -89,11 +93,12 @@ sentinel_watcher() {
         # (ใช้เมื่อ SIGHUP ไม่ work กับ --pool=solo)
         if [[ "${WORKER_RESTART_ON_SENTINEL:-false}" == "true" ]]; then
           echo "[worker-sentinel] WORKER_RESTART_ON_SENTINEL=true → graceful stop for Docker to restart"
-          # Remove the pidfile BEFORE terminating Celery so the next startup
-          # (triggered by Docker's restart policy) does not fail with
-          # "Pidfile (/tmp/celery_worker.pid) already exists".
+          # ⚠️  Order matters: read the PID first, THEN delete the file.
+          # Deleting first and then reading returns empty → kill -TERM 0 →
+          # SIGTERM to the whole process group (kills the watcher itself).
+          _CELERY_PID="$(cat /tmp/celery_worker.pid 2>/dev/null || echo 0)"
           rm -f /tmp/celery_worker.pid
-          kill -TERM "$(cat /tmp/celery_worker.pid 2>/dev/null || echo 0)" 2>/dev/null || true
+          kill -TERM "$_CELERY_PID" 2>/dev/null || true
         fi
       fi
     fi

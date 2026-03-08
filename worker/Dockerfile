@@ -41,4 +41,20 @@ ENV PYTHONPATH=/opt/deep-text-recognition-benchmark:${PYTHONPATH}
 COPY . /app
 RUN chmod +x /app/start.sh /app/bin/ensure_engine.py || true
 
+# ── Non-root user ─────────────────────────────────────────────────────────────
+# Eliminates Celery's "SecurityWarning: You're running the worker with
+# superuser privileges" and reduces container attack surface.
+#
+# UID 1000 matches the typical Linux user that runs docker-compose on the host,
+# so bind-mounted volumes (./models, ./storage) are writable without chmod.
+# GID 0 (root group) keeps read access to files created during the build stage.
+#
+# /models and /storage are bind-mounted at runtime; /tmp and /app are owned by
+# this image layer and are fully writable by appuser.
+RUN useradd -r -u 1000 -g 0 -m -d /home/appuser -s /bin/bash appuser \
+    && chown -R 1000:0 /app \
+    && chmod -R g=u /app
+
+USER 1000
+
 CMD ["/app/start.sh"]
