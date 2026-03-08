@@ -16,8 +16,14 @@ tzdata>=2024.1
 httpx>=0.27.0
 
 # ── Authentication & security ─────────────────────────────────────────────────
+# bcrypt must be pinned to 3.2.2 — passlib has no awareness of the
+# __about__ removal in bcrypt 4.0+, which causes AttributeError at import
+# and a secondary ValueError ("password cannot be longer than 72 bytes")
+# at runtime.  Remove the pin only after migrating away from passlib
+# (e.g. to pwdlib or passlib's successor).
 python-jose[cryptography]>=3.3.0
-passlib[bcrypt]>=1.7.4
+passlib==1.7.4
+bcrypt==3.2.2
 
 # ── Worker / ML dependencies (shared via docker build context) ────────────────
 opencv-python-headless==4.10.0.84
