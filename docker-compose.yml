@@ -68,6 +68,11 @@ services:
   worker-gpu-1:
     build:
       context: ./worker
+    # start.sh runs as root, chowns /models + /storage, then exec-drops to UID 1000
+    # via "gosu 1000".  The Dockerfile's USER 1000 is intentionally overridden here
+    # so the container has write access to bind-mounted host directories before the
+    # privilege drop.  See the "Permission fix + privilege drop" block in start.sh.
+    user: "0:0"
     deploy:
       replicas: 3
       resources:

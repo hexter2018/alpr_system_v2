@@ -413,6 +413,9 @@ class PlateOCR:
         # province is extracted via RapidFuzz matching on the detected text.
         h, w = img.shape[:2]
         use_classifier = self.province_classifier.available
+        # Initialise roi_province so the return dict is always valid regardless
+        # of which branch (classifier vs fuzzy) executes below.
+        roi_province: Dict[str, Any] = {}
 
         if use_classifier:
             split_y      = max(1, int(h * _PLATE_TEXT_FRAC))

@@ -6,6 +6,20 @@
 # ====================================================================
 set -euo pipefail
 
+# ── Permission fix + privilege drop ─────────────────────────────────────────
+# docker-compose.yml sets "user: 0:0" so this script starts as root.
+# Fix ownership of bind-mounted directories (./models, ./storage) so UID 1000
+# can write lock files, engines, etc., then drop to UID 1000 via gosu.
+# The re-exec skips this block because id -u will no longer be 0.
+if [ "$(id -u)" = "0" ]; then
+    echo "[worker] root: fixing bind-mount permissions for UID 1000..."
+    chown -R 1000:0 /models /storage 2>/dev/null || true
+    chmod -R g=u   /models /storage 2>/dev/null || true
+    echo "[worker] root: dropping privileges → UID 1000"
+    exec gosu 1000 "$0" "$@"
+fi
+# ── From here the process runs as UID 1000 ───────────────────────────────────
+
 # Always clean up the pidfile on script exit — catches every path:
 #   • normal Celery exit  • SIGTERM from Docker  • set -e early-exit
 trap 'rm -f /tmp/celery_worker.pid' EXIT INT TERM HUP
@@ -64,7 +78,18 @@ from alpr_worker.inference.detector import PlateDetector
 from alpr_worker.inference.ocr import PlateOCR
 
 PlateDetector()
-PlateOCR()
+ocr = PlateOCR()
+
+# ── Province classifier status ────────────────────────────────────────────
+if ocr.province_classifier.available:
+    print(
+        f"[worker] ✓ Province classifier READY — "
+        f"{ocr.province_classifier.num_classes} classes, "
+        f"inference priority: CLASSIFIER > fuzzy-OCR fallback"
+    )
+else:
+    print("[worker] Province classifier not deployed — fuzzy OCR fallback active")
+
 print("[worker] preload complete")
 PY
 fi
