@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useTheme } from '../lib/ThemeContext.jsx'
-import { API_BASE } from '../lib/api.js'
+import { API_BASE, apiFetch } from '../lib/api.js'
 import {
   Card,
   CardBody,
@@ -213,7 +213,7 @@ export default function SystemMonitor() {
 
   const fetchHealth = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/monitor/health`)
+      const res = await apiFetch(`${API_BASE}/api/monitor/health`)
       if (!res.ok) throw new Error(`Status ${res.status}`)
       const data = await res.json()
       setHealth(data)
