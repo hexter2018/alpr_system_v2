@@ -5,6 +5,8 @@ import json
 import logging
 import os
 import re
+import sys
+import types
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -139,6 +141,166 @@ _DEFAULT_DEBUG_CONFIDENCE_THRESHOLD = 0.62
 _DEFAULT_PROVINCE_MIN_SCORE = 65.0
 
 
+class DTRBRecognizer:
+    """
+    Direct DTRB TPS+ResNet+BiLSTM+Attn recognizer.
+
+    Bypasses EasyOCR's model-loading machinery entirely — the .pth file is
+    loaded straight with torch.load + model.load_state_dict, with automatic
+    DataParallel "module." prefix stripping.
+
+    Interface: .readtext(image, detail=1, allowlist=None)
+    Returns the same shape as easyocr.Reader.readtext():
+        [([[x1,y1],[x2,y1],[x2,y2],[x1,y2]], text, confidence), ...]
+
+    The plate image is split top/bottom so the two text lines on a standard
+    Thai plate (consonant prefix on top, digits on bottom) are returned as
+    separate detections, keeping _group_tokens_to_lines / _select_plate_line
+    working without any changes.
+    """
+
+    _IMG_H         = 32
+    _IMG_W         = 100
+    _BATCH_MAX_LEN = 25
+
+    def __init__(self, model_path: Path, character: str, use_gpu: bool = False) -> None:
+        dtrb_dir = os.getenv("DTRB_DIR", "/opt/deep-text-recognition-benchmark")
+        if dtrb_dir not in sys.path:
+            sys.path.insert(0, dtrb_dir)
+
+        try:
+            from model import Model as _DTRBModel   # noqa: PLC0415
+            from utils import AttnLabelConverter    # noqa: PLC0415
+        except ImportError as exc:
+            raise ImportError(
+                f"Cannot import DTRB model/utils from {dtrb_dir!r}. "
+                "Ensure DTRB_DIR env var points to a cloned "
+                "deep-text-recognition-benchmark repo."
+            ) from exc
+
+        opt = types.SimpleNamespace(
+            Transformation    = "TPS",
+            FeatureExtraction = "ResNet",
+            SequenceModeling  = "BiLSTM",
+            Prediction        = "Attn",
+            input_channel     = 1,
+            output_channel    = 512,    # ResNet backbone — fixed
+            hidden_size       = 512,    # must match fine-tuned checkpoint
+            num_fiducial      = 20,
+            imgH              = self._IMG_H,
+            imgW              = self._IMG_W,
+            batch_max_length  = self._BATCH_MAX_LEN,
+            character         = character,
+            num_class         = len(character) + 2,  # +2 for [GO] and [s] tokens
+        )
+
+        model = _DTRBModel(opt)
+
+        # Load checkpoint; strip DataParallel "module." prefix when present
+        # (DTRB train.py wraps with nn.DataParallel → all keys are "module.*")
+        state = torch.load(str(model_path), map_location="cpu", weights_only=False)
+        if any(k.startswith("module.") for k in state):
+            state = {k.partition("module.")[-1]: v for k, v in state.items()}
+        model.load_state_dict(state, strict=True)
+
+        device_str = "cuda" if use_gpu and torch.cuda.is_available() else "cpu"
+        self._device = torch.device(device_str)
+        model = model.to(self._device)
+        model.eval()
+
+        self._model     = model
+        self._opt       = opt
+        self._converter = AttnLabelConverter(character)
+
+        log.info(
+            "[OCR] DTRBRecognizer ready: %s  (vocab=%d chars, device=%s)",
+            model_path.name, len(character), device_str,
+        )
+
+    # ── Core inference ────────────────────────────────────────────────────────
+
+    def _infer_band(self, gray: np.ndarray) -> Tuple[str, float]:
+        """Run DTRB on one greyscale band. Returns (text, confidence)."""
+        import torch.nn.functional as F  # local to avoid top-level circular import
+
+        resized = cv2.resize(gray, (self._IMG_W, self._IMG_H),
+                             interpolation=cv2.INTER_CUBIC)
+
+        # Normalise [0,255] → [-1,+1], add batch and channel dimensions → [1,1,H,W]
+        tensor = torch.FloatTensor(resized).unsqueeze(0).unsqueeze(0)
+        tensor = (tensor / 127.5) - 1.0
+        tensor = tensor.to(self._device)
+
+        # Attn decoder: seed with [GO] token (index 0) for all positions
+        text_for_pred = (
+            torch.LongTensor(1, self._BATCH_MAX_LEN + 1)
+            .fill_(0)
+            .to(self._device)
+        )
+
+        with torch.no_grad():
+            preds = self._model(tensor, text_for_pred, is_train=False)
+
+        _, preds_index = preds.max(2)
+        texts = self._converter.decode(preds_index, [self._BATCH_MAX_LEN])
+        text  = texts[0] if texts else ""
+
+        # Geometric mean of per-character max softmax probabilities
+        pred_len = len(text)
+        if pred_len > 0:
+            prob     = F.softmax(preds, dim=2)
+            max_prob, _ = prob.max(dim=2)
+            confidence = float(max_prob[0, :pred_len].cumprod(dim=0)[-1].item())
+        else:
+            confidence = 0.0
+
+        return text, confidence
+
+    # ── EasyOCR-compatible readtext() ─────────────────────────────────────────
+
+    def readtext(
+        self,
+        image: np.ndarray,
+        detail: int = 1,
+        allowlist: Optional[str] = None,
+    ) -> List[Tuple[Any, str, float]]:
+        """
+        Mimic easyocr.Reader.readtext() output:
+            [(bbox, text, confidence), ...]
+
+        The image is split at the midpoint so that the two typical lines on a
+        Thai plate (Thai-character prefix on top, digits on bottom) each get
+        their own inference pass and are returned as separate detections.
+        _group_tokens_to_lines then clusters them exactly as with EasyOCR.
+        """
+        if len(image.shape) == 3:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = image.copy()
+
+        h, w = gray.shape
+        mid  = max(1, h // 2)
+        bands = [
+            (gray[:mid, :], 0,   mid),   # top half  → Thai consonant prefix
+            (gray[mid:, :], mid, h),     # bottom half → digits
+        ]
+
+        results: List[Tuple[Any, str, float]] = []
+        for band, y0, y1 in bands:
+            if band.size == 0:
+                continue
+            text, conf = self._infer_band(band)
+            if not text:
+                continue
+            # Apply allowlist filter for parity with EasyOCR behaviour
+            if allowlist and not any(ch in allowlist for ch in text):
+                continue
+            bbox = [[0, y0], [w, y0], [w, y1], [0, y1]]
+            results.append((bbox, text, conf))
+
+        return results
+
+
 @dataclass
 class OCRResult:
     plate_text: str
@@ -153,29 +315,32 @@ class PlateOCR:
 
         if _CUSTOM_OCR_PTH.exists() and _CUSTOM_OCR_YAML.exists():
             log.info(
-                "[OCR] Loading custom fine-tuned Thai model: %s  (%.1f MiB)",
+                "[OCR] Custom fine-tuned model found: %s  (%.1f MiB) — "
+                "loading via DTRBRecognizer (bypasses EasyOCR loader).",
                 _CUSTOM_OCR_PTH,
                 _CUSTOM_OCR_PTH.stat().st_size / (1024 * 1024),
             )
-            # EasyOCR loads the YAML from user_network_directory/{recog_network}.yaml
-            # to determine architecture params (hidden_size, output_channel, character).
-            # The .pth weights are loaded from the same directory.
-            self.reader = easyocr.Reader(
-                ["th", "en"],
-                gpu=use_gpu,
-                verbose=False,
-                user_network_directory=str(_MODELS_DIR),
-                model_storage_directory=str(_MODELS_DIR),   # ← add this
-                recog_network="ocr_th_custom",
-            )
-            self.thai_reader = easyocr.Reader(
-                ["th"],
-                gpu=use_gpu,
-                verbose=False,
-                user_network_directory=str(_MODELS_DIR),
-                model_storage_directory=str(_MODELS_DIR),   # ← add this
-                recog_network="ocr_th_custom",
-            )
+            # Load character vocabulary from the YAML that was written by
+            # finetune_easyocr.py at deploy time (character_list key).
+            try:
+                import yaml as _yaml  # noqa: PLC0415
+                with open(_CUSTOM_OCR_YAML, encoding="utf-8") as _f:
+                    _cfg = _yaml.safe_load(_f)
+                _character = _cfg.get("character_list", "")
+                if not _character:
+                    raise ValueError("character_list is empty in YAML")
+
+                _recognizer      = DTRBRecognizer(_CUSTOM_OCR_PTH, _character, use_gpu=use_gpu)
+                self.reader      = _recognizer  # type: ignore[assignment]
+                self.thai_reader = _recognizer  # same model for province-OCR fallback
+            except Exception as _exc:
+                log.error(
+                    "[OCR] DTRBRecognizer failed to initialise (%s) — "
+                    "falling back to standard EasyOCR Thai model.",
+                    _exc, exc_info=True,
+                )
+                self.reader      = easyocr.Reader(["th", "en"], gpu=use_gpu, verbose=False)
+                self.thai_reader = easyocr.Reader(["th"],        gpu=use_gpu, verbose=False)
         else:
             if _CUSTOM_OCR_PTH.exists() and not _CUSTOM_OCR_YAML.exists():
                 log.warning(
