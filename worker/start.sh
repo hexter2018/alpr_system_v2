@@ -89,7 +89,11 @@ sentinel_watcher() {
         # (ใช้เมื่อ SIGHUP ไม่ work กับ --pool=solo)
         if [[ "${WORKER_RESTART_ON_SENTINEL:-false}" == "true" ]]; then
           echo "[worker-sentinel] WORKER_RESTART_ON_SENTINEL=true → graceful stop for Docker to restart"
-          kill -TERM "$CELERY_PID" 2>/dev/null || true
+          # Remove the pidfile BEFORE terminating Celery so the next startup
+          # (triggered by Docker's restart policy) does not fail with
+          # "Pidfile (/tmp/celery_worker.pid) already exists".
+          rm -f /tmp/celery_worker.pid
+          kill -TERM "$(cat /tmp/celery_worker.pid 2>/dev/null || echo 0)" 2>/dev/null || true
         fi
       fi
     fi
@@ -100,6 +104,12 @@ sentinel_watcher() {
 sentinel_watcher &
 SENTINEL_WATCHER_PID=$!
 echo "[worker] Sentinel watcher PID: $SENTINEL_WATCHER_PID"
+
+# Remove any stale pidfile left over from a previous container run.
+# Docker's "restart: unless-stopped" restarts the same container (preserving
+# /tmp) without recreating it, so the old pidfile from a prior Celery process
+# survives and causes "Pidfile already exists" on the next startup.
+rm -f /tmp/celery_worker.pid
 
 # รัน Celery worker (เก็บ PID ไว้ให้ sentinel ใช้)
 celery -A alpr_worker.celery_app:celery_app worker \
