@@ -33,10 +33,12 @@ LOCK_FILE    = "/tmp/mlops_training.lock"
 
 # Path ที่ production worker ใช้ (จาก docker-compose: MODEL_PATH=/models/best.pt)
 PRODUCTION_MODEL = MODELS_DIR / "best.pt"
+OCR_PRODUCTION_MODEL = MODELS_DIR / "ocr_th_custom.pth"
 # Sentinel file: worker/start.sh จะ watch file นี้
 SENTINEL_FILE    = MODELS_DIR / "reload.sentinel"
 # เก็บประวัติ mAP
 MAP_HISTORY_FILE = MODELS_DIR / "current_map.json"
+OCR_VERSION_FILE = MODELS_DIR / "ocr_th_custom.version.json"
 
 # กี่ % ที่ mAP ต้องดีกว่าเดิม (default: ดีกว่าแม้แต่ 0.1%)
 MIN_MAP_IMPROVEMENT = float(os.getenv("MIN_MAP_IMPROVEMENT", "0.001"))
@@ -63,27 +65,33 @@ def validate_and_deploy(
     """
     new_pt   = Path(new_model_path)
     run_path = Path(run_dir)
+    is_ocr_model = new_pt.suffix == ".pth"
+    target_model = OCR_PRODUCTION_MODEL if is_ocr_model else PRODUCTION_MODEL
+    resolved_current_map = _read_current_accuracy(target_model, current_map)
 
     log.info(
-        "[MLOps] Validate & Deploy: new_map=%.4f  current_map=%.4f  samples=%d",
-        new_map, current_map, len(sample_ids),
+        "[MLOps] Validate & Deploy: new_map=%.4f  current_map=%.4f  samples=%d  target=%s",
+        new_map, resolved_current_map, len(sample_ids), target_model,
     )
 
     try:
         # ----- ตรวจสอบ: โมเดลใหม่ต้องดีกว่าเดิม -----
-        if new_map <= (current_map + MIN_MAP_IMPROVEMENT):
-            log.warning(
-                "[MLOps] New model (mAP=%.4f) NOT better than current (%.4f). Skipping deploy.",
-                new_map, current_map,
+        if new_map <= (resolved_current_map + MIN_MAP_IMPROVEMENT):
+            warning_msg = "New model underperforms - Deployment skipped" if is_ocr_model else (
+                "[MLOps] New model (mAP=%.4f) NOT better than current (%.4f). Skipping deploy."
             )
-            _save_run_report(run_path, new_map, current_map, "rejected_low_map", [])
+            if is_ocr_model:
+                log.warning(warning_msg)
+            else:
+                log.warning(warning_msg, new_map, resolved_current_map)
+            _save_run_report(run_path, new_map, resolved_current_map, "rejected_low_map", [])
             _release_lock()
             return {
                 "ok": True,
                 "deployed": False,
                 "reason": "map_not_improved",
                 "new_map": new_map,
-                "current_map": current_map,
+                "current_map": resolved_current_map,
             }
 
         if not new_pt.exists():
@@ -92,21 +100,31 @@ def validate_and_deploy(
             return {"ok": False, "reason": "model_file_missing"}
 
         # ----- Backup โมเดลเก่า -----
-        backup_dir = MODELS_DIR / "backups"
-        backup_dir.mkdir(exist_ok=True)
         ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        backup_pt = backup_dir / f"best_{ts}_map{current_map:.4f}.pt"
-
-        if PRODUCTION_MODEL.exists():
-            shutil.copy2(PRODUCTION_MODEL, backup_pt)
-            log.info("[MLOps] Old model backed up to %s", backup_pt)
+        if is_ocr_model:
+            backup_pt = target_model.with_suffix(f"{target_model.suffix}.bak")
+            if backup_pt.exists():
+                backup_pt.unlink()
+            if target_model.exists():
+                os.replace(target_model, backup_pt)
+                log.info("[MLOps] Old OCR model renamed to backup: %s", backup_pt)
+        else:
+            backup_dir = MODELS_DIR / "backups"
+            backup_dir.mkdir(exist_ok=True)
+            backup_pt = backup_dir / f"best_{ts}_map{resolved_current_map:.4f}.pt"
+            if target_model.exists():
+                shutil.copy2(target_model, backup_pt)
+                log.info("[MLOps] Old model backed up to %s", backup_pt)
 
         # ----- Atomic deploy -----
         # copy → temp file → os.replace (atomic on Linux)
-        staging = MODELS_DIR / f"best_staging_{ts}.pt"
+        staging = MODELS_DIR / f"{target_model.stem}_staging_{ts}{target_model.suffix}"
         shutil.copy2(new_pt, staging)
-        os.replace(staging, PRODUCTION_MODEL)  # ✅ atomic — production ไม่ได้รับ half-written file
-        log.info("[MLOps] ✅ New model deployed: %s", PRODUCTION_MODEL)
+        os.replace(staging, target_model)  # ✅ atomic — production ไม่ได้รับ half-written file
+        log.info("[MLOps] ✅ New model deployed: %s", target_model)
+
+        if is_ocr_model:
+            _write_ocr_version(new_map, new_pt)
 
         # ----- Invalidate stale derived artifacts -----
         # best.onnx and engines/ are compiled from best.pt.  Now that best.pt
@@ -114,7 +132,8 @@ def validate_and_deploy(
         # ensure_engine.py (run by the worker on next start) to rebuild both.
         # If deletion fails for any reason we log a warning but continue — the
         # mtime guards in ensure_engine.py will still catch the staleness.
-        _invalidate_derived_artifacts(MODELS_DIR)
+        if not is_ocr_model:
+            _invalidate_derived_artifacts(MODELS_DIR)
 
         # ----- อัปเดต mAP history -----
         MAP_HISTORY_FILE.write_text(
@@ -123,7 +142,7 @@ def validate_and_deploy(
                 "deployed_at": ts,
                 "run_dir":     str(run_path),
                 "sample_count": len(sample_ids),
-                "previous_map": current_map,
+                "previous_map": resolved_current_map,
             }, ensure_ascii=False, indent=2)
         )
 
@@ -152,14 +171,14 @@ def validate_and_deploy(
         deployed_ids = _mark_samples_used(sample_ids)
         log.info("[MLOps] Marked %d samples as used_in_train=True", deployed_ids)
 
-        _save_run_report(run_path, new_map, current_map, "deployed", sample_ids)
+        _save_run_report(run_path, new_map, resolved_current_map, "deployed", sample_ids)
         _release_lock()
 
         return {
             "ok": True,
             "deployed": True,
             "new_map": new_map,
-            "current_map": current_map,
+            "current_map": resolved_current_map,
             "backup": str(backup_pt),
             "samples_marked": deployed_ids,
         }
@@ -270,3 +289,25 @@ def _invalidate_derived_artifacts(models_dir: Path) -> None:
             log.info("[MLOps] Removed stale .model_path pointer")
         except Exception as exc:
             log.warning("[MLOps] Could not remove .model_path: %s", exc)
+
+
+def _read_current_accuracy(model_path: Path, fallback: float) -> float:
+    """Read deployed model accuracy from version file when available."""
+    if model_path == OCR_PRODUCTION_MODEL and OCR_VERSION_FILE.exists():
+        try:
+            payload = json.loads(OCR_VERSION_FILE.read_text())
+            return float(payload.get("accuracy", fallback))
+        except Exception as exc:
+            log.warning("[MLOps] Failed to read OCR version file %s: %s", OCR_VERSION_FILE, exc)
+    return fallback
+
+
+def _write_ocr_version(accuracy: float, source_model: Path) -> None:
+    payload = {
+        "model_path": str(OCR_PRODUCTION_MODEL),
+        "source": str(source_model),
+        "accuracy": float(accuracy),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    OCR_VERSION_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+    log.info("[MLOps] OCR version metadata updated: %s", OCR_VERSION_FILE)
