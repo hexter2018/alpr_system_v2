@@ -2,17 +2,40 @@ const rawApiBase = (import.meta.env.VITE_API_BASE || "").replace(/\/+$/, "");
 export const API_BASE = rawApiBase.replace(/\/api$/i, "");
 const DEFAULT_TIMEOUT_MS = 15000;
 
+// Must match TOKEN_KEY in AuthContext.jsx
+const TOKEN_KEY = "alpr_token";
+const USER_KEY  = "alpr_user";
+
 export async function apiFetch(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   const method = (options.method || "GET").toUpperCase();
 
+  // Inject JWT token into every request (mirrors AuthContext axios interceptor)
+  const token = localStorage.getItem(TOKEN_KEY);
+  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+
   try {
-    return await fetch(url, {
+    const res = await fetch(url, {
       ...(method === "GET" || method === "HEAD" ? { cache: "no-store" } : {}),
       ...options,
+      // Caller-supplied headers take precedence; auth header added unless overridden
+      headers: {
+        ...authHeaders,
+        ...(options.headers || {}),
+      },
       signal: controller.signal,
     });
+
+    // Mirror AuthContext axios 401 interceptor: clear stale token and redirect to login
+    if (res.status === 401 && !window.location.pathname.startsWith("/login")) {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+      window.location.href = "/login";
+      throw new Error("Session expired. Please log in again.");
+    }
+
+    return res;
   } catch (error) {
     if (error?.name === "AbortError") {
       throw new Error(`request timeout after ${timeoutMs}ms`);
