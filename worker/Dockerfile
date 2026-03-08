@@ -51,7 +51,12 @@ RUN chmod +x /app/start.sh /app/bin/ensure_engine.py || true
 #
 # /models and /storage are bind-mounted at runtime; /tmp and /app are owned by
 # this image layer and are fully writable by appuser.
-RUN useradd -r -u 1000 -g 0 -m -d /home/appuser -s /bin/bash appuser \
+RUN if id -u 1000 >/dev/null 2>&1; then \
+        EXISTING_USER=$(getent passwd 1000 | cut -d: -f1); \
+        usermod -aG 0 $EXISTING_USER; \
+    else \
+        useradd -r -u 1000 -g 0 -m -d /home/appuser -s /bin/bash appuser; \
+    fi \
     && chown -R 1000:0 /app \
     && chmod -R g=u /app
 
