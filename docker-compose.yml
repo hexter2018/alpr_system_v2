@@ -212,8 +212,6 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-      nginx:
-        condition: service_healthy
     networks:
       - alpr-network
     restart: unless-stopped
