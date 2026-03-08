@@ -12,9 +12,9 @@ Role hierarchy (higher role satisfies lower requirements):
     ADMIN (3) > GUARD (2) > AUDITOR (1)
 """
 
-from typing import Annotated
+from typing import Annotated, Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from sqlalchemy.orm import Session
@@ -23,7 +23,12 @@ from app.core.security import decode_token
 from app.db.session import get_db
 from app.db.models import User
 
-_bearer = HTTPBearer(auto_error=True)
+# auto_error=False so we handle missing/malformed headers ourselves and can
+# return 401 (not authenticated) instead of FastAPI's default 403 (forbidden).
+# HTTPBearer(auto_error=True) raises HTTP 403 when the Authorization header is
+# absent, which bypasses the frontend's 401 interceptor and leaves users stuck
+# on an unhelpful "Forbidden" error instead of being redirected to /login.
+_bearer = HTTPBearer(auto_error=False)
 
 _ROLE_RANK = {"ADMIN": 3, "GUARD": 2, "AUDITOR": 1}
 
@@ -40,10 +45,20 @@ _FORBIDDEN_EXCEPTION = HTTPException(
 
 
 def _get_current_user(
-    credentials: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
+    credentials: Annotated[Optional[HTTPAuthorizationCredentials], Depends(_bearer)],
     db: Session = Depends(get_db),
 ) -> User:
-    """Decode Bearer token and return the corresponding active User row."""
+    """Decode Bearer token and return the corresponding active User row.
+
+    Raises HTTP 401 (not 403) when the Authorization header is missing,
+    malformed, carries an invalid token, or references an inactive user.
+    This allows the frontend's response interceptor to catch 401 and redirect
+    to /login rather than showing a confusing "403 Forbidden" page.
+    """
+    if credentials is None:
+        # No Authorization header at all — treat as unauthenticated, not forbidden
+        raise _CREDENTIALS_EXCEPTION
+
     try:
         payload = decode_token(credentials.credentials)
         username: str = payload.get("sub")

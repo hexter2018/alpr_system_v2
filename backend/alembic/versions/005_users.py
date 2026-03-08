@@ -17,9 +17,11 @@ import sqlalchemy as sa
 from alembic import op
 
 
-# bcrypt hash of "admin1234"
-# Generated with: passlib.context.CryptContext(schemes=["bcrypt"]).hash("admin1234")
-_ADMIN_HASH = "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW"
+# bcrypt hash of "admin1234"  (work-factor 12, generated with bcrypt==3.2.2)
+# The previous value ($2b$12$EixZaYVK…) was a well-known tutorial example hash
+# for the string "password", not "admin1234".  bcrypt.checkpw confirmed the
+# mismatch — any login attempt with "admin1234" returned 401.
+_ADMIN_HASH = "$2b$12$zGajF3AKK64OG7k8G7wgIOrMUV2Lo4mlK7jCS7HUm4gGXzJvUC/pa"
 
 
 def upgrade():
