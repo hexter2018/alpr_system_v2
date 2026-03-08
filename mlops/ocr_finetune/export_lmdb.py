@@ -111,7 +111,9 @@ def export_to_lmdb(output_dir: Path, limit: int = 10000, val_split: float = 0.1)
                 corrected_text,
                 COALESCE(corrected_province, '') AS corrected_province
             FROM feedback_samples
-            WHERE corrected_text IS NOT NULL AND corrected_text != ''
+            WHERE corrected_text IS NOT NULL
+              AND corrected_text != ''
+              AND COALESCE(used_in_train, FALSE) = FALSE
             ORDER BY created_at ASC
             LIMIT :lim
         """), {"lim": int(limit)}).mappings().all()
@@ -203,8 +205,9 @@ def export_to_lmdb(output_dir: Path, limit: int = 10000, val_split: float = 0.1)
             for r in valid:
                 f.write(f"{r['crop_path']}\t{r['corrected_text']}\t{r['corrected_province']}\n")
 
-        _write_lmdb(train_dir, train_rows, "train")
-        _write_lmdb(val_dir,   val_rows,   "val")
+        train_exported_ids = _write_lmdb(train_dir, train_rows, "train")
+        val_exported_ids = _write_lmdb(val_dir, val_rows, "val")
+        exported_ids = train_exported_ids + val_exported_ids
 
         # ── Post-write integrity check ───────────────────────────────────────
         # Read back the num-samples key DTRB will actually use at training time.
@@ -229,6 +232,24 @@ def export_to_lmdb(output_dir: Path, limit: int = 10000, val_split: float = 0.1)
             )
             return False
 
+        expected_total = len(valid)
+        if len(exported_ids) != expected_total:
+            log.error(
+                "LMDB export failed integrity check: expected to export %d rows but only %d were written. "
+                "Skipping feedback_samples.used_in_train update to avoid partial marking.",
+                expected_total,
+                len(exported_ids),
+            )
+            return False
+
+        if exported_ids:
+            db.execute(
+                text("UPDATE feedback_samples SET used_in_train = TRUE WHERE id = ANY(:ids)"),
+                {"ids": exported_ids},
+            )
+            db.commit()
+            log.info("Marked %d feedback samples as used_in_train=TRUE", len(exported_ids))
+
         log.info(
             "✅ Export done — train=%d  val=%d  (disk-verified: train=%d  val=%d)",
             len(train_rows), len(val_rows), train_on_disk, val_on_disk,
@@ -239,10 +260,11 @@ def export_to_lmdb(output_dir: Path, limit: int = 10000, val_split: float = 0.1)
         db.close()
 
 
-def _write_lmdb(lmdb_dir: Path, rows: list, split: str):
+def _write_lmdb(lmdb_dir: Path, rows: list, split: str) -> list[int]:
     env = lmdb.open(str(lmdb_dir), map_size=10 * 1024**3)  # 10 GB
     cnt = 1
     cache = {}
+    exported_ids: list[int] = []
 
     with env.begin(write=True) as txn:
         for row in rows:
@@ -268,6 +290,7 @@ def _write_lmdb(lmdb_dir: Path, rows: list, split: str):
 
             cache[f"image-{cnt:09d}".encode()] = img_bytes
             cache[f"label-{cnt:09d}".encode()] = plate_label.encode("utf-8")
+            exported_ids.append(row["id"])
             cnt += 1
 
             if len(cache) >= 1000:
@@ -282,6 +305,7 @@ def _write_lmdb(lmdb_dir: Path, rows: list, split: str):
 
     log.info("[%s] LMDB complete: %d samples", split, cnt - 1)
     env.close()
+    return exported_ids
 
 
 if __name__ == "__main__":
