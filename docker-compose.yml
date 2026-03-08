@@ -45,6 +45,20 @@ services:
       REDIS_URL: redis://redis:6379/0
       STORAGE_DIR: /storage
       CORS_ORIGINS: http://localhost:5173,http://10.32.70.136,http://10.32.70.136:5173
+
+      # ── JWT Authentication ─────────────────────────────────────────────────
+      JWT_SECRET: ${JWT_SECRET:-CHANGE_ME_IN_PRODUCTION_USE_A_LONG_RANDOM_STRING}
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-480}
+
+      # ── Telegram Alerts ────────────────────────────────────────────────────
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+
+      # ── Data Retention & Compliance ────────────────────────────────────────
+      RETENTION_DAYS: ${RETENTION_DAYS:-90}
+
+      # ── Structured Logging ─────────────────────────────────────────────────
+      LOG_JSON: ${LOG_JSON:-true}
     volumes:
       - ./storage:/storage
       - ./models:/models
@@ -104,6 +118,10 @@ services:
       
       # ALPR settings
       MASTER_CONF_THRESHOLD: "0.95"
+
+      # ── Telegram Alerts ────────────────────────────────────────────────────
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       
       # Celery settings (เพิ่ม concurrency สำหรับ RTSP load)
       CELERY_WORKER_CONCURRENCY: "8"
@@ -283,6 +301,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - DATABASE_URL=postgresql+psycopg2://alpr:alpr@postgres:5432/alpr
       - RETRAIN_THRESHOLD=1000
+      - RETENTION_DAYS=${RETENTION_DAYS:-90}
     volumes:
       - ./mlops:/app/mlops:ro
       - trainer_data:/data
@@ -291,6 +310,40 @@ services:
       - postgres
     networks:
       - alpr-network
+
+  # ─────────────────────────────────────────────────────────────────
+  # Celery Beat — ALPR worker scheduler (data retention, etc.)
+  # Runs beat for alpr_worker.celery_app so that the daily data-
+  # retention task (added in beat_schedule) is actually dispatched.
+  # Kept separate from celery-beat (MLOps) to avoid cross-app coupling.
+  # ─────────────────────────────────────────────────────────────────
+  celery-beat-worker:
+    build:
+      context: ./worker
+    container_name: celery-beat-worker
+    restart: unless-stopped
+    # Override CMD: skip start.sh GPU/model setup and run beat directly
+    command: >
+      celery -A alpr_worker.celery_app:celery_app beat
+      -l info
+      --schedule=/tmp/celerybeat-worker-schedule
+    user: "0:0"
+    environment:
+      - TZ=Asia/Bangkok
+      - DATABASE_URL=postgresql+psycopg2://alpr:alpr@postgres:5432/alpr
+      - REDIS_URL=redis://redis:6379/0
+      - STORAGE_DIR=/storage
+      - RETENTION_DAYS=${RETENTION_DAYS:-90}
+    volumes:
+      - ./storage:/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - alpr-network
+
 
 volumes:
   pgdata:
