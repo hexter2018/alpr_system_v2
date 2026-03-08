@@ -108,6 +108,12 @@ services:
       # Performance
       ULTRALYTICS_AUTOINSTALL: "false"
       YOLO_VERBOSE: "false"
+
+      # DTRB inference (DTRBRecognizer in ocr.py)
+      # Matches the clone location baked into the worker Dockerfile.
+      # Explicit here so the value can be overridden without a rebuild.
+      DTRB_DIR: /opt/deep-text-recognition-benchmark
+      PYTHONPATH: /opt/deep-text-recognition-benchmark
     volumes:
       - ./storage:/storage
       - ./models:/models
