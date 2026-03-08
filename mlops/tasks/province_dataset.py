@@ -6,8 +6,8 @@ Export province-band images for YOLOv8-cls training.
 Sources (in priority order):
   1. feedback_samples.corrected_province — human-verified labels (highest quality).
   2. plate_reads JOIN detections WHERE confidence >= PROVINCE_AUTO_CONF_MIN
-     AND status IN ('VERIFIED', 'CONFIRMED') — high-confidence auto-labels for
-     data augmentation.
+     AND status = 'VERIFIED' — high-confidence auto-labels for data augmentation.
+     (readstatus enum only has PENDING and VERIFIED — CONFIRMED does not exist.)
 
 Crop strategy:
   Each plate crop is sliced: bottom PROVINCE_BAND_FRAC of the image height.
@@ -119,7 +119,7 @@ def export_province_dataset(
                 WHERE pr.province IS NOT NULL
                   AND pr.province <> ''
                   AND pr.confidence >= :conf_min
-                  AND pr.status IN ('VERIFIED', 'CONFIRMED')
+                  AND pr.status = 'VERIFIED'
                 ORDER BY pr.created_at DESC
                 LIMIT :lim
             """),
