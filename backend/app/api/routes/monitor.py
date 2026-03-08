@@ -1,4 +1,5 @@
 import platform
+import subprocess
 import time
 from datetime import timedelta
 
@@ -12,9 +13,68 @@ from app.db import models
 from app.services.queue import celery
 from app.utils.dt import now_bkk
 
-router = APIRouter()
+from app.dependencies.auth import _require_role, get_current_user
+
+router = APIRouter(dependencies=[Depends(_require_role('ADMIN'))])
 
 _start_time = time.time()
+
+
+def _get_gpu_metrics() -> list[dict]:
+    """
+    Query nvidia-smi for per-GPU utilisation, memory, and temperature.
+    Returns an empty list when no NVIDIA GPU is available or nvidia-smi fails.
+
+    Example return value::
+        [
+            {
+                "index": 0,
+                "name": "NVIDIA GeForce RTX 4090",
+                "utilization_gpu": 72,        # %
+                "memory_used": 8192,           # MiB
+                "memory_total": 24576,         # MiB
+                "memory_percent": 33.3,        # %
+                "temperature": 65,             # °C
+                "power_draw": 180.5,           # W (None if unsupported)
+            }
+        ]
+    """
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return []
+
+        gpus = []
+        for line in result.stdout.strip().splitlines():
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) < 6:
+                continue
+            idx, name, util, mem_used, mem_total, temp = parts[:6]
+            power_raw = parts[6] if len(parts) > 6 else None
+            mem_used_i = int(mem_used)
+            mem_total_i = int(mem_total)
+            gpus.append({
+                "index":           int(idx),
+                "name":            name,
+                "utilization_gpu": int(util),
+                "memory_used":     mem_used_i,
+                "memory_total":    mem_total_i,
+                "memory_percent":  round(mem_used_i / mem_total_i * 100, 1) if mem_total_i else 0.0,
+                "temperature":     int(temp),
+                "power_draw":      float(power_raw) if power_raw and power_raw != "[N/A]" else None,
+            })
+        return gpus
+    except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
+        return []
 
 
 def _get_celery_cluster_status() -> dict:
@@ -73,9 +133,10 @@ def _get_system_resource_metrics() -> dict:
 
 @router.get("/monitor/system")
 def monitor_system_status():
-    """Celery queue and host resource status for dashboard cards."""
+    """Celery queue, host resource, and GPU status for dashboard cards."""
     queue_metrics = _get_celery_cluster_status()
     system_metrics = _get_system_resource_metrics()
+    gpu_metrics = _get_gpu_metrics()
 
     return {
         "queue_status": queue_metrics["queue_status"],
@@ -88,6 +149,7 @@ def monitor_system_status():
             "memory_total": system_metrics["memory_total"],
             "memory_available": system_metrics["memory_available"],
         },
+        "gpus": gpu_metrics,
     }
 
 
@@ -101,6 +163,7 @@ def monitor_health(db: Session = Depends(get_db)):
 
     queue_metrics = _get_celery_cluster_status()
     system_metrics = _get_system_resource_metrics()
+    gpu_metrics = _get_gpu_metrics()
 
     # ── Database stats ──
     total_captures = db.query(func.count(models.Capture.id)).scalar() or 0
@@ -253,4 +316,5 @@ def monitor_health(db: Session = Depends(get_db)):
             "memory_total": system_metrics["memory_total"],
             "memory_available": system_metrics["memory_available"],
         },
+        "gpus": gpu_metrics,
     }

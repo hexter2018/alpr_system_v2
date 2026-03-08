@@ -2,7 +2,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.core.logging_config import configure_logging
 from app.api.router import api_router
+
+# ── Structured logging — must be configured before first log call ─────────────
+configure_logging(log_json=settings.log_json)
 
 app = FastAPI(title="Thai ALPR API", version="2.0.0")
 

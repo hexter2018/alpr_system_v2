@@ -77,13 +77,11 @@ def validate_and_deploy(
     try:
         # ----- ตรวจสอบ: โมเดลใหม่ต้องดีกว่าเดิม -----
         if new_map <= (resolved_current_map + MIN_MAP_IMPROVEMENT):
-            warning_msg = "New model underperforms - Deployment skipped" if is_ocr_model else (
-                "[MLOps] New model (mAP=%.4f) NOT better than current (%.4f). Skipping deploy."
+            log.warning(
+                "[MLOps] New model underperforms - Deployment skipped  "
+                "(new=%.4f  current=%.4f  min_improvement=%.4f  target=%s)",
+                new_map, resolved_current_map, MIN_MAP_IMPROVEMENT, target_model.name,
             )
-            if is_ocr_model:
-                log.warning(warning_msg)
-            else:
-                log.warning(warning_msg, new_map, resolved_current_map)
             _save_run_report(run_path, new_map, resolved_current_map, "rejected_low_map", [])
             _release_lock()
             return {
@@ -292,13 +290,62 @@ def _invalidate_derived_artifacts(models_dir: Path) -> None:
 
 
 def _read_current_accuracy(model_path: Path, fallback: float) -> float:
-    """Read deployed model accuracy from version file when available."""
-    if model_path == OCR_PRODUCTION_MODEL and OCR_VERSION_FILE.exists():
+    """
+    Read the accuracy of the currently-deployed model from its sidecar metadata file.
+
+    OCR  (ocr_th_custom.pth) → ocr_th_custom.version.json  key: "accuracy"
+    YOLO (best.pt)           → current_map.json             key: "map50"
+
+    Falls back to *fallback* (caller-supplied) when the file is absent or
+    unreadable.  Using the sidecar file as the authoritative source means the
+    comparison is independent of whatever value the upstream Celery chain
+    remembered to pass in — which could be stale after a manual hot-swap.
+    """
+    # ── OCR model ─────────────────────────────────────────────────────────────
+    if model_path == OCR_PRODUCTION_MODEL:
+        if OCR_VERSION_FILE.exists():
+            try:
+                payload = json.loads(OCR_VERSION_FILE.read_text())
+                acc = float(payload["accuracy"])
+                log.info(
+                    "[MLOps] OCR version file read: accuracy=%.4f  updated_at=%s",
+                    acc, payload.get("updated_at", "?"),
+                )
+                return acc
+            except Exception as exc:
+                log.warning(
+                    "[MLOps] Failed to read OCR version file %s — using caller fallback %.4f: %s",
+                    OCR_VERSION_FILE, fallback, exc,
+                )
+        else:
+            log.info(
+                "[MLOps] OCR version file not found (%s) — "
+                "first deployment assumed, using caller fallback %.4f",
+                OCR_VERSION_FILE, fallback,
+            )
+        return fallback
+
+    # ── YOLO model ────────────────────────────────────────────────────────────
+    if MAP_HISTORY_FILE.exists():
         try:
-            payload = json.loads(OCR_VERSION_FILE.read_text())
-            return float(payload.get("accuracy", fallback))
+            payload = json.loads(MAP_HISTORY_FILE.read_text())
+            current = float(payload["map50"])
+            log.info(
+                "[MLOps] MAP history read: map50=%.4f  deployed_at=%s",
+                current, payload.get("deployed_at", "?"),
+            )
+            return current
         except Exception as exc:
-            log.warning("[MLOps] Failed to read OCR version file %s: %s", OCR_VERSION_FILE, exc)
+            log.warning(
+                "[MLOps] Failed to read MAP history %s — using caller fallback %.4f: %s",
+                MAP_HISTORY_FILE, fallback, exc,
+            )
+    else:
+        log.info(
+            "[MLOps] MAP history not found (%s) — "
+            "first deployment assumed, using caller fallback %.4f",
+            MAP_HISTORY_FILE, fallback,
+        )
     return fallback
 
 

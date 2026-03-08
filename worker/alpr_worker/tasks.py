@@ -4,6 +4,8 @@ import time
 import json
 import hashlib
 import shutil
+import requests
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from sqlalchemy import text, create_engine
@@ -39,6 +41,15 @@ PROVINCE_CONF_THRESHOLD = float(os.getenv("PROVINCE_CONF_THRESHOLD", "0.45"))
 # RTSP defaults
 DEFAULT_RTSP_FPS = float(os.getenv("RTSP_FPS", "2.0"))
 DEFAULT_RECONNECT_SEC = float(os.getenv("RTSP_RECONNECT_SEC", "2.0"))
+
+# RTSP exponential backoff parameters
+_RTSP_BACKOFF_BASE = float(os.getenv("RTSP_BACKOFF_BASE", "2.0"))
+_RTSP_BACKOFF_MAX  = float(os.getenv("RTSP_BACKOFF_MAX",  "120.0"))
+_RTSP_BACKOFF_EXP  = float(os.getenv("RTSP_BACKOFF_EXP",  "2.0"))
+
+# Telegram (worker-side — used by send_telegram_alert task)
+_TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+_TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
 
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 (STORAGE_DIR / "original").mkdir(parents=True, exist_ok=True)
@@ -262,6 +273,82 @@ def process_capture(capture_id: int, image_path: str):
             })
             db.commit()
 
+        # ── Watchlist check ───────────────────────────────────────────────────
+        # After the read is stored, check if this plate is on the watchlist.
+        # On a match: insert an Alert row and dispatch a Telegram notification
+        # as a separate task so inference latency is not affected.
+        watchlist_alert_id: Optional[int] = None
+        watchlist_match_info: Dict[str, Any] = {}
+        if plate_text_norm:
+            try:
+                sql_wl = text("""
+                    SELECT w.id, w.list_type, w.alert_level, w.reason
+                    FROM watchlist w
+                    WHERE w.plate_text_norm = :norm
+                      AND w.active = TRUE
+                      AND (w.expires_at IS NULL OR w.expires_at > NOW())
+                    LIMIT 1
+                """)
+                wl_row = db.execute(sql_wl, {"norm": plate_text_norm}).mappings().fetchone()
+                if wl_row:
+                    # Look up camera name for the alert message
+                    cam_name_row = db.execute(
+                        text("SELECT name FROM cameras WHERE camera_id = :cid LIMIT 1"),
+                        {"cid": str(capture_id)},  # capture camera_id
+                    ).fetchone()
+                    # Get actual camera_id from capture row
+                    cap_row = db.execute(
+                        text("SELECT camera_id FROM captures WHERE id = :cid LIMIT 1"),
+                        {"cid": int(capture_id)},
+                    ).mappings().fetchone()
+                    cap_camera_id = cap_row["camera_id"] if cap_row else None
+                    cam_name_row2 = db.execute(
+                        text("SELECT name FROM cameras WHERE camera_id = :cid LIMIT 1"),
+                        {"cid": cap_camera_id or ""},
+                    ).fetchone()
+                    camera_name = cam_name_row2[0] if cam_name_row2 else (cap_camera_id or "Unknown")
+
+                    sql_ins_alert = text("""
+                        INSERT INTO alerts
+                            (read_id, watchlist_id, camera_id, alert_level)
+                        VALUES
+                            (:read_id, :watchlist_id, :camera_id, :alert_level)
+                        RETURNING id
+                    """)
+                    watchlist_alert_id = db.execute(sql_ins_alert, {
+                        "read_id":      int(read_id),
+                        "watchlist_id": int(wl_row["id"]),
+                        "camera_id":    cap_camera_id,
+                        "alert_level":  wl_row["alert_level"],
+                    }).scalar_one()
+                    db.commit()
+
+                    watchlist_match_info = {
+                        "list_type":   wl_row["list_type"],
+                        "alert_level": wl_row["alert_level"],
+                        "reason":      wl_row["reason"] or "",
+                        "camera_name": camera_name,
+                    }
+
+                    # Dispatch Telegram notification as a separate Celery task
+                    send_telegram_alert.delay(
+                        alert_id=int(watchlist_alert_id),
+                        read_id=int(read_id),
+                        crop_path=str(crop_path),
+                        plate_text=plate_text,
+                        province=province,
+                        camera_name=camera_name,
+                        alert_level=wl_row["alert_level"],
+                        list_type=wl_row["list_type"],
+                        reason=wl_row["reason"] or "",
+                    )
+                    log.info(
+                        "[watchlist] Match found for %r → %s alert (id=%d)",
+                        plate_text_norm, wl_row["alert_level"], watchlist_alert_id,
+                    )
+            except Exception as wl_exc:
+                log.error("[watchlist] Check failed: %s", wl_exc, exc_info=True)
+
         return {
             "ok": True,
             "capture_id": int(capture_id),
@@ -274,6 +361,8 @@ def process_capture(capture_id: int, image_path: str):
             "confidence": conf,
             "master_assisted": assisted.get("assisted", False),
             "crop_path": str(crop_path),
+            "watchlist_alert_id": watchlist_alert_id,
+            "watchlist_match": watchlist_match_info,
             "plate_candidates": raw.get("plate_candidates", []),
             "province_candidates": raw.get("province_candidates", []),
             "consensus_metrics": raw.get("consensus_metrics", {}),
@@ -346,6 +435,93 @@ def export_feedback_samples(limit: int = FEEDBACK_EXPORT_LIMIT):
 
 
 # ----------------------------
+# Telegram alert task
+# ----------------------------
+@celery_app.task(
+    name="tasks.send_telegram_alert",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=10,
+)
+def send_telegram_alert(
+    self,
+    *,
+    alert_id: int,
+    read_id: int,
+    crop_path: str,
+    plate_text: str,
+    province: str,
+    camera_name: str,
+    alert_level: str,
+    list_type: str,
+    reason: str = "",
+):
+    """
+    Send a Telegram photo alert for a watchlist match.
+    Retries up to 3 times on network errors with 10-second delay.
+    Marks alerts.telegram_sent = TRUE on success.
+    """
+    if not _TELEGRAM_BOT_TOKEN or not _TELEGRAM_CHAT_ID:
+        log.debug("[telegram] Not configured — skipping alert id=%d", alert_id)
+        return {"ok": False, "reason": "not_configured"}
+
+    _EMOJI = {"LOW": "ℹ️", "MEDIUM": "⚠️", "HIGH": "🚨", "CRITICAL": "🔴"}
+    _LABEL = {"BLACKLIST": "🚫 BLACKLIST", "WHITELIST": "✅ WHITELIST", "VIP": "⭐ VIP"}
+
+    emoji      = _EMOJI.get(alert_level.upper(), "⚠️")
+    list_label = _LABEL.get(list_type.upper(), list_type)
+    province_s = f"\nจังหวัด: {province}" if province else ""
+    reason_s   = f"\nหมายเหตุ: {reason}" if reason else ""
+
+    caption = (
+        f"{emoji} {list_label} MATCH\n"
+        f"ทะเบียน: {plate_text}{province_s}\n"
+        f"กล้อง: {camera_name}"
+        f"{reason_s}\nRead ID: #{read_id}"
+    )
+
+    api_base = f"https://api.telegram.org/bot{_TELEGRAM_BOT_TOKEN}"
+    try:
+        crop_file = Path(crop_path)
+        if crop_file.exists():
+            with open(crop_file, "rb") as f:
+                resp = requests.post(
+                    f"{api_base}/sendPhoto",
+                    data={"chat_id": _TELEGRAM_CHAT_ID, "caption": caption},
+                    files={"photo": (crop_file.name, f, "image/jpeg")},
+                    timeout=15,
+                )
+        else:
+            resp = requests.post(
+                f"{api_base}/sendMessage",
+                json={"chat_id": _TELEGRAM_CHAT_ID, "text": caption},
+                timeout=15,
+            )
+
+        if resp.status_code != 200:
+            log.warning("[telegram] API %d: %s", resp.status_code, resp.text[:200])
+            raise ValueError(f"Telegram API returned {resp.status_code}")
+
+        # Mark telegram_sent in DB
+        db = SessionLocal()
+        try:
+            db.execute(
+                text("UPDATE alerts SET telegram_sent = TRUE WHERE id = :id"),
+                {"id": alert_id},
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        log.info("[telegram] Alert sent for plate=%r alert_id=%d", plate_text, alert_id)
+        return {"ok": True, "alert_id": alert_id}
+
+    except Exception as exc:
+        log.error("[telegram] Failed: %s — retrying", exc)
+        raise self.retry(exc=exc)
+
+
+# ----------------------------
 # RTSP ingest task
 # ----------------------------
 @celery_app.task(name="tasks.rtsp_ingest")
@@ -359,11 +535,11 @@ def rtsp_ingest(camera_id: str, rtsp_url: str, fps: float = DEFAULT_RTSP_FPS, re
     """
 
     fps = float(fps or DEFAULT_RTSP_FPS)
-    reconnect_sec = float(reconnect_sec or DEFAULT_RECONNECT_SEC)
     interval = 1.0 / max(fps, 0.1)
 
     cap = None
     last_ts = 0.0
+    _connect_attempt = 0   # for exponential backoff
 
     while True:
         # stop flag
@@ -372,19 +548,40 @@ def rtsp_ingest(camera_id: str, rtsp_url: str, fps: float = DEFAULT_RTSP_FPS, re
                 cap.release()
             return {"ok": True, "stopped": True, "camera_id": camera_id}
 
-        # open stream
+        # ── Open / reopen stream with exponential backoff ─────────────────
         if cap is None or not cap.isOpened():
             cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
             if not cap.isOpened():
-                time.sleep(reconnect_sec)
+                wait = min(
+                    _RTSP_BACKOFF_BASE * (_RTSP_BACKOFF_EXP ** _connect_attempt),
+                    _RTSP_BACKOFF_MAX,
+                )
+                log.warning(
+                    "[rtsp:%s] Cannot open stream — retry in %.0fs (attempt %d)",
+                    camera_id, wait, _connect_attempt + 1,
+                )
+                time.sleep(wait)
+                _connect_attempt += 1
                 continue
+            # Successful connection — reset backoff counter
+            _connect_attempt = 0
+            log.info("[rtsp:%s] Stream opened (backoff reset)", camera_id)
 
         ok, frame = cap.read()
         if not ok or frame is None:
-            # reconnect
+            # Frame read failed — reconnect with backoff
             cap.release()
             cap = None
-            time.sleep(reconnect_sec)
+            wait = min(
+                _RTSP_BACKOFF_BASE * (_RTSP_BACKOFF_EXP ** _connect_attempt),
+                _RTSP_BACKOFF_MAX,
+            )
+            log.warning(
+                "[rtsp:%s] Frame read failed — reconnect in %.0fs (attempt %d)",
+                camera_id, wait, _connect_attempt + 1,
+            )
+            time.sleep(wait)
+            _connect_attempt += 1
             continue
 
         now = time.time()

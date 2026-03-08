@@ -8,7 +8,9 @@ from app.db.session import get_db
 from app.db import models
 from app.services.queue import enqueue_process_capture
 
-router = APIRouter()
+from app.dependencies.auth import _require_role, get_current_user
+
+router = APIRouter(dependencies=[Depends(_require_role('ADMIN'))])
 
 def resolve_storage_dir() -> Path:
     preferred = Path(settings.storage_dir)

@@ -9,7 +9,9 @@ from app.schemas.reads import ReadOut, VerifyIn
 from app.services.storage import make_image_url
 from app.services.verification import verify_read
 
-router = APIRouter()
+from app.dependencies.auth import _require_role, get_current_user
+
+router = APIRouter(dependencies=[Depends(_require_role('GUARD'))])
 
 @router.get("/reads/pending", response_model=list[ReadOut])
 def list_pending(limit: int = 100, db: Session = Depends(get_db)):

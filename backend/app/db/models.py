@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 from sqlalchemy import (
-    String, Integer, DateTime, Enum, Float, Boolean, ForeignKey, Text
+    String, Integer, DateTime, Enum, Float, Boolean, ForeignKey, Text, Index
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -139,3 +139,83 @@ class Camera(Base):
     rtsp_url: Mapped[str] = mapped_column(Text, default="")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_bkk)
+
+
+# ── Watchlist & Alerts ────────────────────────────────────────────────────────
+
+class ListType(str, enum.Enum):
+    BLACKLIST = "BLACKLIST"
+    WHITELIST = "WHITELIST"
+    VIP       = "VIP"
+
+
+class AlertLevel(str, enum.Enum):
+    LOW      = "LOW"
+    MEDIUM   = "MEDIUM"
+    HIGH     = "HIGH"
+    CRITICAL = "CRITICAL"
+
+
+class Watchlist(Base):
+    """Plate numbers flagged for real-time alerting or gate-control whitelist."""
+    __tablename__ = "watchlist"
+
+    id:             Mapped[int]           = mapped_column(Integer, primary_key=True)
+    plate_text_norm: Mapped[str]          = mapped_column(String(32), nullable=False, index=True)
+    province:       Mapped[str | None]    = mapped_column(String(64), nullable=True)
+    list_type:      Mapped[str]           = mapped_column(String(20), nullable=False,
+                                                           default="BLACKLIST")
+    reason:         Mapped[str | None]    = mapped_column(Text, nullable=True)
+    alert_level:    Mapped[str]           = mapped_column(String(20), nullable=False,
+                                                           default="MEDIUM")
+    created_by:     Mapped[str | None]    = mapped_column(String(100), nullable=True)
+    created_at:     Mapped[datetime]      = mapped_column(DateTime, default=now_bkk)
+    expires_at:     Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    active:         Mapped[bool]          = mapped_column(Boolean, default=True)
+
+    alerts: Mapped[list["Alert"]] = relationship(back_populates="watchlist_entry",
+                                                  cascade="all, delete-orphan")
+
+
+class Alert(Base):
+    """Triggered when an incoming plate matches a watchlist entry."""
+    __tablename__ = "alerts"
+
+    id:              Mapped[int]           = mapped_column(Integer, primary_key=True)
+    read_id:         Mapped[int]           = mapped_column(
+                         ForeignKey("plate_reads.id", ondelete="CASCADE"), index=True)
+    watchlist_id:    Mapped[int]           = mapped_column(ForeignKey("watchlist.id"))
+    camera_id:       Mapped[str | None]   = mapped_column(String(100), nullable=True)
+    alert_level:     Mapped[str]           = mapped_column(String(20), nullable=False)
+    telegram_sent:   Mapped[bool]          = mapped_column(Boolean, default=False)
+    acknowledged:    Mapped[bool]          = mapped_column(Boolean, default=False, index=True)
+    acknowledged_by: Mapped[str | None]   = mapped_column(String(100), nullable=True)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at:      Mapped[datetime]      = mapped_column(DateTime, default=now_bkk, index=True)
+
+    read:           Mapped["PlateRead"]  = relationship()
+    watchlist_entry: Mapped["Watchlist"] = relationship(back_populates="alerts")
+
+
+# ── Users (RBAC) ──────────────────────────────────────────────────────────────
+
+class UserRole(str, enum.Enum):
+    ADMIN   = "ADMIN"
+    GUARD   = "GUARD"
+    AUDITOR = "AUDITOR"
+
+
+class User(Base):
+    """System user for JWT-based authentication and role-based access control."""
+    __tablename__ = "users"
+
+    id:              Mapped[int]          = mapped_column(Integer, primary_key=True)
+    username:        Mapped[str]          = mapped_column(String(64), unique=True,
+                                                           nullable=False, index=True)
+    full_name:       Mapped[str | None]   = mapped_column(String(128), nullable=True)
+    hashed_password: Mapped[str]          = mapped_column(Text, nullable=False)
+    role:            Mapped[str]          = mapped_column(String(20), nullable=False,
+                                                           default="GUARD")
+    active:          Mapped[bool]         = mapped_column(Boolean, default=True)
+    created_at:      Mapped[datetime]     = mapped_column(DateTime, default=now_bkk)
+    last_login:      Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

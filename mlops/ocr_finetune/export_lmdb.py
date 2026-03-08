@@ -232,23 +232,41 @@ def export_to_lmdb(output_dir: Path, limit: int = 10000, val_split: float = 0.1)
             )
             return False
 
-        expected_total = len(valid)
-        if len(exported_ids) != expected_total:
-            log.error(
-                "LMDB export failed integrity check: expected to export %d rows but only %d were written. "
-                "Skipping feedback_samples.used_in_train update to avoid partial marking.",
-                expected_total,
-                len(exported_ids),
+        # ── Warn about any PIL-level skips, but do NOT abort ────────────────────
+        # valid = images confirmed to exist on disk.
+        # exported_ids = images successfully JPEG-encoded and written to LMDB.
+        # The two counts can differ when a file is present but unreadable by PIL
+        # (e.g. a corrupt crop saved at capture time).  Aborting here would mean
+        # that well-formed images are NEVER marked as used_in_train because a
+        # handful of corrupt files keep tripping the check on every training run.
+        #
+        # The LMDB disk verification above (train_on_disk / val_on_disk) is the
+        # authoritative "export was successful" gate.  Once that passes, we
+        # update only the IDs that actually made it into the LMDB — corrupt-file
+        # rows are intentionally left with used_in_train=FALSE so they are
+        # retried (and hopefully re-cropped / cleaned) on the next cycle.
+        skipped = len(valid) - len(exported_ids)
+        if skipped > 0:
+            log.warning(
+                "LMDB write skipped %d / %d samples (PIL decode errors or empty labels). "
+                "Those rows remain used_in_train=FALSE for retry on the next cycle.",
+                skipped, len(valid),
             )
+
+        if not exported_ids:
+            log.error("No samples were successfully written to LMDB. Aborting DB update.")
             return False
 
-        if exported_ids:
-            db.execute(
-                text("UPDATE feedback_samples SET used_in_train = TRUE WHERE id = ANY(:ids)"),
-                {"ids": exported_ids},
-            )
-            db.commit()
-            log.info("Marked %d feedback samples as used_in_train=TRUE", len(exported_ids))
+        # ── Atomic DB update — only IDs confirmed written to LMDB ────────────
+        db.execute(
+            text("UPDATE feedback_samples SET used_in_train = TRUE WHERE id = ANY(:ids)"),
+            {"ids": exported_ids},
+        )
+        db.commit()
+        log.info(
+            "Marked %d feedback samples as used_in_train=TRUE (skipped %d with PIL errors)",
+            len(exported_ids), skipped,
+        )
 
         log.info(
             "✅ Export done — train=%d  val=%d  (disk-verified: train=%d  val=%d)",

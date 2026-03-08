@@ -17,7 +17,7 @@ function EvidenceViewer({ readId, onClose }) {
   const [evidence, setEvidence] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [imageView, setImageView] = useState('original') // 'original' or 'cropped'
+  const [imageView, setImageView] = useState('cropped') // 'original' or 'cropped' — default cropped for faster review
 
   useEffect(() => {
     if (readId) {

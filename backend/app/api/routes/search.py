@@ -8,7 +8,9 @@ from app.db.session import get_db
 from app.db import models
 from app.services.storage import make_image_url
 
-router = APIRouter()
+from app.dependencies.auth import get_current_user
+
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 def _to_iso_or_none(dt: Optional[datetime]) -> Optional[str]:

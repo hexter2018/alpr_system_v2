@@ -13,7 +13,9 @@ from app.schemas.reports import ReportStats, ActivityLog, AccuracyMetrics
 from app.services.storage import make_image_url
 from app.utils.dt import now_bkk, BKK
 
-router = APIRouter()
+from app.dependencies.auth import _require_role, get_current_user
+
+router = APIRouter(dependencies=[Depends(_require_role('AUDITOR'))])
 
 @router.get("/reports/stats", response_model=ReportStats)
 def get_report_stats(
@@ -270,6 +272,109 @@ def export_report(
         iter([output.getvalue()]),
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=report_{start_date}_{end_date}.csv"}
+    )
+
+
+@router.get("/reports/export/masked")
+def export_report_masked(
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    province: Optional[str] = Query(None),
+    camera_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Export report as CSV with partial plate masking for PDPA compliance.
+
+    Plate numbers are masked so that only the first and last character of
+    each segment are visible, e.g. "1กข2345" → "1กข2***" or
+    "กข 1234" → "กข 1***".
+
+    This endpoint is intended for auditors / external recipients who need
+    activity data but must not see full plate numbers.
+    """
+    def _mask_plate(text: str) -> str:
+        """Keep first 3 chars, mask the rest except last char."""
+        if not text:
+            return text
+        if len(text) <= 4:
+            # Too short to mask meaningfully — show only first char
+            return text[0] + "*" * (len(text) - 1)
+        visible = text[:3]
+        masked = "*" * (len(text) - 4)
+        last = text[-1]
+        return f"{visible}{masked}{last}"
+
+    if not end_date:
+        end_date = now_bkk().strftime("%Y-%m-%d")
+    if not start_date:
+        start_date = (now_bkk() - timedelta(days=7)).strftime("%Y-%m-%d")
+
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+
+    query = db.query(
+        models.PlateRead.plate_text,
+        models.PlateRead.province,
+        models.PlateRead.confidence,
+        models.PlateRead.status,
+        models.PlateRead.created_at,
+        models.Capture.camera_id,
+        models.Capture.source,
+        models.VerificationJob.result_type
+    ).join(
+        models.Detection, models.PlateRead.detection_id == models.Detection.id
+    ).join(
+        models.Capture, models.Detection.capture_id == models.Capture.id
+    ).outerjoin(
+        models.VerificationJob, models.PlateRead.id == models.VerificationJob.read_id
+    ).filter(
+        models.PlateRead.created_at >= start_dt,
+        models.PlateRead.created_at < end_dt
+    )
+
+    if province:
+        query = query.filter(models.PlateRead.province == province)
+    if camera_id:
+        query = query.filter(models.Capture.camera_id == camera_id)
+
+    rows = query.all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Plate (masked)", "Province", "Confidence", "Status",
+        "Created At", "Camera ID", "Source", "Result Type"
+    ])
+
+    for r in rows:
+        ts = r.created_at
+        if ts is not None:
+            if getattr(ts, "tzinfo", None) is None:
+                ts_str = ts.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                ts_str = ts.astimezone(BKK).strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            ts_str = ""
+        writer.writerow([
+            _mask_plate(r.plate_text),
+            r.province,
+            f"{r.confidence:.3f}",
+            r.status.value,
+            ts_str,
+            r.camera_id or "N/A",
+            r.source,
+            r.result_type.value if r.result_type else "N/A"
+        ])
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition":
+                f"attachment; filename=report_masked_{start_date}_{end_date}.csv"
+        }
     )
 
 

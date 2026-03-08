@@ -20,7 +20,9 @@ from sqlalchemy import text
 from app.db.session import get_db
 
 log = logging.getLogger(__name__)
-router = APIRouter()
+from app.dependencies.auth import _require_role, get_current_user
+
+router = APIRouter(dependencies=[Depends(_require_role('ADMIN'))])
 
 REDIS_URL     = os.getenv("REDIS_URL",     "redis://redis:6379/0")
 LOCK_FILE     = "/tmp/mlops_training.lock"

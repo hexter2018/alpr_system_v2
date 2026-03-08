@@ -12,8 +12,11 @@ import {
   Moon,
   Activity,
   Search,
+  ShieldAlert,
+  LogOut,
 } from 'lucide-react'
 import { useTheme } from '../lib/ThemeContext.jsx'
+import { useAuth } from '../context/AuthContext.jsx'
 
 const SIDEBAR_KEY = 'alpr_sidebar_collapsed'
 
@@ -22,6 +25,7 @@ const navItems = [
   { to: '/upload', label: 'Upload', icon: Upload },
   { to: '/queue', label: 'Verification', icon: ListChecks },
   { to: '/master', label: 'Master DB', icon: Database },
+  { to: '/watchlist', label: 'Watchlist', icon: ShieldAlert },
   { to: '/reports', label: 'Reports', icon: FileBarChart },
   { to: '/search', label: 'Search', icon: Search },
   { to: '/monitor', label: 'System Health', icon: Activity },
@@ -29,6 +33,7 @@ const navItems = [
 
 export default function AppLayout() {
   const { theme, toggle: toggleTheme } = useTheme()
+  const { logout, user } = useAuth()
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 1024) return true
     try {
@@ -141,6 +146,17 @@ export default function AppLayout() {
                 <span className="truncate">Collapse</span>
               </>
             )}
+          </button>
+          <button
+            onClick={logout}
+            className={`sidebar-item sidebar-item-idle w-full ${
+              collapsed ? 'justify-center px-0' : ''
+            }`}
+            title={collapsed ? `Sign out (${user?.username ?? ''})` : undefined}
+            aria-label="Sign out"
+          >
+            <LogOut className="h-[18px] w-[18px]" />
+            {!collapsed && <span className="truncate">Sign Out</span>}
           </button>
         </div>
       </aside>

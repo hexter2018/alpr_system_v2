@@ -7,7 +7,9 @@ from app.db import models
 from app.schemas.master import MasterOut, MasterUpsertIn, MasterCropOut
 from app.services.storage import make_image_url
 
-router = APIRouter()
+from app.dependencies.auth import _require_role, get_current_user
+
+router = APIRouter(dependencies=[Depends(_require_role('ADMIN'))])
 
 @router.get("/master", response_model=list[MasterOut])
 def search_master(q: str = "", limit: int = 100, db: Session = Depends(get_db)):

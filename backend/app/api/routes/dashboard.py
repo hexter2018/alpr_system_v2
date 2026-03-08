@@ -9,7 +9,9 @@ from app.db import models
 from app.schemas.dashboard import KPI
 from app.utils.dt import now_bkk
 
-router = APIRouter()
+from app.dependencies.auth import get_current_user
+
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 @router.get("/dashboard/kpi", response_model=KPI)
