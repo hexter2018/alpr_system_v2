@@ -47,8 +47,59 @@ _CUSTOM_OCR_PTH  = _MODELS_DIR / "ocr_th_custom.pth"
 _CUSTOM_OCR_YAML = _MODELS_DIR / "ocr_th_custom.yaml"
 
 _THAI_DIGIT_MAP = str.maketrans("๐๑๒๓๔๕๖๗๘๙", "0123456789")
-_THAI_ALLOWLIST = "กขฃคฅฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรฤลฦวศษสหฬอฮะาำิีึืุูเแโใไั่้๊๋์ฯ0123456789"
-_THAI_ONLY_ALLOWLIST = "กขฃคฅฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรฤลฦวศษสหฬอฮะาำิีึืุูเแโใไั่้๊๋์ฯ"
+
+# ── Training vocabulary ───────────────────────────────────────────────────────
+# Exact character set used to train ocr_th_custom.pth.
+# MUST be 100% identical — same characters, same order — to THAI_CHARS in
+# mlops/ocr_finetune/finetune_easyocr.py.
+#
+# WHY THIS MATTERS
+# ─────────────────
+# EasyOCR / DTRB Attn decoding maps each output index directly to
+# self.character[index].  If the inference charset differs from the one used
+# during training by even a single character or swap in order, every predicted
+# index decodes to the wrong character and the model outputs complete gibberish
+# (e.g. "ฌข" instead of "3337").  This constant is the single source of truth
+# for inference; the YAML's character_list is validated against it at startup.
+#
+# UPDATE POLICY: if you change THAI_CHARS in finetune_easyocr.py you MUST
+# (1) update this string to match, (2) retrain the model, (3) redeploy.
+_DTRB_CHARS: str = (
+    # Thai consonants (42)
+    "กขคฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรลวศษสหฬอฮ"
+    # Thai vowel marks, tone marks, and special signs (23)
+    "ฤฦาิีึืุูเแโใไำ็่้๊๋์ํ๎"
+    # Arabic digits (10)
+    "0123456789"
+    # Latin uppercase A–Z: required for TC / QC test-car plate prefixes (26)
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    # Latin lowercase a–z: DTRB filters labels via label.lower() so both
+    # cases must be present in the vocabulary (26)
+    "abcdefghijklmnopqrstuvwxyz"
+    # Space: separator in formatted plates e.g. "TC 3337", "กข 1234" (1)
+    " "
+)
+
+# ── OCR output allowlists ─────────────────────────────────────────────────────
+# Both constants are derived from _DTRB_CHARS so they stay in sync with the
+# training vocabulary automatically.
+#
+# _THAI_ALLOWLIST      — passed to reader.readtext() for plate-text OCR.
+#                        Includes all 128 training chars (Thai + digits + A–Z
+#                        + a–z + space).  When DTRBRecognizer is active this is
+#                        a weak any-match filter; when EasyOCR is the fallback
+#                        reader it constrains the output to these chars, which
+#                        is important for test-car plates ("TC 3337", "QC 1234")
+#                        where the previous allowlist was missing A–Z entirely.
+#
+# _THAI_ONLY_ALLOWLIST — passed to thai_reader.readtext() for province-band
+#                        OCR.  Digits, Latin, and space are excluded since
+#                        province names are Thai-only text.
+_THAI_ALLOWLIST      = _DTRB_CHARS          # all 128 training chars
+_THAI_ONLY_ALLOWLIST = (                    # Thai consonants + vowels only (65)
+    "กขคฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรลวศษสหฬอฮ"
+    "ฤฦาิีึืุูเแโใไำ็่้๊๋์ํ๎"
+)
 _THAI_CONFUSION_MAP = {
     "ผ": ("ข", "พ", "ฆ"),
     "ข": ("ฆ", "ผ", "ม"),
@@ -328,7 +379,28 @@ class PlateOCR:
                     _cfg = _yaml.safe_load(_f)
                 _character = _cfg.get("character_list", "")
                 if not _character:
-                    raise ValueError("character_list is empty in YAML")
+                    raise ValueError("character_list is empty in YAML — re-run the fine-tuning pipeline")
+
+                # ── Vocab-mismatch guard ──────────────────────────────────────
+                # The Attn decoder maps each output index directly to
+                # self.character[index].  If the YAML charset and the training
+                # charset (_DTRB_CHARS) have diverged — even by a single
+                # character or a reordering — every index decodes to the wrong
+                # character, producing silent gibberish (e.g. "ฌข" → "3337").
+                # We detect this here and refuse to load the custom model
+                # instead of producing wrong output.
+                if _character != _DTRB_CHARS:
+                    raise ValueError(
+                        f"[OCR] VOCAB MISMATCH: character_list in YAML has "
+                        f"{len(_character)} chars but _DTRB_CHARS in ocr.py has "
+                        f"{len(_DTRB_CHARS)} chars "
+                        f"({'same length' if len(_character) == len(_DTRB_CHARS) else 'different length'}, "
+                        f"content differs). "
+                        "The .pth checkpoint was trained with a different vocabulary. "
+                        "Fix: re-run mlops/ocr_finetune/finetune_easyocr.py to regenerate "
+                        "a consistent ocr_th_custom.pth + ocr_th_custom.yaml pair, "
+                        "then restart the worker container."
+                    )
 
                 _recognizer      = DTRBRecognizer(_CUSTOM_OCR_PTH, _character, use_gpu=use_gpu)
                 self.reader      = _recognizer  # type: ignore[assignment]
